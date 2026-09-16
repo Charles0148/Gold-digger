@@ -191,7 +191,7 @@
   /* ================= 文字 ================= */
   function tabTexts(body) {
     const T = draft.texts;
-    const single = [["veinStart", "礦脈開始"], ["veinContinue", "礦脈延續"], ["veinEnd", "礦脈結束"], ["fakeEnd", "假前兆結束"], ["koukakuHint", "高確暗示"], ["tenjou", "天井"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
+    const single = [["chanceStart", "連續演出開始"], ["chanceGo", "連續演出中"], ["chanceLose", "演出失敗"], ["directWin", "金礦直擊"], ["tenjouStart", "天井"], ["stock", "連莊告知"], ["upgrade", "升格告知"], ["bonusChain", "連莊揭曉"], ["bonusChainSurprise", "最後一揮才揭曉"], ["bonusEnd", "AT 結束"], ["fakeEnd", "假前兆結束"], ["koukakuHint", "高確暗示"], ["hintSfx", "違和感：音效"], ["hintDrip", "違和感：水滴"], ["hintGlow", "違和感：紋路"], ["hintTap", "違和感：點擊提示"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
     body.innerHTML = `
       <div class="ed-note">多行欄位：一行一個，遊戲會隨機挑一句。</div>
       <div class="ed-sec">揮擊音效字</div><textarea rows="3" data-p="texts.swing" data-lines>${T.swing.join("\n")}</textarea>
@@ -200,6 +200,7 @@
       ${T.omenLine.map((l, i) => `<div class="ed-row"><label>${draft.rules.omen.names[i]}</label><input type="text" data-p="texts.omenLine.${i}" value="${esc(l)}"></div>`).join("")}
       <div class="ed-sec">事件文字</div>
       ${single.map(([k, n]) => `<div class="ed-row"><label>${n}</label><input type="text" data-p="texts.${k}" value="${esc(T[k])}"></div>`).join("")}
+      ${["RB", "BB", "SBB"].map(k => `<div class="ed-row"><label>${k} 開始</label><input type="text" data-p="texts.bonusStart.${k}" value="${esc(T.bonusStart[k])}"></div>`).join("")}
       <div class="ed-sec">礦坑與礦石名稱（名稱不可重複）</div>
       ${draft.mines.map((m, mi) => `<div class="ed-row"><label>礦坑${mi + 1}</label><input type="text" data-p="mines.${mi}.name" value="${esc(m.name)}"></div>
         ${draft.categories.filter(c => c.id !== "rubble").map(c => `<div class="ed-row"><label style="color:${draft.rarities[c.rarity].color}">　${c.name}</label>
@@ -212,52 +213,60 @@
     });
   }
 
-  /* ================= 數值 ================= */
-  const CAT_N = { rubble: "碎石", common: "普通", good: "優良", rare: "稀有", epic: "史詩", legend: "傳說" };
-  function table6(title, path, cats, note) {
-    const obj = getPath(draft, path);
-    return `<div class="ed-sec">${title}</div>${note ? `<div class="ed-note">${note}</div>` : ""}<div class="ed-scroll"><table class="ed-table">
-      <tr><th></th>${[1, 2, 3, 4, 5, 6].map(s => `<th>設定${s}</th>`).join("")}</tr>
-      ${cats.map(c => `<tr><th>${CAT_N[c] || c}</th>${obj[c].map((v, i) => `<td><input type="number" step="any" data-n="${path}.${c}.${i}" value="${v}"></td>`).join("")}</tr>`).join("")}
-      </table></div>`;
-  }
-  function arr6(title, path, note) {
-    const a = getPath(draft, path);
-    return `<div class="ed-sec">${title}</div>${note ? `<div class="ed-note">${note}</div>` : ""}<div class="ed-scroll"><table class="ed-table">
-      <tr>${a.map((_, i) => `<th>設定${i + 1}</th>`).join("")}</tr><tr>${a.map((v, i) => `<td><input type="number" step="any" data-n="${path}.${i}" value="${v}"></td>`).join("")}</tr></table></div>`;
-  }
   const field = (label, path) => `<div class="ed-row"><label>${label}</label><input type="number" step="any" data-n="${path}" value="${getPath(draft, path)}"></div>`;
+  /* ================= 數值（依設定檔結構自動產生） ================= */
+  const LABEL = {
+    itemTable: "① 小役機率（通常／高確／連續演出／前兆，碎石=剩下）", gold: "② 金礦（強機會牌）", purple: "③ 紫礦（機會牌）", other: "④ 其他小役進入連續演出",
+    chance: "⑤ 連續演出中每揮的 AT 當選率", bonusDraw: "⑥ 當選時 RB/BB/SBB 權重", bonus: "⑦ AT", bonusTable: "⑧ AT 中的小役機率",
+    koukaku: "⑨ 高確", zencho: "天井後前兆長度", fakeZencho: "假前兆", hints: "⑩ 違和感暗示", omen: "期待度顏色權重",
+    toolDrop: "工具掉落", settingDist: "每日設定分配比例", adDailyLimit: "每日廣告次數",
+    common: "普通", good: "綠(Replay)", rare: "藍(Bell)", epic: "紫(機會)", legend: "金(強機會)", rubble: "碎石",
+    direct: "直擊 AT 率", normal: "通常", koukaku_: "高確", lenWeights: "演出長度權重", base: "基本當選率", epicAdd: "挖到紫＋", legendAdd: "挖到金＋",
+    first: "一般當選", fromEpic: "發展中靠紫", fromLegend: "靠金礦", next: "連莊下一隻",
+    length: "長度(揮)", continue: "金礦連莊率", upgrade: "升格率", RBtoBB: "RB→BB", BBtoSBB: "BB→SBB", announceRate: "當下告知機率",
+    enter: "進入高確率", drop: "每揮轉落率", min: "最短", max: "最長", rate: "前兆中出現率", fakeRate: "假前兆中出現率", weights: "各暗示權重",
+    RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLose: "發展(未當選)", chanceWin: "發展(已當選)", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
+    autoInterval: "自動間隔(ms)", autoStopOmen: "自動停止期待度(0~5)"
+  };
+  const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (LABEL[k] || k);
+  function numTree(obj, path, parent, depth) {
+    let html = "";
+    for (const k of Object.keys(obj)) {
+      const v = obj[k], p = path ? path + "." + k : k;
+      if (typeof v === "number") {
+        html += `<div class="ed-row"><label>${lab(k, parent)}</label><input type="number" step="any" data-n="${p}" value="${v}"></div>`;
+      } else if (Array.isArray(v) && v.every(x => typeof x === "number")) {
+        const head = parent === "hints" || k === "lenWeights" || parent === "weights" || parent === "omen"
+          ? (k === "lenWeights" ? v.map((_, i) => (obj === draft.rules.gold ? i + 1 : i + 2) + "揮") : parent === "omen" ? draft.rules.omen.names : draft.rules.hints.ids)
+          : v.map((_, i) => "設定" + (i + 1));
+        html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>
+          <tr>${v.map((x, i) => `<td><input type="number" step="any" data-n="${p}.${i}" value="${x}"></td>`).join("")}</tr></table></div>`;
+      } else if (v && typeof v === "object" && !Array.isArray(v)) {
+        const vals = Object.values(v);
+        if (vals.length && vals.every(x => typeof x === "number") && Object.keys(v).every(x => ["RB", "BB", "SBB"].includes(x))) {
+          html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${Object.keys(v).map(h => `<th>${h}</th>`).join("")}</tr>
+            <tr>${Object.keys(v).map(h => `<td><input type="number" step="any" data-n="${p}.${h}" value="${v[h]}"></td>`).join("")}</tr></table></div>`;
+        } else {
+          html += depth === 0 ? `<div class="ed-sec">${lab(k, parent)}</div>` : `<div class="ed-note" style="margin:8px 0 2px;color:#ccc">▸ ${lab(k, parent)}</div>`;
+          html += numTree(v, p, k, depth + 1);
+        }
+      }
+    }
+    return html;
+  }
   function tabNumbers(body) {
-    const R = draft.rules; draft.play = draft.play || { autoInterval: 350, autoStopOmen: 3 };
-    const itemCats = ["common", "good", "rare", "epic", "legend"], allCats = ["rubble", ...itemCats];
+    draft.play = draft.play || { autoInterval: 350, autoStopOmen: 3 };
     body.innerHTML = `
-      <div class="ed-note">機率用小數：0.01 = 1%。改完到「模擬」分頁跑一次，確認初當機率與機械割。</div>
-      ${table6("① 小役機率（通常/高確/前兆）", "rules.itemTable", itemCats, "碎石 = 1 − 其他加總")}
-      ${table6("② 礦脈中的小役機率", "rules.veinTable", itemCats)}
-      ${table6("③ 礦脈當選率｜通常", "rules.veinWin.normal", allCats, "抽到該小役時當選礦脈的機率")}
-      ${table6("④ 礦脈當選率｜高確", "rules.veinWin.koukaku", allCats)}
-      ${table6("⑤ 通常→高確 移行率", "rules.toKoukaku", allCats)}
-      ${arr6("⑥ 礦脈延續率", "rules.vein.continue")}
-      ${arr6("⑦ 每日設定分配比例（加總=1）", "rules.settingDist")}
-      <div class="ed-sec">⑧ 其他</div>
-      ${field("高確轉落率", "rules.koukakuDrop")}${field("前兆最短(揮)", "rules.zencho.min")}${field("前兆最長(揮)", "rules.zencho.max")}
-      ${field("假前兆率(通常)", "rules.fakeZencho.normal")}${field("假前兆率(高確)", "rules.fakeZencho.koukaku")}
-      ${field("假前兆最短", "rules.fakeZencho.min")}${field("假前兆最長", "rules.fakeZencho.max")}
-      ${field("礦脈長度(揮)", "rules.vein.length")}${field("天井(揮)", "rules.tenjou")}
-      ${field("工具掉落率(通常)", "rules.toolDrop.normal")}${field("工具掉落率(礦脈)", "rules.toolDrop.vein")}
-      ${field("掉落同階機率", "rules.toolDrop.sameTier")}${field("掉落耐久下限", "rules.toolDrop.minDur")}${field("掉落耐久上限", "rules.toolDrop.maxDur")}
-      ${field("每日廣告次數", "rules.adDailyLimit")}${field("自動模式間隔(ms)", "play.autoInterval")}${field("自動停止期待度(0~5)", "play.autoStopOmen")}
-      <div class="ed-sec">⑨ 期待度顏色權重</div><div class="ed-scroll"><table class="ed-table">
-        <tr><th></th>${R.omen.names.map(n => `<th>${n}</th>`).join("")}</tr>
-        ${[["normal", "通常"], ["koukaku", "高確"], ["fake", "假前兆"], ["zencho", "真前兆"]].map(([k, n]) => `<tr><th>${n}</th>${R.omen[k].map((v, i) => `<td><input type="number" step="any" data-n="rules.omen.${k}.${i}" value="${v}"></td>`).join("")}</tr>`).join("")}
-      </table></div>
-      <div class="ed-sec">⑩ 小役售價（第1層基準）</div>
+      <div class="ed-note">機率用小數：0.01 = 1%。權重是相對比例。改完到「模擬」分頁跑一次，確認初當與機械割。</div>
+      ${numTree(draft.rules, "rules", "", 0)}
+      <div class="ed-sec">自動模式</div>${numTree(draft.play, "play", "", 1)}
+      <div class="ed-sec">小役售價（第1層基準）</div>
       ${draft.categories.map((c, i) => field(c.name, `categories.${i}.value`)).join("")}
-      <div class="ed-sec">⑪ 工具</div><div class="ed-scroll"><table class="ed-table"><tr><th>工具</th><th>耐久</th><th>價格</th></tr>
+      <div class="ed-sec">工具</div><div class="ed-scroll"><table class="ed-table"><tr><th>工具</th><th>耐久</th><th>價格</th></tr>
         ${draft.tools.map((t, i) => `<tr><th>${t.name}</th><td><input type="number" data-n="tools.${i}.durability" value="${t.durability}"></td><td><input type="number" data-n="tools.${i}.price" value="${t.price}"></td></tr>`).join("")}</table></div>
       ${field("升級上限", "upgrade.maxLevel")}${field("升級費用倍率", "upgrade.costMul")}${field("每級耐久加成", "upgrade.durabilityPerLv")}${field("每級售價加成", "upgrade.valuePerLv")}
-      <div class="ed-sec">⑫ 礦坑</div><div class="ed-scroll"><table class="ed-table"><tr><th>礦坑</th><th>售價倍率</th><th>解鎖費用</th></tr>
-        ${draft.mines.map((m, i) => `<tr><th>${m.name}</th><td><input type="number" step="any" data-n="mines.${i}.mult" value="${m.mult}"></td><td><input type="number" data-n="mines.${i}.unlock" value="${m.unlock}"></td></tr>`).join("")}</table></div>`;
+      <div class="ed-sec">副本（礦坑）</div><div class="ed-scroll"><table class="ed-table"><tr><th>副本</th><th>天井</th><th>售價倍率</th><th>解鎖費用</th></tr>
+        ${draft.mines.map((m, i) => `<tr><th>${m.name}</th><td><input type="number" data-n="mines.${i}.tenjou" value="${m.tenjou}"></td><td><input type="number" step="any" data-n="mines.${i}.mult" value="${m.mult}"></td><td><input type="number" data-n="mines.${i}.unlock" value="${m.unlock}"></td></tr>`).join("")}</table></div>`;
     body.querySelectorAll("[data-n]").forEach(inp => inp.onchange = () => {
       if (inp.value === "" || isNaN(+inp.value)) { inp.value = getPath(draft, inp.dataset.n); return; }
       setPath(draft, inp.dataset.n, +inp.value); commit();
@@ -268,8 +277,8 @@
   function tabSim(body) {
     body.innerHTML = `
       <div class="ed-note">使用「目前的設定數值」跑模擬（和遊戲同一套引擎）。<br>
-      初當 = 平均幾揮當選一次礦脈（不含礦脈中）；機械割 = 挖到的價值 ÷ 工具花費（100% 以上玩家賺）。</div>
-      <div class="ed-row"><label>礦坑</label><select id="simMine">${draft.mines.map((m, i) => `<option value="${i}">${m.name}</option>`).join("")}</select></div>
+      初當 = 平均幾揮（不含AT中）當選一次 AT；機械割 = 挖到的價值 ÷ 工具花費（100% 以上玩家賺）；平均連 = 每次初當連了幾隻。</div>
+      <div class="ed-row"><label>副本</label><select id="simMine">${draft.mines.map((m, i) => `<option value="${i}">${m.name}（天井${m.tenjou}）</option>`).join("")}</select></div>
       <div class="ed-row"><label>每個設定揮幾次</label><select id="simN"><option>100000</option><option selected>500000</option><option>2000000</option></select></div>
       <button class="ed-btn primary" id="simGo">開始模擬（設定1～6）</button>
       <div id="simOut" style="margin-top:10px"></div>`;
@@ -277,25 +286,27 @@
       const mi = +body.querySelector("#simMine").value, n = +body.querySelector("#simN").value;
       const out = body.querySelector("#simOut"); const rows = []; let s = 1;
       out.innerHTML = "模擬中…";
+      const pct = v => (v * 100).toFixed(1) + "%";
       const step = () => {
-        const r = E.simulate(draft, s, n, mi); rows.push(r);
+        rows.push(E.simulate(draft, s, n, mi));
         out.innerHTML = `模擬中… 設定${s}/6`;
         if (++s <= 6) setTimeout(step, 10); else show();
       };
-      const pct = v => (v * 100).toFixed(1) + "%";
+      const typeShare = r => { const t = r.types, sum = t.RB + t.BB + t.SBB || 1; return `${pct(t.RB / sum)}/${pct(t.BB / sum)}/${pct(t.SBB / sum)}`; };
       const show = () => {
         out.innerHTML = `<div class="ed-scroll"><table class="ed-table">
-          <tr><th>設定</th><th>初當</th><th>機械割</th><th>平均連</th><th>天井率</th><th>史詩(通常)</th><th>礦脈收入占比</th></tr>
+          <tr><th>設定</th><th>初當</th><th>機械割</th><th>平均連</th><th>天井率</th><th>金直擊</th><th>AT揮數/次</th><th>RB/BB/SBB</th><th>紫</th><th>金</th></tr>
           ${rows.map((r, i) => `<tr><th>${i + 1}</th><td>1/${r.hitRate.toFixed(0)}</td><td>${pct(r.rtp)}</td><td>${r.avgChain.toFixed(2)}</td>
-            <td>${r.hits ? pct(r.tenjou / r.hits) : "-"}</td><td>1/${r.epicRate.toFixed(0)}</td><td>${pct(r.veinIncomeShare)}</td></tr>`).join("")}
+            <td>${r.hits ? pct(r.tenjou / r.hits) : "-"}</td><td>${r.hits ? pct(r.direct / r.hits) : "-"}</td><td>${r.avgBonusSwings.toFixed(0)}</td><td>${typeShare(r)}</td>
+            <td>1/${r.epicRate.toFixed(0)}</td><td>1/${r.legendRate.toFixed(0)}</td></tr>`).join("")}
           </table></div>
-          <div class="ed-sec">期待度顏色：出現時「真的在前兆中」的比例</div>
+          <div class="ed-sec">期待度顏色：出現時「已確定當選」的比例</div>
           <div class="ed-scroll"><table class="ed-table"><tr><th>設定</th>${draft.rules.omen.names.map(n => `<th>${n}</th>`).join("")}</tr>
           ${rows.map((r, i) => `<tr><th>${i + 1}</th>${r.omen.map(o => `<td>${o.shown ? pct(o.real / o.shown) : "-"}</td>`).join("")}</tr>`).join("")}</table></div>
           <button class="ed-btn" id="simCopy">複製結果文字（貼給朋友/AI 驗證）</button>`;
         out.querySelector("#simCopy").onclick = () => {
-          const txt = `礦坑:${draft.mines[mi].name} 每設定${n}揮\n設定|初當|機械割|平均連|天井率|史詩\n` +
-            rows.map((r, i) => `${i + 1}|1/${r.hitRate.toFixed(0)}|${pct(r.rtp)}|${r.avgChain.toFixed(2)}|${r.hits ? pct(r.tenjou / r.hits) : "-"}|1/${r.epicRate.toFixed(0)}`).join("\n");
+          const txt = `副本:${draft.mines[mi].name} 天井${draft.mines[mi].tenjou} 每設定${n}揮\n設定|初當|機械割|平均連|天井率|RB/BB/SBB\n` +
+            rows.map((r, i) => `${i + 1}|1/${r.hitRate.toFixed(0)}|${pct(r.rtp)}|${r.avgChain.toFixed(2)}|${r.hits ? pct(r.tenjou / r.hits) : "-"}|${typeShare(r)}`).join("\n");
           copy(txt);
         };
       };
