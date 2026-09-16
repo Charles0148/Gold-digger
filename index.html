@@ -30,7 +30,7 @@
         </div>
         <div class="mb-row mb-data">
           <span>本日 <b id="mbSwings">0</b></span>
-          <span>AT <b id="mbHits">0</b></span>
+          <span>礦脈 <b id="mbHits">0</b></span>
           <span>紫 <b id="mbEpic">0</b></span>
           <span>累計 <b id="mbSince">0</b></span>
         </div>
@@ -39,7 +39,7 @@
       <div id="scene" class="px-box" data-edit="scene" data-label="場景區">
         <div id="sceneBig" class="scene-big">⛏</div>
         <div id="sceneSub" class="scene-sub">點擊下方敘述框開始挖礦</div>
-        <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="AT看板">
+        <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
           <div><b id="vbChain">BB</b></div>
           <div>剩餘 <b id="vbLeft">25</b></div>
           <div>收穫 <b id="vbGain">0</b></div>
@@ -47,6 +47,7 @@
       </div>
 
       <div id="textbox" class="px-box textbox" data-edit="textbox" data-label="敘述框（點擊挖礦）">
+        <div id="tbTag" class="tb-tag hidden"></div>
         <div id="tbLines"></div>
         <div id="tbTap" class="tb-tap">▼ 點擊</div>
       </div>
@@ -59,6 +60,7 @@
         </div>
         <button class="px-btn" id="btnAuto">手動</button>
       </div>
+      <div id="rollLog" class="roll-log hidden"></div>
     </section>
 
     <!-- ===== 背包 ===== -->
