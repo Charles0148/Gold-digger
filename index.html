@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1b1b1f">
+<title>深層礦脈</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===== 頂部：玩家名稱 / 資金 / 可挖次數 ===== -->
+  <header id="hud" data-edit="hud" data-label="頂部資訊列">
+    <div class="hud-name" id="hudName">玩家</div>
+    <div class="hud-stat"><span class="hud-ico">$</span><span id="hudCoins">0</span></div>
+    <div class="hud-stat"><span class="hud-ico">⛏</span><span id="hudPlays">0</span></div>
+  </header>
+
+  <main id="screens">
+
+    <!-- ===== 挖礦 ===== -->
+    <section class="screen active" id="scr-mine">
+      <div id="mineBar" class="px-box" data-edit="mineBar" data-label="礦坑資訊列">
+        <div class="mb-row">
+          <span id="mbName" class="mb-name">淺層洞窟</span>
+          <span id="mbState" class="mb-state"></span>
+        </div>
+        <div class="mb-row mb-data">
+          <span>本日 <b id="mbSwings">0</b></span>
+          <span>礦脈 <b id="mbHits">0</b></span>
+          <span>史詩 <b id="mbEpic">0</b></span>
+          <span>累計 <b id="mbSince">0</b></span>
+        </div>
+      </div>
+
+      <div id="scene" class="px-box" data-edit="scene" data-label="場景區">
+        <div id="sceneBig" class="scene-big">⛏</div>
+        <div id="sceneSub" class="scene-sub">點擊下方敘述框開始挖礦</div>
+        <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
+          <div>礦脈 <b id="vbChain">1</b> 連</div>
+          <div>剩餘 <b id="vbLeft">25</b></div>
+          <div>收穫 <b id="vbGain">0</b></div>
+        </div>
+      </div>
+
+      <div id="textbox" class="px-box textbox" data-edit="textbox" data-label="敘述框（點擊挖礦）">
+        <div id="tbLines"></div>
+        <div id="tbTap" class="tb-tap">▼ 點擊</div>
+      </div>
+
+      <div id="controls" data-edit="controls" data-label="控制列">
+        <div id="toolInfo" class="px-box tool-info">
+          <div class="ti-name" id="tiName">—</div>
+          <div class="bar"><div class="bar-fill" id="tiBar"></div></div>
+          <div class="ti-dur" id="tiDur">0/0</div>
+        </div>
+        <button class="px-btn" id="btnAuto">手動</button>
+      </div>
+    </section>
+
+    <!-- ===== 背包 ===== -->
+    <section class="screen" id="scr-bag">
+      <div class="px-box panel" data-edit="bagTools" data-label="背包-工具">
+        <div class="panel-title">工具 <span class="sub" id="bagPlays"></span></div>
+        <div id="bagTools" class="list"></div>
+      </div>
+      <div class="px-box panel" data-edit="bagOres" data-label="背包-礦石">
+        <div class="panel-title">礦石 <button class="px-btn small" id="btnSellAll">全部賣出</button></div>
+        <div class="sub" id="bagOreTotal"></div>
+        <div id="bagOres" class="list"></div>
+      </div>
+    </section>
+
+    <!-- ===== 地圖 ===== -->
+    <section class="screen" id="scr-map">
+      <div class="px-box panel" data-edit="mapPanel" data-label="地圖">
+        <div class="panel-title">地圖 <span class="sub">每座礦坑每天暗中分配設定1～6</span></div>
+        <div id="mapList" class="list"></div>
+      </div>
+    </section>
+
+    <!-- ===== 圖鑑 ===== -->
+    <section class="screen" id="scr-dex">
+      <div class="px-box panel" data-edit="dexPanel" data-label="圖鑑">
+        <div class="panel-title">圖鑑 <span class="sub" id="dexCount"></span></div>
+        <div id="dexList"></div>
+      </div>
+    </section>
+
+    <!-- ===== 工坊（商店 + 升級 + 廣告） ===== -->
+    <section class="screen" id="scr-shop">
+      <div class="px-box panel" data-edit="adPanel" data-label="廣告">
+        <div class="panel-title">補給</div>
+        <button class="px-btn wide" id="btnAd">看廣告領木鎬</button>
+        <div class="sub" id="adInfo"></div>
+      </div>
+      <div class="px-box panel" data-edit="shopPanel" data-label="商店">
+        <div class="panel-title">商店</div>
+        <div id="shopList" class="list"></div>
+      </div>
+      <div class="px-box panel" data-edit="upPanel" data-label="升級">
+        <div class="panel-title">鍛造升級 <span class="sub">耐久+、售價+</span></div>
+        <div id="upList" class="list"></div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ===== 底部導覽 ===== -->
+  <nav id="nav" data-edit="nav" data-label="底部導覽">
+    <button data-go="mine" class="active">挖礦</button>
+    <button data-go="bag">背包</button>
+    <button data-go="map">地圖</button>
+    <button data-go="dex">圖鑑</button>
+    <button data-go="shop">工坊</button>
+  </nav>
+
+  <button id="editFab" title="編輯模式">✎</button>
+  <div id="toast" class="toast hidden"></div>
+  <div id="modal" class="modal hidden"><div class="px-box modal-box" id="modalBox"></div></div>
+</div>
+
+<div id="editor" class="hidden"></div>
+
+<script src="js/config.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/game.js"></script>
+<script src="js/editor.js"></script>
+</body>
+</html>
