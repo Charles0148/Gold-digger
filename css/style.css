@@ -100,6 +100,8 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   0% { border-color: #ff5555; } 17% { border-color: #ffaa00; } 33% { border-color: #ffff55; }
   50% { border-color: #55ff55; } 67% { border-color: #55aaff; } 83% { border-color: #d070ff; }
 }
+.textbox.hint-blink { animation: goldBlink .5s steps(2) 3; }
+@keyframes goldBlink { 50% { border-color: #ffaa00; } }
 .rainbow-text { animation: rainbowText 1s steps(6) infinite; }
 @keyframes rainbowText {
   0% { color: #ff5555; } 17% { color: #ffaa00; } 33% { color: #ffff55; }
