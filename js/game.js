@@ -3,7 +3,7 @@
    ========================================================= */
 (function () {
   const E = window.MineEngine;
-  const CFG_KEY = "mine_config_v2";
+  const CFG_KEY = "mine_config_v3";
   const SAVE_KEY = "mine_save_v1";
   const $ = id => document.getElementById(id);
 
@@ -76,13 +76,15 @@
   function itemIndex() {
     const idx = {};
     config.mines.forEach(m => config.categories.forEach(c => {
-      (m.items[c.id] || []).forEach(name => { idx[name] = { mine: m, cat: c }; });
+      (m.items[c.id] || []).forEach(name => { idx[name] = { mine: m, cat: c, vein: false }; });
+      ((m.veinItems || {})[c.id] || []).forEach(name => { idx[name] = { mine: m, cat: c, vein: true }; });
     }));
     return idx;
   }
   function itemPrice(name) {
     const it = itemIndex()[name]; if (!it) return 0;
-    return Math.round(it.cat.value * it.mine.mult * sellBonus());
+    const base = it.vein ? (it.cat.veinValue ?? it.cat.value) : it.cat.value;
+    return Math.max(1, Math.round(base * it.mine.mult * sellBonus()));
   }
 
   function todaySetting(mineId) {
@@ -166,12 +168,13 @@
 
   /* ---------------- 挖礦畫面 ---------------- */
   let veinGain = 0;
-  const TYPE_COLOR = { RB: "#55aaff", BB: "#ffaa00", SBB: "rainbow" };
+  const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
+  const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() {
     checkDay();
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
-    let stateTxt = st.state === "bonus" ? colored(st.bonusType + " 中", TYPE_COLOR[st.bonusType]) : "";
+    let stateTxt = st.state === "bonus" ? colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) : "";
     if (save.debug.showSetting) {
       const nm = { normal: "通常", koukaku: "高確", chance: "連續演出", zencho: "前兆", bonus: "AT" }[st.state];
       stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
@@ -187,7 +190,7 @@
     $("scene").classList.toggle("vein-on", inBonus && st.bonusType === "SBB");
     if (inBonus) {
       const shownStock = st.stock.filter(x => x.announced).length;
-      $("vbChain").innerHTML = colored(st.bonusType, TYPE_COLOR[st.bonusType]) + ` ${st.chain}連` + (shownStock ? ` <span style="color:#ff5555">+${shownStock}</span>` : "");
+      $("vbChain").innerHTML = colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) + ` 第${st.chain}脈` + (shownStock ? ` <span style="color:#ff5555">+${shownStock}</span>` : "");
       $("vbLeft").textContent = st.bonusLeft;
       $("vbGain").textContent = fmt(veinGain);
     }
@@ -201,6 +204,7 @@
     } else {
       $("tiName").textContent = "無工具"; $("tiBar").style.width = "0"; $("tiDur").textContent = "";
     }
+    $("rollLog").classList.toggle("hidden", !save.debug.showRolls);
     $("btnAuto").textContent = save.auto ? "自動" : "手動";
     $("btnAuto").classList.toggle("on", save.auto);
     renderHud();
@@ -215,6 +219,8 @@
     if (omen === "vein" || oc[omen] === "rainbow") { box.classList.add("omen-rainbow"); box.style.borderColor = ""; }
     else box.style.borderColor = omen > 0 ? oc[omen] : layoutBorder;
     if (opts.blink) box.classList.add("hint-blink");
+    const tag = $("tbTag"); tag.textContent = opts.tag || ""; tag.classList.toggle("hidden", !opts.tag);
+    if (opts.tag) { tag.style.color = omen > 0 && oc[omen] !== "rainbow" ? oc[omen] : ""; tag.classList.toggle("rainbow-text", oc[omen] === "rainbow"); }
     $("tbTap").textContent = opts.tap || config.texts.tap;
     $("tbLines").innerHTML = lines.map(l => `<div>${l}</div>`).join("");
   }
@@ -251,7 +257,8 @@
       lines.push(colored(sfx + " " + (r.hint === "silent" ? "" : pickOne(T.rubble)), rarityColor(cat.rarity)));
       bigHtml = colored("·", rarityColor(0));
     } else {
-      const name = pickOne(mine.items[r.cat]);
+      const inVein = r.stateBefore === "bonus";
+      const name = pickOne((inVein && mine.veinItems && mine.veinItems[r.cat]) || mine.items[r.cat]);
       save.ores[name] = (save.ores[name] || 0) + 1;
       if (!save.dex[name]) { save.dex[name] = { count: 0, first: todayKey() }; newFind = true; }
       save.dex[name].count++;
@@ -267,19 +274,18 @@
     if (r.hint === "drip") lines.push(colored(T.hintDrip, sub));
     if (r.hint === "glow") lines.push(colored(T.hintGlow, "#ffe08a"));
 
-    // 事件文字
+    // 事件文字（不直接說出前兆／AT 等術語）
+    const enter = ["chanceStart", "fakeStart", "tenjou"];
     for (const e of r.events) {
-      if (e.t === "chanceStart") lines.push(colored(T.chanceStart, config.theme.accent));
-      if (e.t === "chanceLose") lines.push(colored(T.chanceLose, sub));
+      if (enter.includes(e.t)) lines.unshift(colored(T.omenEnter, config.theme.accent));
+      if ((e.t === "chanceLose" && !e.short) || e.t === "fakeEnd") lines.push(colored(T.chanceLose, sub));
       if (e.t === "directWin") lines.push(colored(T.directWin, "#ffaa00"));
-      if (e.t === "fakeEnd") lines.push(colored(T.fakeEnd, sub));
-      if (e.t === "bonusStart") { if (e.from === "tenjou") lines.push(colored(T.tenjouStart, sub)); lines.push(colored(T.bonusStart[e.type], TYPE_COLOR[e.type])); }
-      if (e.t === "stock" && e.shown) lines.push(colored(T.stock + " " + e.type, "rainbow"));
-      if (e.t === "upgrade" && e.shown) lines.push(colored(`${T.upgrade} ${e.from}→${e.to}`, "rainbow"));
+      if (e.t === "bonusStart") lines.push(colored(T.bonusStart[e.type], TYPE_COLOR[e.type]));
+      if (e.t === "stock" && e.shown) lines.push(colored(T.stock, "rainbow"));
+      if (e.t === "upgrade" && e.shown) lines.push(colored(`${T.upgrade} ${veinName(e.from)}→${veinName(e.to)}`, "rainbow"));
       if (e.t === "bonusChain") lines.push(colored((e.surprise ? T.bonusChainSurprise : T.bonusChain) + " " + T.bonusStart[e.type], TYPE_COLOR[e.type]));
-      if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　${e.chain}連　收穫 $${fmt(veinGain)}`, config.theme.accent));
+      if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　共${e.chain}脈　收穫 $${fmt(veinGain)}`, config.theme.accent));
     }
-    if (st.state === "chance" && !ev("chanceStart")) lines.push(colored(T.chanceGo, config.theme.accent));
 
     if (r.toolDrop) {
       const td = rules.toolDrop;
@@ -299,16 +305,34 @@
     }
 
     const boxOmen = (r.stateBefore === "bonus" && st.state === "bonus") ? (st.bonusType === "SBB" ? "vein" : 0) : Math.max(0, r.omen);
-    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink" });
+    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink", tag: r.inOmen && !ev("bonusStart") && !ev("chanceLose") && !ev("fakeEnd") ? T.omenTag : "" });
     const big = $("sceneBig");
     big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
     $("sceneSub").textContent = "";
     if (cat.rarity >= 4 || ev("bonusStart") || ev("bonusChain")) {
       const sc = $("scene"); sc.classList.remove("shake"); void sc.offsetWidth; sc.classList.add("shake");
     }
+    logRolls(r, ms.swings);
     renderMine();
     persist();
     return { r, broke, newFind, cat, st };
+  }
+
+  /* ---------------- 測試：抽選紀錄 ---------------- */
+  const pctText = (p, D) => (p * 100).toFixed(Math.max(0, Math.round(Math.log10(D)) - 2)) + "%";
+  function logRolls(r, swingNo) {
+    const box = $("rollLog");
+    box.classList.toggle("hidden", !save.debug.showRolls);
+    if (!save.debug.showRolls) return;
+    const list = r.rolls.filter(x => save.debug.showAllRolls || x.major);
+    if (!list.length) return;
+    const html = list.map(x => x.pick
+      ? `<div class="pk">・${x.label}｜1~${x.total} 抽出 ${x.n} → ${x.result}（${x.ranges.join("／")}）</div>`
+      : `<div class="${x.hit ? "hit" : "miss"}">・${x.label} ${pctText(x.p, x.D)}｜1~${x.D.toLocaleString("en-US")} 抽出 ${x.n.toLocaleString("en-US")}（≤${x.need.toLocaleString("en-US")} 當選）→ ${x.hit ? "當選" : "沒中"}</div>`).join("");
+    const div = document.createElement("div");
+    div.innerHTML = `<div class="sw">#${swingNo} 挖到 ${catDef(r.cat).name}</div>${html}`;
+    box.prepend(div);
+    while (box.children.length > 60) box.lastChild.remove();
   }
 
   /* ---------------- 自動模式 ---------------- */
@@ -380,7 +404,7 @@
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">天井 ${m.tenjou}｜需要 ${need ? need.name : "?"}以上${unlocked ? `｜本日 ${ms.swings}揮 AT${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">天井 ${m.tenjou}｜需要 ${need ? need.name : "?"}以上${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
   }
 
@@ -388,7 +412,7 @@
   function renderDex() {
     let got = 0, all = 0;
     $("dexList").innerHTML = config.mines.map(m => {
-      const cells = config.categories.filter(c => c.id !== "rubble").flatMap(c => (m.items[c.id] || []).map(n => {
+      const cells = config.categories.filter(c => c.id !== "rubble").flatMap(c => (m.items[c.id] || []).concat((m.veinItems || {})[c.id] || []).map(n => {
         all++; const d = save.dex[n]; if (d) got++;
         return d ? `<div class="dex-cell"><div style="color:${rarityColor(c.rarity)}">${n}</div><div class="n">×${d.count}</div></div>`
                  : `<div class="dex-cell"><div style="color:${rarityColor(0)}">？？？</div><div class="n">${config.rarities[c.rarity].name}</div></div>`;

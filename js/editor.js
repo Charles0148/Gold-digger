@@ -191,7 +191,7 @@
   /* ================= 文字 ================= */
   function tabTexts(body) {
     const T = draft.texts;
-    const single = [["chanceStart", "連續演出開始"], ["chanceGo", "連續演出中"], ["chanceLose", "演出失敗"], ["directWin", "金礦直擊"], ["tenjouStart", "天井"], ["stock", "連莊告知"], ["upgrade", "升格告知"], ["bonusChain", "連莊揭曉"], ["bonusChainSurprise", "最後一揮才揭曉"], ["bonusEnd", "AT 結束"], ["fakeEnd", "假前兆結束"], ["koukakuHint", "高確暗示"], ["hintSfx", "違和感：音效"], ["hintDrip", "違和感：水滴"], ["hintGlow", "違和感：紋路"], ["hintTap", "違和感：點擊提示"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
+    const single = [["omenTag", "地鳴標籤"], ["omenEnter", "地鳴開始"], ["chanceLose", "地鳴平息"], ["directWin", "金礦直擊"], ["stock", "礦脈延伸告知"], ["upgrade", "礦脈變粗告知"], ["bonusChain", "礦脈延伸揭曉"], ["bonusChainSurprise", "最後一揮才揭曉"], ["bonusEnd", "礦脈結束"], ["koukakuHint", "高確暗示"], ["hintSfx", "違和感：音效"], ["hintDrip", "違和感：水滴"], ["hintGlow", "違和感：紋路"], ["hintTap", "違和感：點擊提示"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
     body.innerHTML = `
       <div class="ed-note">多行欄位：一行一個，遊戲會隨機挑一句。</div>
       <div class="ed-sec">揮擊音效字</div><textarea rows="3" data-p="texts.swing" data-lines>${T.swing.join("\n")}</textarea>
@@ -200,11 +200,13 @@
       ${T.omenLine.map((l, i) => `<div class="ed-row"><label>${draft.rules.omen.names[i]}</label><input type="text" data-p="texts.omenLine.${i}" value="${esc(l)}"></div>`).join("")}
       <div class="ed-sec">事件文字</div>
       ${single.map(([k, n]) => `<div class="ed-row"><label>${n}</label><input type="text" data-p="texts.${k}" value="${esc(T[k])}"></div>`).join("")}
-      ${["RB", "BB", "SBB"].map(k => `<div class="ed-row"><label>${k} 開始</label><input type="text" data-p="texts.bonusStart.${k}" value="${esc(T.bonusStart[k])}"></div>`).join("")}
+      ${["RB", "BB", "SBB"].map(k => `<div class="ed-row"><label>${k} 名稱</label><input type="text" data-p="texts.veinName.${k}" value="${esc((T.veinName || {})[k])}"></div><div class="ed-row"><label>${k} 開始</label><input type="text" data-p="texts.bonusStart.${k}" value="${esc(T.bonusStart[k])}"></div>`).join("")}
       <div class="ed-sec">礦坑與礦石名稱（名稱不可重複）</div>
       ${draft.mines.map((m, mi) => `<div class="ed-row"><label>礦坑${mi + 1}</label><input type="text" data-p="mines.${mi}.name" value="${esc(m.name)}"></div>
         ${draft.categories.filter(c => c.id !== "rubble").map(c => `<div class="ed-row"><label style="color:${draft.rarities[c.rarity].color}">　${c.name}</label>
-          <input type="text" data-p="mines.${mi}.items.${c.id}" data-csv value="${esc((m.items[c.id] || []).join("、"))}"></div>`).join("")}`).join("")}
+          <input type="text" data-p="mines.${mi}.items.${c.id}" data-csv value="${esc((m.items[c.id] || []).join("、"))}"></div>
+          <div class="ed-row"><label style="color:${draft.rarities[c.rarity].color}">　礦脈中</label>
+          <input type="text" data-p="mines.${mi}.veinItems.${c.id}" data-csv value="${esc(((m.veinItems || {})[c.id] || []).join("、"))}"></div>`).join("")}`).join("")}
       <div class="ed-sec">工具名稱</div>
       ${draft.tools.map((t, i) => `<div class="ed-row"><label>第${t.tier}階</label><input type="text" data-p="tools.${i}.name" value="${esc(t.name)}"></div>`).join("")}`;
     bindP(body);
@@ -218,14 +220,14 @@
   const LABEL = {
     itemTable: "① 小役機率（通常／高確／連續演出／前兆，碎石=剩下）", gold: "② 金礦（強機會牌）", purple: "③ 紫礦（機會牌）", other: "④ 其他小役進入連續演出",
     chance: "⑤ 連續演出中每揮的 AT 當選率", bonusDraw: "⑥ 當選時 RB/BB/SBB 權重", bonus: "⑦ AT", bonusTable: "⑧ AT 中的小役機率",
-    koukaku: "⑨ 高確", zencho: "天井後前兆長度", fakeZencho: "假前兆", hints: "⑩ 違和感暗示", omen: "期待度顏色權重",
+    koukaku: "⑨ 高確", zencho: "天井後前兆長度", fakeZencho: "假前兆", hints: "⑩ 違和感暗示", omen: "⑪ 期待度顏色（地鳴中）權重",
     toolDrop: "工具掉落", settingDist: "每日設定分配比例", adDailyLimit: "每日廣告次數",
     common: "普通", good: "綠(Replay)", rare: "藍(Bell)", epic: "紫(機會)", legend: "金(強機會)", rubble: "碎石",
     direct: "直擊 AT 率", normal: "通常", koukaku_: "高確", lenWeights: "演出長度權重", base: "基本當選率", epicAdd: "挖到紫＋", legendAdd: "挖到金＋",
     first: "一般當選", fromEpic: "發展中靠紫", fromLegend: "靠金礦", next: "連莊下一隻",
     length: "長度(揮)", continue: "金礦連莊率", upgrade: "升格率", RBtoBB: "RB→BB", BBtoSBB: "BB→SBB", announceRate: "當下告知機率",
     enter: "進入高確率", drop: "每揮轉落率", min: "最短", max: "最長", rate: "確定後每揮出現率", weights: "各暗示權重",
-    RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLose: "發展(未當選)", chanceWin: "發展(已當選)", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
+    RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLose: "連續演出(未當選)", chanceWin: "連續演出(已當選)", zencho_: "前兆", sbbRainbow: "SBB出彩色機率", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
     autoInterval: "自動間隔(ms)", autoStopOmen: "自動停止期待度(0~5)"
   };
   const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (LABEL[k] || k);
@@ -260,8 +262,8 @@
       <div class="ed-note">機率用小數：0.01 = 1%。權重是相對比例。改完到「模擬」分頁跑一次，確認初當與機械割。</div>
       ${numTree(draft.rules, "rules", "", 0)}
       <div class="ed-sec">自動模式</div>${numTree(draft.play, "play", "", 1)}
-      <div class="ed-sec">小役售價（第1層基準）</div>
-      ${draft.categories.map((c, i) => field(c.name, `categories.${i}.value`)).join("")}
+      <div class="ed-sec">小役售價（第1層基準）：平常 ／ 礦脈中</div>
+      ${draft.categories.map((c, i) => field(c.name + " 平常", `categories.${i}.value`) + field(c.name + " 礦脈中", `categories.${i}.veinValue`)).join("")}
       <div class="ed-sec">工具</div><div class="ed-scroll"><table class="ed-table"><tr><th>工具</th><th>耐久</th><th>價格</th></tr>
         ${draft.tools.map((t, i) => `<tr><th>${t.name}</th><td><input type="number" data-n="tools.${i}.durability" value="${t.durability}"></td><td><input type="number" data-n="tools.${i}.price" value="${t.price}"></td></tr>`).join("")}</table></div>
       ${field("升級上限", "upgrade.maxLevel")}${field("升級費用倍率", "upgrade.costMul")}${field("每級耐久加成", "upgrade.durabilityPerLv")}${field("每級售價加成", "upgrade.valuePerLv")}
@@ -327,6 +329,8 @@
       <div class="ed-note">把下載的 json 放進「挖礦遊戲」資料夾，告訴 Claude「套用設定檔」，就會寫回正式程式。</div>
       <div class="ed-sec">測試工具</div>
       <div class="ed-row"><label>顯示設定/狀態</label><input type="checkbox" id="dbgShow" ${S.debug.showSetting ? "checked" : ""}></div>
+      <div class="ed-row"><label>顯示抽選數字</label><input type="checkbox" id="dbgRolls" ${S.debug.showRolls ? "checked" : ""}></div>
+      <div class="ed-row"><label>包含小抽選</label><input type="checkbox" id="dbgRollsAll" ${S.debug.showAllRolls ? "checked" : ""}> <span class="ed-note" style="margin:0">假地鳴、高確轉落、普通礦進高確等每揮都會抽的項目</span></div>
       <div class="ed-row"><label>強制設定</label><select id="dbgForce"><option value="0">不強制（每日隨機）</option>${[1, 2, 3, 4, 5, 6].map(s => `<option value="${s}" ${S.debug.forceSetting === s ? "selected" : ""}>設定${s}</option>`).join("")}</select></div>
       <div class="ed-flex"><button class="ed-btn" id="dbgCoin">+$10,000</button><button class="ed-btn" id="dbgTools">每種工具各+1</button><button class="ed-btn" id="dbgUnlock">解鎖全部礦坑</button></div>
       <div class="ed-sec">玩家存檔</div>
@@ -341,6 +345,8 @@
     $b("cfgUp").onchange = e => readJson(e.target.files[0], j => { draft = j; commit(); G.toast("已匯入設定"); render(); });
     $b("cfgReset").onclick = () => { if (confirm("還原所有設定（版面、顏色、圖片、文字、數值）？")) { G.resetConfig(); draft = clone(G.config); render(); } };
     $b("dbgShow").onchange = e => { S.debug.showSetting = e.target.checked; G.persist(true); G.renderAll(); };
+    $b("dbgRolls").onchange = e => { S.debug.showRolls = e.target.checked; G.persist(true); G.renderAll(); };
+    $b("dbgRollsAll").onchange = e => { S.debug.showAllRolls = e.target.checked; G.persist(true); };
     $b("dbgForce").onchange = e => { S.debug.forceSetting = +e.target.value; G.persist(true); G.renderAll(); };
     $b("dbgCoin").onclick = () => { S.coins += 10000; G.persist(true); G.renderAll(); };
     $b("dbgTools").onclick = () => {

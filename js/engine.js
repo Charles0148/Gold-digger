@@ -30,18 +30,47 @@
   }
   const pickType = (w, rng) => TYPES[pickWeighted(TYPES.map(t => w[t] || 0), rng)];
 
+  /* ---------- 抽選紀錄（測試用：顯示每次抽選的機率與抽出的數字） ---------- */
+  const CAT_NAME = { rubble: "碎石", common: "普通", good: "綠", rare: "藍", epic: "紫", legend: "金" };
+  function denom(p) { let D = 100; while (D < 1e8 && Math.abs(p * D - Math.round(p * D)) > 1e-7) D *= 10; return D; }
+  // 機率抽選：p 例如 0.3 → 在 1~100 抽一個數字，≤30 當選
+  function roll(res, rng, label, p, major) {
+    const r = rng(), hit = r < p;
+    if (res) { const D = denom(p); res.rolls.push({ label, p, D, n: Math.floor(r * D) + 1, need: Math.round(p * D), hit, major: !!major || hit }); }
+    return hit;
+  }
+  // 權重抽選：例如 RB60/BB39/SBB1 → 在 1~100 抽一個數字
+  function rollPick(res, rng, label, names, weights) {
+    const total = weights.reduce((a, b) => a + b, 0);
+    const r = rng(); let x = r * total, i = 0;
+    for (; i < weights.length; i++) { if ((x -= weights[i]) < 0) break; }
+    if (i >= weights.length) i = weights.length - 1;
+    if (res) {
+      let lo = 1; const ranges = names.map((nm, k) => { const hi = lo + weights[k] - 1; const t = `${nm} ${lo}~${hi}`; lo = hi + 1; return weights[k] > 0 ? t : null; }).filter(Boolean);
+      res.rolls.push({ label, pick: true, total, n: Math.floor(r * total) + 1, result: names[i], ranges, major: true });
+    }
+    return i;
+  }
+  const rollType = (res, rng, label, w) => TYPES[rollPick(res, rng, label, TYPES, TYPES.map(t => w[t] || 0))];
+
   function newPlayState() {
     return {
       state: "normal", base: "normal", sinceHit: 0,
       chanceLeft: 0, pending: null,          // 連續演出
       zenchoLeft: 0, zenchoType: null,       // 前兆
       fakeLeft: 0,                           // 假前兆
-      bonusType: null, bonusLeft: 0, stock: [], chain: 0
+      bonusType: null, bonusLeft: 0, stock: [], chain: 0,
+      rbLeft: -1, rbOn: false                // 彩色演出（確定 SBB）倒數
     };
   }
 
   function startBonus(rules, st, type) {
     st.state = "bonus"; st.bonusType = type; st.bonusLeft = rules.bonus.length[type];
+  }
+  // 抽到 SBB 時，以 sbbRainbow 機率決定「之後某一揮突然變彩色」
+  function setRainbow(rules, st, type, remaining, rng, res) {
+    st.rbOn = false;
+    st.rbLeft = (type === "SBB" && roll(res, rng, "星辰礦脈→彩色演出", rules.omen.sbbRainbow, true)) ? randInt(rng, 0, Math.max(0, remaining - 1)) : -1;
   }
   // 違和感 = 確定演出：只在「已確定當選 AT」或「已確定連莊（尚未告知）」時出現
   function pickHint(rules, key, rng) {
@@ -61,7 +90,7 @@
     rng = rng || Math.random;
     tenjou = tenjou || 800;
     const s = Math.min(5, Math.max(0, setting - 1));
-    const res = { events: [], stateBefore: st.state, cat: "rubble", omen: 0, omenKey: "normal", hint: null, win: false, toolDrop: false };
+    const res = { rolls: [], events: [], stateBefore: st.state, cat: "rubble", omen: 0, omenKey: "normal", hint: null, win: false, toolDrop: false };
 
     /* ================= AT 中 ================= */
     if (st.state === "bonus") {
@@ -77,16 +106,16 @@
         if (last && last.type !== "SBB") {
           // 已確定下一隻 → 抽升格（RB→BB 較易、BB→SBB 較難）
           const p = last.type === "RB" ? B.upgrade.RBtoBB[s] : B.upgrade.BBtoSBB[s];
-          if (rng() < p) {
+          if (roll(res, rng, `礦脈中金礦→升格 ${last.type}→${last.type === "RB" ? "BB" : "SBB"}`, p, true)) {
             const from = last.type;
             last.type = last.type === "RB" ? "BB" : "SBB";
-            const shown = rng() < B.announceRate;
+            const shown = roll(res, rng, "升格→當下告知", B.announceRate);
             if (shown) last.announced = true;
             res.events.push({ t: "upgrade", from, to: last.type, shown });
           }
-        } else if (rng() < B.continue[type][s]) {
-          const shown = rng() < B.announceRate;
-          const next = { type: pickType(rules.bonusDraw.next, rng), announced: shown };
+        } else if (roll(res, rng, `礦脈中金礦→延伸（${type}中）`, B.continue[type][s], true)) {
+          const shown = roll(res, rng, "延伸→當下告知", B.announceRate);
+          const next = { type: rollType(res, rng, "延伸的下一隻", rules.bonusDraw.next), announced: shown };
           st.stock.push(next);
           res.events.push({ t: "stock", type: next.type, shown });
         }
@@ -131,9 +160,10 @@
       st.sinceHit++;
       if (!st.pending) {
         const p = C.base[s] + (res.cat === "epic" ? C.epicAdd[s] : 0) + (res.cat === "legend" ? C.legendAdd[s] : 0);
-        if (rng() < p) {
+        if (roll(res, rng, `連續演出中（挖到${CAT_NAME[res.cat]}）→當選`, Math.min(1, p), true)) {
           const table = res.cat === "legend" ? rules.bonusDraw.fromLegend : res.cat === "epic" ? rules.bonusDraw.fromEpic : rules.bonusDraw.first;
-          st.pending = pickType(table, rng);
+          st.pending = rollType(res, rng, "當選種類", table);
+          setRainbow(rules, st, st.pending, st.chanceLeft, rng, res);
           res.win = true;
         }
       }
@@ -159,21 +189,22 @@
 
       if (res.cat === "legend") {
         // 金礦（強機會牌）：直擊 → 否則抽連續演出長度
-        if (rng() < rules.gold.direct[mode][s]) {
-          const type = pickType(rules.bonusDraw.fromLegend, rng);
+        if (roll(res, rng, `金礦→直擊（${mode === "koukaku" ? "高確" : "通常"}）`, rules.gold.direct[mode][s], true)) {
+          const type = rollType(res, rng, "當選種類", rules.bonusDraw.fromLegend);
           st.state = "zencho"; st.zenchoLeft = 1; st.zenchoType = type; st.zenchoFrom = "direct";
+          setRainbow(rules, st, type, 2, rng, res);
           res.win = true; res.events.push({ t: "directWin" });
           res.omenKey = "zencho"; started = true;
         } else {
-          const len = 1 + pickWeighted(rules.gold.lenWeights, rng);
+          const len = 1 + rollPick(res, rng, "金礦→演出長度", ["1揮", "2揮", "3揮", "4揮", "5揮"], rules.gold.lenWeights);
           if (len === 1) { res.events.push({ t: "chanceLose", short: true }); }
           else { st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null; res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLose"; }
         }
       } else {
         // 紫礦與其他：有機率進入連續演出
         const p = res.cat === "epic" ? rules.purple.chance[mode][s] : rules.other.chance[mode][s];
-        if (rng() < p) {
-          const len = 2 + pickWeighted(rules.purple.lenWeights, rng);
+        if (roll(res, rng, `${CAT_NAME[res.cat]}→連續演出（${mode === "koukaku" ? "高確" : "通常"}）`, p, res.cat === "epic")) {
+          const len = 2 + rollPick(res, rng, "演出長度", ["2揮", "3揮", "4揮", "5揮"], rules.purple.lenWeights);
           st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null;
           res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLose";
         }
@@ -182,19 +213,21 @@
       if (!started && st.sinceHit >= tenjou) {
         // 天井：進入前兆（不會直接開）
         st.state = "zencho"; st.zenchoLeft = randInt(rng, rules.zencho.min, rules.zencho.max);
-        st.zenchoType = pickType(rules.bonusDraw.first, rng); st.zenchoFrom = "tenjou";
+        res.rolls.push({ label: `天井 ${tenjou} 到達`, p: 1, D: 100, n: 1, need: 100, hit: true, major: true });
+        st.zenchoType = rollType(res, rng, "當選種類", rules.bonusDraw.first); st.zenchoFrom = "tenjou";
+        setRainbow(rules, st, st.zenchoType, st.zenchoLeft + 1, rng, res);
         res.win = true; res.events.push({ t: "tenjou" }); res.omenKey = "zencho"; started = true;
       }
 
       if (!started) {
         if (mode === "normal") {
-          if (rng() < rules.koukaku.enter[res.cat][s]) { st.state = "koukaku"; res.events.push({ t: "toKoukaku" }); }
-        } else if (rng() < rules.koukaku.drop) st.state = "normal";
+          if (roll(res, rng, `${CAT_NAME[res.cat]}→高確`, rules.koukaku.enter[res.cat][s], res.cat === "rare" || res.cat === "epic")) { st.state = "koukaku"; res.events.push({ t: "toKoukaku" }); }
+        } else if (roll(res, rng, "高確→轉落", rules.koukaku.drop)) st.state = "normal";
 
         if (st.fakeLeft > 0) {
           st.fakeLeft--; res.omenKey = "fake";
           if (st.fakeLeft === 0) res.events.push({ t: "fakeEnd" });
-        } else if (rng() < rules.fakeZencho[mode]) {
+        } else if (roll(res, rng, "假地鳴", rules.fakeZencho[mode])) {
           st.fakeLeft = randInt(rng, rules.fakeZencho.min, rules.fakeZencho.max);
           res.omenKey = "fake"; res.events.push({ t: "fakeStart" });
         } else {
@@ -203,7 +236,15 @@
       } else st.fakeLeft = 0;
     }
 
-    res.omen = pickWeighted(rules.omen[res.omenKey], rng);
+    // 期待度顏色：只在地鳴（前兆／連續演出／假前兆）中抽選；彩色 = 確定 SBB（抽選出現）
+    res.inOmen = ["zencho", "chanceWin", "chanceLose", "fake"].includes(res.omenKey);
+    if (!res.inOmen) res.omen = 0;
+    else {
+      res.omen = pickWeighted(rules.omen[res.omenKey], rng);
+      if (st.rbLeft === 0) st.rbOn = true; else if (st.rbLeft > 0) st.rbLeft--;
+      if (st.rbOn) res.omen = 5;
+    }
+    if (st.state !== "zencho" && st.state !== "chance") { st.rbLeft = -1; st.rbOn = false; }
     res.stateAfter = st.state;
     return res;
   }
@@ -218,7 +259,8 @@
     const mine = config.mines[mineIndex || 0];
     const tool = config.tools.find(t => t.tier === mine.tier) || config.tools[0];
     const costPerSwing = tool.price / tool.durability;
-    const catValue = {}; config.categories.forEach(c => catValue[c.id] = c.value * mine.mult);
+    const catValue = {}, veinValue = {};
+    config.categories.forEach(c => { catValue[c.id] = c.value * mine.mult; veinValue[c.id] = (c.veinValue ?? c.value) * mine.mult; });
 
     const st = newPlayState();
     const stat = {
@@ -231,7 +273,7 @@
 
     for (let i = 0; i < n; i++) {
       const r = swing(rules, setting, st, rng, mine.tenjou);
-      const v = catValue[r.cat];
+      const v = r.stateBefore === "bonus" ? veinValue[r.cat] : catValue[r.cat];
       stat.cats[r.cat]++; stat.income += v;
       if (r.stateBefore === "bonus") { stat.bonusSwings++; stat.bonusIncome += v; }
       else stat.catsNormal[r.cat]++;
@@ -245,7 +287,7 @@
         if (e.t === "bonusEnd") stat.chains.push(e.chain);
         if (e.t === "chanceStart") stat.chanceStarts++;
       }
-      if (r.omen >= 0 && r.omenKey) {
+      if (r.inOmen) {
         stat.omen[r.omen].shown++;
         if (r.omenKey === "zencho" || r.omenKey === "chanceWin") stat.omen[r.omen].real++;
       }
