@@ -107,6 +107,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   0% { color: #ff5555; } 17% { color: #ffaa00; } 33% { color: #ffff55; }
   50% { color: #55ff55; } 67% { color: #55aaff; } 83% { color: #d070ff; }
 }
+.tb-tag { position: absolute; top: -12px; left: 10px; background: #101014; padding: 0 6px; font-size: .75em; color: var(--accent); animation: blink 1.2s steps(2) 2; }
 #tbLines div { line-height: 1.55; min-height: 1.55em; }
 .tb-tap { position: absolute; right: 10px; bottom: 4px; font-size: .75em; color: var(--sub); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
@@ -115,6 +116,12 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .tool-info { flex: 1; padding: 6px 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .85em; }
 .bar { height: 10px; background: #000; border: 2px solid #000; }
 .bar-fill { height: 100%; background: #55ff55; width: 0; }
+
+/* ===== 測試：抽選紀錄 ===== */
+.roll-log { max-height: 140px; overflow-y: auto; background: #07070a; border: 2px solid #ff4fd8; padding: 4px 6px;
+  font-family: ui-monospace, monospace; font-size: 11px; line-height: 1.45; user-select: text; flex: none; }
+.roll-log .sw { color: #ff4fd8; margin-top: 3px; }
+.roll-log .hit { color: #55ff55; } .roll-log .miss { color: #8a8a8a; } .roll-log .pk { color: #ffe14d; }
 
 /* ===== 列表面板 ===== */
 .panel { padding: 10px; }
