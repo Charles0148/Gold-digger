@@ -51,6 +51,20 @@
     }
     return i;
   }
+  // 小役抽選紀錄（每揮抽出的礦石）
+  function rollCat(res, rng, label, table, s, major) {
+    const order = ["legend", "epic", "rare", "good", "common"];
+    const r = rng(); let acc = 0, cat = "rubble";
+    for (const c of order) { acc += table[c][s]; if (r < acc) { cat = c; break; } }
+    if (res) {
+      const D = Math.min(1e6, Math.max(...order.map(c => denom(table[c][s]))));
+      let lo = 1; const ranges = [];
+      for (const c of order) { const w = Math.round(table[c][s] * D); if (w > 0) { ranges.push(`${CAT_NAME[c]} ${lo}~${lo + w - 1}`); lo += w; } }
+      if (lo <= D) ranges.push(`碎石 ${lo}~${D}`);
+      res.rolls.push({ label, pick: true, total: D, n: Math.floor(r * D) + 1, result: CAT_NAME[cat], ranges, major: !!major });
+    }
+    return cat;
+  }
   const rollType = (res, rng, label, w) => TYPES[rollPick(res, rng, label, TYPES, TYPES.map(t => w[t] || 0))];
 
   function newPlayState() {
@@ -96,7 +110,7 @@
     if (st.state === "bonus") {
       const type = st.bonusType;
       res.bonusType = type;
-      res.cat = pickCategory(rules.bonusTable[type], s, rng);
+      res.cat = rollCat(res, rng, `礦脈中（${type} 剩${st.bonusLeft}揮）挖到`, rules.bonusTable[type], s, true);
       res.toolDrop = rng() < rules.toolDrop.bonus;
       res.omen = -1; res.omenKey = null;
 
@@ -113,7 +127,15 @@
             if (shown) last.announced = true;
             res.events.push({ t: "upgrade", from, to: last.type, shown });
           }
-        } else if (roll(res, rng, `礦脈中金礦→延伸（${type}中）`, B.continue[type][s], true)) {
+        }
+      }
+      // 每一揮都抽「延伸」：還沒確定下一隻時才抽；基本機率＋挖到稀有礦的加成
+      // 連到第 boostAfter 隻（含）之後改用 high 表（通過率大幅提升、稀有礦影響更高）
+      if (!st.stock.length) {
+        const CT = rules.bonus.cont, hi = st.chain >= CT.boostAfter, T = hi ? CT.high : CT.low;
+        const p = Math.min(1, T.base[type][s] + ((T.add[res.cat] || [])[s] || 0));
+        if (roll(res, rng, `礦脈延伸抽選（第${st.chain}隻 ${type}${hi ? "・加強" : ""}，挖到${CAT_NAME[res.cat]}）`, p, true)) {
+          const B = rules.bonus;
           const shown = roll(res, rng, "延伸→當下告知", B.announceRate);
           const next = { type: rollType(res, rng, "延伸的下一隻", rules.bonusDraw.next), announced: shown };
           st.stock.push(next);
@@ -127,6 +149,7 @@
 
       st.bonusLeft--;
       if (st.bonusLeft <= 0) {
+        res.rolls.push({ label: `礦脈最後一揮：已確定延伸 ${st.stock.length} 隻` + (st.stock.length ? `（下一隻 ${st.stock[0].type}）→ 延伸` : " → 結束"), info: true, major: true });
         if (st.stock.length) {
           const next = st.stock.shift();
           st.chain++;
@@ -142,7 +165,7 @@
     }
 
     /* ================= 通常 / 高確 / 連續演出 / 前兆 ================= */
-    res.cat = pickCategory(rules.itemTable, s, rng);
+    res.cat = rollCat(res, rng, "挖到", rules.itemTable, s, false);
     res.toolDrop = rng() < rules.toolDrop.normal;
     const C = rules.chance;
 
@@ -158,8 +181,10 @@
       }
     } else if (st.state === "chance") {
       st.sinceHit++;
+      let chanceP = 0;
       if (!st.pending) {
         const p = C.base[s] + (res.cat === "epic" ? C.epicAdd[s] : 0) + (res.cat === "legend" ? C.legendAdd[s] : 0);
+        chanceP = p;
         if (roll(res, rng, `連續演出中（挖到${CAT_NAME[res.cat]}）→當選`, Math.min(1, p), true)) {
           const table = res.cat === "legend" ? rules.bonusDraw.fromLegend : res.cat === "epic" ? rules.bonusDraw.fromEpic : rules.bonusDraw.first;
           st.pending = rollType(res, rng, "當選種類", table);
@@ -167,7 +192,8 @@
           res.win = true;
         }
       }
-      res.omenKey = st.pending ? "chanceWin" : "chanceLose";
+      // 期待度依「這一揮實際抽選的機率」決定：沒當選時，機率高才可能出高色
+      res.omenKey = st.pending ? "chanceWin" : (chanceP >= rules.omen.highP ? "chanceHigh" : "chanceLow");
       res.hint = st.pending ? pickHint(rules, st.pending, rng) : null;
       st.chanceLeft--;
       if (st.chanceLeft <= 0) {
@@ -198,7 +224,7 @@
         } else {
           const len = 1 + rollPick(res, rng, "金礦→演出長度", ["1揮", "2揮", "3揮", "4揮", "5揮"], rules.gold.lenWeights);
           if (len === 1) { res.events.push({ t: "chanceLose", short: true }); }
-          else { st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null; res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLose"; }
+          else { st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null; res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceHigh"; }
         }
       } else {
         // 紫礦與其他：有機率進入連續演出
@@ -206,7 +232,7 @@
         if (roll(res, rng, `${CAT_NAME[res.cat]}→連續演出（${mode === "koukaku" ? "高確" : "通常"}）`, p, res.cat === "epic")) {
           const len = 2 + rollPick(res, rng, "演出長度", ["2揮", "3揮", "4揮", "5揮"], rules.purple.lenWeights);
           st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null;
-          res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLose";
+          res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLow";
         }
       }
 
@@ -237,7 +263,7 @@
     }
 
     // 期待度顏色：只在地鳴（前兆／連續演出／假前兆）中抽選；彩色 = 確定 SBB（抽選出現）
-    res.inOmen = ["zencho", "chanceWin", "chanceLose", "fake"].includes(res.omenKey);
+    res.inOmen = ["zencho", "chanceWin", "chanceHigh", "chanceLow", "fake"].includes(res.omenKey);
     if (!res.inOmen) res.omen = 0;
     else {
       res.omen = pickWeighted(rules.omen[res.omenKey], rng);

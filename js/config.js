@@ -22,11 +22,11 @@
     // value = 平常挖到的基本售價；veinValue = 礦脈中挖到「脈晶」的基本售價（都 × 礦坑倍率）
     categories: [
       { id: "rubble", name: "碎石", rarity: 0, value: 0, veinValue: 0 },
-      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.4 },
-      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4 },
-      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8 },
-      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 20 },
-      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 48 }
+      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.47 },
+      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4.12 },
+      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8.24 },
+      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 20.6 },
+      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 49.44 }
     ],
 
     rules: {
@@ -71,10 +71,19 @@
       /* ⑦ AT */
       bonus: {
         length: { RB: 15, BB: 60, SBB: 100 },
-        continue: {                                // AT 中挖到金礦 → 抽一次連莊
-          RB: [0.78, 0.789, 0.798, 0.807, 0.816, 0.834],
-          BB: [0.78, 0.789, 0.798, 0.807, 0.816, 0.834],
-          SBB: [0.88, 0.88, 0.889, 0.898, 0.907, 0.916]
+        /* 延伸（連莊）抽選：礦脈中每一揮都抽，直到確定下一隻為止
+           p = base[種類][設定] + add[挖到的小役][設定]
+           一條礦脈從頭到尾「至少抽中一次」的機率 = 通過率 */
+        cont: {
+          boostAfter: 5,            // 連到第 5 隻（含）之後改用 high
+          low: {
+            base: { RB: [0.01676, 0.01732, 0.01792, 0.0185, 0.01911, 0.01971], BB: [0.00404, 0.00415, 0.00429, 0.00441, 0.00455, 0.00468], SBB: [0, 0, 0, 0, 0, 0] },
+            add: { rare: [0.003, 0.0031, 0.0031, 0.0032, 0.0032, 0.0033], epic: [0.03, 0.0306, 0.0312, 0.0318, 0.0324, 0.033], legend: [0.25, 0.255, 0.26, 0.265, 0.27, 0.275] }
+          },
+          high: {
+            base: { RB: [0.03994, 0.04162, 0.0434, 0.04523, 0.04717, 0.04916], BB: [0.0084, 0.00886, 0.00937, 0.00991, 0.0105, 0.01111], SBB: [0, 0, 0, 0, 0, 0] },
+            add: { rare: [0.01, 0.0102, 0.0103, 0.0105, 0.0106, 0.0108], epic: [0.08, 0.0813, 0.0826, 0.0838, 0.0851, 0.0864], legend: [0.5, 0.508, 0.516, 0.524, 0.532, 0.54] }
+          }
         },
         upgrade: {                                 // 已有下一隻時再挖到金礦 → 抽升格
           RBtoBB: [0.5, 0.5, 0.518, 0.536, 0.554, 0.59],
@@ -124,10 +133,12 @@
         colors: ["#e8e8e8", "#4f9dff", "#ffe14d", "#4cff6a", "#ff4d4d", "rainbow"],
         normal: [1, 0, 0, 0, 0, 0],
         koukaku: [1, 0, 0, 0, 0, 0],
-        fake: [0, 55, 30, 12, 3, 0],
-        chanceLose: [0, 45, 32, 17, 6, 0],
-        chanceWin: [0, 12, 22, 33, 33, 0],
-        zencho: [0, 15, 25, 32, 28, 0],
+        fake: [0, 80, 20, 0, 0, 0],          // 假地鳴：沒有任何抽選 → 只出低色
+        chanceLow: [0, 55, 35, 10, 0, 0],    // 連續演出中、這一揮當選率低（< highP）且沒中
+        chanceHigh: [0, 10, 25, 40, 25, 0],  // 連續演出中、這一揮當選率高（≥ highP，例如挖到紫／金）但沒中
+        chanceWin: [0, 5, 15, 35, 45, 0],    // 連續演出中已當選
+        zencho: [0, 10, 20, 35, 35, 0],      // 確定的前兆（天井、直擊）
+        highP: 0.30,
         sbbRainbow: 0.40
       },
 

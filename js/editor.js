@@ -225,9 +225,9 @@
     common: "普通", good: "綠(Replay)", rare: "藍(Bell)", epic: "紫(機會)", legend: "金(強機會)", rubble: "碎石",
     direct: "直擊 AT 率", normal: "通常", koukaku_: "高確", lenWeights: "演出長度權重", base: "基本當選率", epicAdd: "挖到紫＋", legendAdd: "挖到金＋",
     first: "一般當選", fromEpic: "發展中靠紫", fromLegend: "靠金礦", next: "連莊下一隻",
-    length: "長度(揮)", continue: "金礦連莊率", upgrade: "升格率", RBtoBB: "RB→BB", BBtoSBB: "BB→SBB", announceRate: "當下告知機率",
+    length: "長度(揮)", cont: "延伸（連莊）抽選", boostAfter: "第幾隻起加強", low: "第1～4隻", high: "加強後", add: "挖到稀有礦加成", upgrade: "升格率", RBtoBB: "RB→BB", BBtoSBB: "BB→SBB", announceRate: "當下告知機率",
     enter: "進入高確率", drop: "每揮轉落率", min: "最短", max: "最長", rate: "確定後每揮出現率", weights: "各暗示權重",
-    RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLose: "連續演出(未當選)", chanceWin: "連續演出(已當選)", zencho_: "前兆", sbbRainbow: "SBB出彩色機率", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
+    RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLow: "連續演出(低機率沒中)", chanceHigh: "連續演出(高機率沒中)", highP: "高機率門檻", chanceWin: "連續演出(已當選)", zencho_: "前兆", sbbRainbow: "SBB出彩色機率", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
     autoInterval: "自動間隔(ms)", autoStopOmen: "自動停止期待度(0~5)"
   };
   const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (LABEL[k] || k);

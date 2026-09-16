@@ -326,7 +326,7 @@
     if (!save.debug.showRolls) return;
     const list = r.rolls.filter(x => save.debug.showAllRolls || x.major);
     if (!list.length) return;
-    const html = list.map(x => x.pick
+    const html = list.map(x => x.info ? `<div class="pk">・${x.label}</div>` : x.pick
       ? `<div class="pk">・${x.label}｜1~${x.total} 抽出 ${x.n} → ${x.result}（${x.ranges.join("／")}）</div>`
       : `<div class="${x.hit ? "hit" : "miss"}">・${x.label} ${pctText(x.p, x.D)}｜1~${x.D.toLocaleString("en-US")} 抽出 ${x.n.toLocaleString("en-US")}（≤${x.need.toLocaleString("en-US")} 當選）→ ${x.hit ? "當選" : "沒中"}</div>`).join("");
     const div = document.createElement("div");
