@@ -104,16 +104,16 @@
       zencho: { min: 3, max: 8 },                                  // 天井後的前兆長度
       fakeZencho: { normal: 0.004, koukaku: 0.02, min: 2, max: 6 }, // 假前兆（ガセ）
 
-      /* ⑩ 違和感暗示：前兆／連續演出中出現 */
+      /* ⑩ 違和感（確定演出）：只在已確定 AT（前兆／連續演出）或已確定連莊但尚未告知時出現
+            出現 = 確定；暗示的種類則偏向 RB / BB / SBB */
       hints: {
-        rate: 0.40, fakeRate: 0.12,
+        rate: 0.35,
         ids: ["sfx", "drip", "glow", "tap", "silent", "blink"],
         //          sfx  drip glow tap silent blink
         weights: {
           RB:   [30, 40, 5, 10, 5, 10],
           BB:   [20, 5, 35, 25, 5, 10],
-          SBB:  [5, 0, 20, 15, 35, 25],
-          fake: [45, 25, 15, 10, 3, 2]
+          SBB:  [5, 0, 20, 15, 35, 25]
         }
       },
 

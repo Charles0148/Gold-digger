@@ -43,10 +43,10 @@
   function startBonus(rules, st, type) {
     st.state = "bonus"; st.bonusType = type; st.bonusLeft = rules.bonus.length[type];
   }
+  // 違和感 = 確定演出：只在「已確定當選 AT」或「已確定連莊（尚未告知）」時出現
   function pickHint(rules, key, rng) {
     const H = rules.hints;
-    const rate = key === "fake" ? H.fakeRate : H.rate;
-    if (rng() >= rate) return null;
+    if (!key || !H.weights[key] || rng() >= H.rate) return null;
     return H.ids[pickWeighted(H.weights[key], rng)];
   }
 
@@ -92,6 +92,10 @@
         }
       }
 
+      // 有尚未告知的連莊 → 可能出現違和感（確定連莊）
+      const hidden = st.stock.find(x => !x.announced);
+      if (hidden) res.hint = pickHint(rules, hidden.type, rng);
+
       st.bonusLeft--;
       if (st.bonusLeft <= 0) {
         if (st.stock.length) {
@@ -134,7 +138,7 @@
         }
       }
       res.omenKey = st.pending ? "chanceWin" : "chanceLose";
-      res.hint = st.pending ? pickHint(rules, st.pending, rng) : pickHint(rules, "fake", rng);
+      res.hint = st.pending ? pickHint(rules, st.pending, rng) : null;
       st.chanceLeft--;
       if (st.chanceLeft <= 0) {
         if (st.pending) {
@@ -188,11 +192,11 @@
         } else if (rng() < rules.koukaku.drop) st.state = "normal";
 
         if (st.fakeLeft > 0) {
-          st.fakeLeft--; res.omenKey = "fake"; res.hint = pickHint(rules, "fake", rng);
+          st.fakeLeft--; res.omenKey = "fake";
           if (st.fakeLeft === 0) res.events.push({ t: "fakeEnd" });
         } else if (rng() < rules.fakeZencho[mode]) {
           st.fakeLeft = randInt(rng, rules.fakeZencho.min, rules.fakeZencho.max);
-          res.omenKey = "fake"; res.events.push({ t: "fakeStart" }); res.hint = pickHint(rules, "fake", rng);
+          res.omenKey = "fake"; res.events.push({ t: "fakeStart" });
         } else {
           res.omenKey = st.state === "koukaku" ? "koukaku" : "normal";
         }
