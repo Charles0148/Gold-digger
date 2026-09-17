@@ -151,28 +151,71 @@
     /* ---------- 工具（耐久度 = 可揮次數） ---------- */
     tools: [
       { id: "wood", tier: 1, name: "木鎬", durability: 60, price: 110, rarity: 1 },
-      { id: "stone", tier: 2, name: "石鎬", durability: 120, price: 660, rarity: 2 },
-      { id: "iron", tier: 3, name: "鐵鎬", durability: 200, price: 2900, rarity: 3 },
-      { id: "gold", tier: 4, name: "金鎬", durability: 300, price: 11000, rarity: 4 },
-      { id: "diamond", tier: 5, name: "鑽石鎬", durability: 500, price: 45000, rarity: 5 }
+      { id: "stone", tier: 2, name: "石鎬", durability: 120, price: 330, rarity: 2 },
+      { id: "iron", tier: 3, name: "鐵鎬", durability: 200, price: 800, rarity: 3 },
+      { id: "gold", tier: 4, name: "金鎬", durability: 300, price: 1650, rarity: 4 },
+      { id: "diamond", tier: 5, name: "鑽石鎬", durability: 500, price: 3650, rarity: 5 }
     ],
-    upgrade: { maxLevel: 5, costMul: 6, durabilityPerLv: 0.10, valuePerLv: 0.02 },
+    // 低階工具挖高階礦坑：收益 ×（工具每揮成本 ÷ 該礦坑對應工具每揮成本）× underMul
+    toolPenalty: { underMul: 0.9 },
+
+    /* ---------- 礦坑老闆 佐佐木 ---------- */
+    boss: {
+      name: "佐佐木",
+      reqHours: 8,                                   // 幾小時換一張委託
+      lineWeights: [30, 45, 25],                     // 委託 1/2/3 行的權重
+      catWeights: { common: 40, good: 30, rare: 20, epic: 8, legend: 2 },
+      qty: { common: [8, 20], good: [4, 10], rare: [2, 5], epic: [1, 2], legend: [1, 1] },
+      points: { common: 2, good: 3, rare: 4, epic: 6, legend: 8 },
+      completeBonus: 1,                              // 整張委託完成再加幾點
+      veinChance: 0.15,                              // 綠以上有多少機率要求「脈晶」
+      deliverMul: 1.5,                               // 交付金額 = 基本售價 × 此倍率
+      levelNeed: { base: 25, step: 10, every: 5 },   // 升級所需點數：base + step × floor(等級 / every)
+      boonRarity: [60, 28, 10, 2],                   // 普通 / 藍 / 紫 / 金
+      boons: {
+        adWood:     { r: 0, v: 1,    name: "看廣告多拿 1 把木鎬" },
+        favorUp:    { r: 0, v: 0.10, name: "恩惠點數 +10%" },
+        autoSpeed:  { r: 0, v: 0.05, name: "自動挖礦速度 +5%" },
+        oreSell:    { r: 1, v: 0.05, name: "指定礦石售價 +5%" },
+        toolDrop:   { r: 1, v: 0.10, name: "工具掉落率 +10%" },
+        reqQty:     { r: 1, v: 0.05, name: "委託需求數量 -5%" },
+        raritySell: { r: 2, v: 0.03, name: "指定稀有度售價 +3%" },
+        toolDur:    { r: 2, v: 0.03, name: "新工具耐久 +3%" },
+        adStone:    { r: 2, v: 0.05, name: "看廣告有 5% 機率多拿石鎬" },
+        allSell:    { r: 3, v: 0.01, name: "全部礦石售價 +1%" },
+        shopCut:    { r: 3, v: 0.01, name: "買鎬子價格 -1%" }
+      },
+      lines: {
+        greet: ["……來了啊。今天想做什麼？", "礦坑還安分嗎？", "嗯，是你啊。"],
+        board: "委託都在這。挖到了就拿來。",
+        noEnough: "數量不夠。再去挖吧。",
+        deliver: "……做得不錯。這是酬勞。",
+        allDone: "這張全部完成了。下一張晚點再來看。",
+        sell: "要賣什麼？照行情收。",
+        buy: "鎬子都在這。挑一把吧。",
+        boons: "這些是我給你的。別弄丟了。",
+        noBoon: "……還早呢。多幫我跑幾趟再說。",
+        levelUp: "你幫了我不少。這個拿去吧。",
+        ad: "外頭有人在發補給，去排個隊吧。",
+        bye: "路上小心。"
+      }
+    },
 
     /* ---------- 礦坑（地圖） ---------- */
     mines: [
       { id: "m1", tenjou: 800, tier: 1, name: "淺層洞窟", mult: 1, unlock: 0,
         items: { common: ["石塊", "燧石"], good: ["煤炭"], rare: ["銅礦"], epic: ["紫水晶"], legend: ["遠古化石"] },
         veinItems: { common: ["石英脈塊"], good: ["翠綠脈晶"], rare: ["湛藍脈晶"], epic: ["幽紫脈晶"], legend: ["洞窟金核"] } },
-      { id: "m2", tenjou: 800, tier: 2, name: "煤灰坑道", mult: 3, unlock: 1500,
+      { id: "m2", tenjou: 800, tier: 2, name: "煤灰坑道", mult: 1.5, unlock: 300,
         items: { common: ["頁岩", "煤渣"], good: ["鐵砂"], rare: ["銀礦"], epic: ["青金石"], legend: ["礦工的懷錶"] },
         veinItems: { common: ["灰燼脈塊"], good: ["煤翠脈晶"], rare: ["煤藍脈晶"], epic: ["煤紫脈晶"], legend: ["坑道金核"] } },
-      { id: "m3", tenjou: 800, tier: 3, name: "鏽鐵礦山", mult: 8, unlock: 10000,
+      { id: "m3", tenjou: 800, tier: 3, name: "鏽鐵礦山", mult: 2.2, unlock: 1000,
         items: { common: ["玄武岩", "鏽塊"], good: ["鐵礦"], rare: ["黃銅礦"], epic: ["紅寶石"], legend: ["失落的齒輪核心"] },
         veinItems: { common: ["鏽紅脈塊"], good: ["銅翠脈晶"], rare: ["鐵藍脈晶"], epic: ["鏽紫脈晶"], legend: ["礦山金核"] } },
-      { id: "m4", tenjou: 1000, tier: 4, name: "熔岩深淵", mult: 20, unlock: 50000,
+      { id: "m4", tenjou: 1000, tier: 4, name: "熔岩深淵", mult: 3, unlock: 3000,
         items: { common: ["黑曜石屑", "焦岩"], good: ["火晶石"], rare: ["白金礦"], epic: ["藍寶石"], legend: ["炎龍之鱗"] },
         veinItems: { common: ["熔岩脈塊"], good: ["焰翠脈晶"], rare: ["焰藍脈晶"], epic: ["焰紫脈晶"], legend: ["深淵金核"] } },
-      { id: "m5", tenjou: 1000, tier: 5, name: "星核裂谷", mult: 50, unlock: 250000,
+      { id: "m5", tenjou: 1000, tier: 5, name: "星核裂谷", mult: 4, unlock: 8000,
         items: { common: ["星塵岩", "虛空石"], good: ["秘銀"], rare: ["鑽石"], epic: ["星辰碎片"], legend: ["世界之心"] },
         veinItems: { common: ["星塵脈塊"], good: ["星翠脈晶"], rare: ["星藍脈晶"], epic: ["星紫脈晶"], legend: ["裂谷金核"] } }
     ],
