@@ -220,3 +220,6 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .board-line .px-btn.small { line-height: 1.2; }
 .ore-link { text-decoration: underline dotted; cursor: pointer; }
 .boon-get { border: 2px solid; padding: 6px; margin: 6px 0; background: rgba(0,0,0,.3); }
+
+/* 版本編號 */
+.ver-tag { position: absolute; right: 6px; bottom: 4px; font-size: .7em; color: var(--sub); opacity: .7; pointer-events: none; }
