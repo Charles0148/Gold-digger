@@ -70,7 +70,7 @@
         <div id="bagTools" class="list"></div>
       </div>
       <div class="px-box panel" data-edit="bagOres" data-label="背包-礦石">
-        <div class="panel-title">礦石 <button class="px-btn small" id="btnSellAll">全部賣出</button></div>
+        <div class="panel-title">礦石</div>
         <div class="sub" id="bagOreTotal"></div>
         <div id="bagOres" class="list"></div>
       </div>
@@ -92,21 +92,17 @@
       </div>
     </section>
 
-    <!-- ===== 工坊（商店 + 升級 + 廣告） ===== -->
+    <!-- ===== 礦坑老闆 佐佐木（委託板 / 收購 / 鎬子 / 恩惠 / 補給） ===== -->
     <section class="screen" id="scr-shop">
-      <div class="px-box panel" data-edit="adPanel" data-label="廣告">
-        <div class="panel-title">補給</div>
-        <button class="px-btn wide" id="btnAd">看廣告領木鎬</button>
-        <div class="sub" id="adInfo"></div>
+      <div class="px-box panel boss-head" data-edit="bossHead" data-label="老闆-恩惠等級">
+        <div class="mb-row"><span id="bossLv">恩惠 Lv1</span></div>
+        <div class="bar"><div class="bar-fill" id="bossFavorBar"></div></div>
       </div>
-      <div class="px-box panel" data-edit="shopPanel" data-label="商店">
-        <div class="panel-title">商店</div>
-        <div id="shopList" class="list"></div>
+      <div class="boss-dialog" data-edit="bossDialog" data-label="老闆-對話框">
+        <div class="boss-name" id="bossName">佐佐木</div>
+        <div class="px-box textbox boss-say" id="bossSay">……</div>
       </div>
-      <div class="px-box panel" data-edit="upPanel" data-label="升級">
-        <div class="panel-title">鍛造升級 <span class="sub">耐久+、售價+</span></div>
-        <div id="upList" class="list"></div>
-      </div>
+      <div id="bossBody" data-edit="bossBody" data-label="老闆-選項"></div>
     </section>
   </main>
 
@@ -116,7 +112,7 @@
     <button data-go="bag">背包</button>
     <button data-go="map">地圖</button>
     <button data-go="dex">圖鑑</button>
-    <button data-go="shop">工坊</button>
+    <button data-go="shop">老闆</button>
   </nav>
 
   <button id="editFab" title="編輯模式">✎</button>
