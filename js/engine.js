@@ -70,12 +70,94 @@
   function newPlayState() {
     return {
       state: "normal", base: "normal", sinceHit: 0,
-      chanceLeft: 0, pending: null,          // 連續演出
+      chanceLeft: 0, pending: null,          // 連續演出（chanceLeft = 還剩幾回合）
+      chanceRounds: 0, chanceIdx: 0, chanceWin: false, chanceLevel: 0,
+      chanceColors: [], chanceColor: 0, chanceFake: false, reviveType: null,
       zenchoLeft: 0, zenchoType: null,       // 前兆
       fakeLeft: 0,                           // 假前兆
       bonusType: null, bonusLeft: 0, stock: [], chain: 0,
       rbLeft: -1, rbOn: false                // 彩色演出（確定 SBB）倒數
     };
+  }
+
+  /* ---------- 連續演出（v0.5）：進入時決定回合數、結果、顏色路線 ---------- */
+  const CHANCE_TRIG_TABLE = { gold: "fromLegend", purple: "fromEpic", other: "first" };
+  function chanceWinP(C, level, s) { return (C.winRate["r" + Math.min(5, Math.max(1, level))] || C.winRate.r1)[s]; }
+  // 顏色路線：只升不降，最後一回合的顏色由「會不會通關」決定
+  function buildColorPath(C, rounds, win, rng, floor) {
+    const final = Math.max(floor || 0, pickWeighted(win ? C.colorWin : C.colorLose, rng));
+    let start = Math.min(final, Math.max(floor || 0, pickWeighted(C.colorStart, rng)));
+    const path = [start];
+    for (let i = 1; i < rounds; i++) {
+      const prev = path[i - 1];
+      const left = rounds - 1 - i;             // 之後還有幾回合
+      // 隨機往上爬，保證最後一回合到達 final
+      const v = i === rounds - 1 ? final : prev + Math.floor(rng() * (final - prev + 1) / (left + 1));
+      path.push(Math.max(prev, Math.min(final, v)));
+    }
+    path[rounds - 1] = final;
+    return path;
+  }
+  function startChance(rules, st, s, trigger, rng, res, mode) {
+    const C = rules.chance;
+    const rounds = 1 + rollPick(res, rng, `${trigger === "gold" ? "金礦" : trigger === "purple" ? "紫礦" : "其他"}→演出回合數`,
+      ["1回合", "2回合", "3回合", "4回合", "5回合"], C.lenWeights[trigger] || C.lenWeights.other);
+    st.base = mode; st.state = "chance";
+    st.chanceRounds = rounds; st.chanceIdx = 0; st.chanceLevel = rounds;
+    st.chanceColor = 0; st.chanceTrig = trigger; st.pending = null; st.chanceFake = false;
+    const win = roll(res, rng, `${rounds}回合→通關抽選`, chanceWinP(C, rounds, s), true);
+    st.chanceWin = win;
+    if (win) {
+      st.pending = rollType(res, rng, "當選種類", rules.bonusDraw.first);
+      setRainbow(rules, st, st.pending, rounds, rng, res);
+      st.chanceFake = roll(res, rng, "先演失敗→下一揮復活", (C.revive || {}).fakeLose || 0, true);
+      res.win = true;
+    }
+    st.chanceColors = buildColorPath(C, rounds, win, rng, 0);
+    res.events.push({ t: "chanceStart", len: rounds });
+    return rounds;
+  }
+  // 演出中挖到機會牌 → 升格（顏色下限提高；還沒通關的話重抽）
+  function chanceUpgrade(rules, st, s, cat, rng, res) {
+    const C = rules.chance;
+    let floor = 0, upped = false;
+    if (cat === "legend") {
+      floor = C.upFloorLegend;
+      if (!st.chanceWin) {
+        res.rolls.push({ label: "演出中金礦（強機會牌）→ 直接通關", p: 1, D: 100, n: 1, need: 100, hit: true, major: true });
+        st.chanceWin = true;
+        st.pending = rollType(res, rng, "當選種類", rules.bonusDraw.fromLegend);
+        setRainbow(rules, st, st.pending, st.chanceRounds - st.chanceIdx + 1, rng, res);
+        res.win = true; st.chanceFake = false;
+      }
+      upped = true;
+    } else if (cat === "epic") {
+      const before = st.chanceLevel;
+      st.chanceLevel = Math.min(5, st.chanceLevel + (C.upEpic || 1));
+      floor = C.upFloorEpic;
+      if (!st.chanceWin && st.chanceLevel > before) {
+        const p0 = chanceWinP(C, before, s), p1 = chanceWinP(C, st.chanceLevel, s);
+        const add = p1 > p0 ? (p1 - p0) / (1 - p0) : 0;
+        if (roll(res, rng, `演出中紫礦（機會牌）→升格重抽（${Math.round(p0 * 100)}%→${Math.round(p1 * 100)}%）`, add, true)) {
+          st.chanceWin = true;
+          st.pending = rollType(res, rng, "當選種類", rules.bonusDraw.fromEpic);
+          setRainbow(rules, st, st.pending, st.chanceRounds - st.chanceIdx + 1, rng, res);
+          res.win = true;
+          st.chanceFake = roll(res, rng, "先演失敗→下一揮復活", (C.revive || {}).fakeLose || 0, true);
+        }
+      }
+      upped = true;
+    }
+    if (upped) {
+      // 剩下的回合重新排顏色（含下限），且不低於目前顏色
+      const left = st.chanceRounds - st.chanceIdx;
+      if (left > 0) {
+        const path = buildColorPath(C, left, st.chanceWin, rng, Math.max(floor, st.chanceColor));
+        st.chanceColors = st.chanceColors.slice(0, st.chanceIdx).concat(path);
+      }
+      res.events.push({ t: "chanceUp", cat });
+    }
+    return upped;
   }
 
   function startBonus(rules, st, type) {
@@ -169,6 +251,24 @@
     res.toolDrop = rng() < rules.toolDrop.normal;
     const C = rules.chance;
 
+    if (st.state === "revive") {
+      // 復活：上一揮演成失敗，這一揮拉回
+      const type = st.reviveType;
+      st.reviveType = null; st.chain = 1;
+      res.rolls.push({ label: `復活演出：已確定當選 ${type}`, info: true, major: true });
+      res.events.push({ t: "revive", type });
+      res.events.push({ t: "bonusStart", type, from: "revive" });
+      res.omenKey = "zencho"; res.win = true;
+      st.pending = type;
+      setRainbow(rules, st, type, 1, rng, res);
+      startBonus(rules, st, type);
+      st.pending = null;
+      res.omen = st.rbOn || st.rbLeft === 0 ? 5 : 6;   // 6 = 金（復活專用）；已排定彩色時才是彩色
+      res.inOmen = true;
+      res.stateAfter = st.state;
+      return res;
+    }
+
     if (st.state === "zencho") {
       st.zenchoLeft--;
       res.omenKey = "zencho";
@@ -181,31 +281,32 @@
       }
     } else if (st.state === "chance") {
       st.sinceHit++;
-      let chanceP = 0;
-      if (!st.pending) {
-        const p = C.base[s] + (res.cat === "epic" ? C.epicAdd[s] : 0) + (res.cat === "legend" ? C.legendAdd[s] : 0);
-        chanceP = p;
-        if (roll(res, rng, `連續演出中（挖到${CAT_NAME[res.cat]}）→當選`, Math.min(1, p), true)) {
-          const table = res.cat === "legend" ? rules.bonusDraw.fromLegend : res.cat === "epic" ? rules.bonusDraw.fromEpic : rules.bonusDraw.first;
-          st.pending = rollType(res, rng, "當選種類", table);
-          setRainbow(rules, st, st.pending, st.chanceLeft, rng, res);
-          res.win = true;
-        }
-      }
-      // 期待度依「這一揮實際抽選的機率」決定：沒當選時，機率高才可能出高色
-      res.omenKey = st.pending ? "chanceWin" : (chanceP >= rules.omen.highP ? "chanceHigh" : "chanceLow");
-      res.hint = st.pending ? pickHint(rules, st.pending, rng) : null;
-      st.chanceLeft--;
-      if (st.chanceLeft <= 0) {
-        if (st.pending) {
+      const C = rules.chance;
+      st.chanceIdx++;
+      if (res.cat === "epic" || res.cat === "legend") chanceUpgrade(rules, st, s, res.cat, rng, res);
+      // 顏色：只升不降
+      const want = st.chanceColors[st.chanceIdx - 1] ?? st.chanceColor;
+      const up = st.chanceIdx > 1 && want > st.chanceColor;
+      st.chanceColor = Math.max(st.chanceColor, want);
+      res.omen = st.chanceColor; res.omenKey = "chance";
+      res.chanceRound = { idx: st.chanceIdx, total: st.chanceRounds, color: st.chanceColor, up };
+      if (up && roll(res, rng, "顏色升級→額外一句", C.upLineRate)) res.chanceRound.upLine = true;
+      res.hint = st.pending && !st.chanceFake ? pickHint(rules, st.pending, rng) : null;
+      st.chanceLeft = st.chanceRounds - st.chanceIdx;
+      if (st.chanceIdx >= st.chanceRounds) {
+        if (st.chanceWin && !st.chanceFake) {
           st.chain = 1;
           res.events.push({ t: "bonusStart", type: st.pending, from: "chance" });
           startBonus(rules, st, st.pending);
+          st.pending = null;
+        } else if (st.chanceWin && st.chanceFake) {
+          // 先演失敗，下一揮復活
+          res.events.push({ t: "chanceLose", fake: true });
+          st.reviveType = st.pending; st.state = "revive"; st.pending = null;
         } else {
           res.events.push({ t: "chanceLose" });
-          st.state = st.base;
+          st.state = st.base; st.pending = null;
         }
-        st.pending = null;
       }
     } else {
       // ---- 通常 / 高確 ----
@@ -222,17 +323,15 @@
           res.win = true; res.events.push({ t: "directWin" });
           res.omenKey = "zencho"; started = true;
         } else {
-          const len = 1 + rollPick(res, rng, "金礦→演出長度", ["1揮", "2揮", "3揮", "4揮", "5揮"], rules.gold.lenWeights);
-          if (len === 1) { res.events.push({ t: "chanceLose", short: true }); }
-          else { st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null; res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceHigh"; }
+          startChance(rules, st, s, "gold", rng, res, mode);
+          started = true; res.omenKey = "chanceEnter";
         }
       } else {
         // 紫礦與其他：有機率進入連續演出
         const p = res.cat === "epic" ? rules.purple.chance[mode][s] : rules.other.chance[mode][s];
         if (roll(res, rng, `${CAT_NAME[res.cat]}→連續演出（${mode === "koukaku" ? "高確" : "通常"}）`, p, res.cat === "epic")) {
-          const len = 2 + rollPick(res, rng, "演出長度", ["2揮", "3揮", "4揮", "5揮"], rules.purple.lenWeights);
-          st.base = mode; st.state = "chance"; st.chanceLeft = len - 1; st.pending = null;
-          res.events.push({ t: "chanceStart", len }); started = true; res.omenKey = "chanceLow";
+          startChance(rules, st, s, res.cat === "epic" ? "purple" : "other", rng, res, mode);
+          started = true; res.omenKey = "chanceEnter";
         }
       }
 
@@ -263,14 +362,18 @@
     }
 
     // 期待度顏色：只在地鳴（前兆／連續演出／假前兆）中抽選；彩色 = 確定 SBB（抽選出現）
-    res.inOmen = ["zencho", "chanceWin", "chanceHigh", "chanceLow", "fake"].includes(res.omenKey);
+    res.inOmen = ["zencho", "chance", "chanceEnter", "fake"].includes(res.omenKey);
     if (!res.inOmen) res.omen = 0;
-    else {
+    else if (res.omenKey === "chance" || res.omenKey === "chanceEnter") {
+      if (res.omenKey === "chanceEnter") res.omen = (st.chanceColors || [])[0] || 1;
+      if (st.rbLeft === 0) st.rbOn = true; else if (st.rbLeft > 0) st.rbLeft--;
+      if (st.rbOn) res.omen = 5;
+    } else {
       res.omen = pickWeighted(rules.omen[res.omenKey], rng);
       if (st.rbLeft === 0) st.rbOn = true; else if (st.rbLeft > 0) st.rbLeft--;
       if (st.rbOn) res.omen = 5;
     }
-    if (st.state !== "zencho" && st.state !== "chance") { st.rbLeft = -1; st.rbOn = false; }
+    if (st.state !== "zencho" && st.state !== "chance" && st.state !== "revive") { st.rbLeft = -1; st.rbOn = false; }
     res.stateAfter = st.state;
     return res;
   }

@@ -191,13 +191,13 @@
   /* ================= 文字 ================= */
   function tabTexts(body) {
     const T = draft.texts;
-    const single = [["omenTag", "地鳴標籤"], ["omenEnter", "地鳴開始"], ["chanceLose", "地鳴平息"], ["directWin", "金礦直擊"], ["stock", "礦脈延伸告知"], ["upgrade", "礦脈變粗告知"], ["bonusChain", "礦脈延伸揭曉"], ["bonusChainSurprise", "最後一揮才揭曉"], ["bonusEnd", "礦脈結束"], ["koukakuHint", "高確暗示"], ["hintSfx", "違和感：音效"], ["hintDrip", "違和感：水滴"], ["hintGlow", "違和感：紋路"], ["hintTap", "違和感：點擊提示"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
+    const single = [["omenTag", "地鳴標籤"], ["omenEnter", "地鳴開始"], ["chanceLose", "地鳴平息"], ["chanceCollapse", "演出失敗：坍塌"], ["chanceWin", "演出成功"], ["revive", "復活"], ["directWin", "金礦直擊"], ["stock", "礦脈延伸告知"], ["upgrade", "礦脈變粗告知"], ["bonusChain", "礦脈延伸揭曉"], ["bonusChainSurprise", "最後一揮才揭曉"], ["bonusEnd", "礦脈結束"], ["koukakuHint", "高確暗示"], ["hintSfx", "違和感：音效"], ["hintDrip", "違和感：水滴"], ["hintGlow", "違和感：紋路"], ["hintTap", "違和感：點擊提示"], ["toolDrop", "工具掉落"], ["toolBreak", "工具損壞"], ["noTool", "沒有工具"], ["tap", "點擊提示"]];
     body.innerHTML = `
       <div class="ed-note">多行欄位：一行一個，遊戲會隨機挑一句。</div>
       <div class="ed-sec">揮擊音效字</div><textarea rows="3" data-p="texts.swing" data-lines>${T.swing.join("\n")}</textarea>
       <div class="ed-sec">挖到碎石</div><textarea rows="3" data-p="texts.rubble" data-lines>${T.rubble.join("\n")}</textarea>
       <div class="ed-sec">期待度文字（白→虹，第1行為白色通常不顯示）</div>
-      ${T.omenLine.map((l, i) => `<div class="ed-row"><label>${draft.rules.omen.names[i]}</label><input type="text" data-p="texts.omenLine.${i}" value="${esc(l)}"></div>`).join("")}
+      ${T.omenLine.slice(0, 6).map((l, i) => `<div class="ed-row"><label>${draft.rules.omen.names[i]}</label><input type="text" data-p="texts.omenLine.${i}" value="${esc(l)}"></div>`).join("")}
       <div class="ed-sec">事件文字</div>
       ${single.map(([k, n]) => `<div class="ed-row"><label>${n}</label><input type="text" data-p="texts.${k}" value="${esc(T[k])}"></div>`).join("")}
       ${["RB", "BB", "SBB"].map(k => `<div class="ed-row"><label>${k} 名稱</label><input type="text" data-p="texts.veinName.${k}" value="${esc((T.veinName || {})[k])}"></div><div class="ed-row"><label>${k} 開始</label><input type="text" data-p="texts.bonusStart.${k}" value="${esc(T.bonusStart[k])}"></div>`).join("")}
@@ -209,6 +209,10 @@
           <input type="text" data-p="mines.${mi}.veinItems.${c.id}" data-csv value="${esc(((m.veinItems || {})[c.id] || []).join("、"))}"></div>`).join("")}`).join("")}
       <div class="ed-sec">工具名稱</div>
       ${draft.tools.map((t, i) => `<div class="ed-row"><label>第${t.tier}階</label><input type="text" data-p="tools.${i}.name" value="${esc(t.name)}"></div>`).join("")}
+      <div class="ed-sec">連續演出劇本（1～5 回合各一套，一行一個回合）</div>
+      ${[1, 2, 3, 4, 5].map(n => `<div class="ed-row"><label>${n}回合</label><textarea rows="${n}" data-p="texts.chanceScript.r${n}" data-lines>${esc(((T.chanceScript || {})["r" + n] || []).join("\n"))}</textarea></div>`).join("")}
+      <div class="ed-sec">顏色升級時額外插的句子（一行一句，隨機挑）</div>
+      <textarea rows="4" data-p="texts.chanceUpLines" data-lines>${esc((T.chanceUpLines || []).join("\n"))}</textarea>
       <div class="ed-sec">礦坑老闆</div>
       <div class="ed-row"><label>名字</label><input type="text" data-p="boss.name" value="${esc(draft.boss.name)}"></div>
       <div class="ed-row"><label>打招呼(多句)</label><textarea rows="3" data-p="boss.lines.greet" data-lines>${draft.boss.lines.greet.join("\n")}</textarea></div>
@@ -225,7 +229,9 @@
   /* ================= 數值（依設定檔結構自動產生） ================= */
   const LABEL = {
     itemTable: "① 小役機率（通常／高確／連續演出／前兆，碎石=剩下）", gold: "② 金礦（強機會牌）", purple: "③ 紫礦（機會牌）", other: "④ 其他小役進入連續演出",
-    chance: "⑤ 連續演出中每揮的 AT 當選率", bonusDraw: "⑥ 當選時 RB/BB/SBB 權重", bonus: "⑦ AT", bonusTable: "⑧ AT 中的小役機率",
+    chance: "⑤ 連續演出（回合數＋通關率）", lenWeights_: "回合數權重", winRate: "各回合數的通關率", r1: "1回合", r2: "2回合", r3: "3回合", r4: "4回合", r5: "5回合",
+    gold_: "金礦觸發", purple_: "紫礦觸發", other_: "其他觸發", upEpic: "紫礦升格階數", upFloorEpic: "紫礦升格後顏色下限", upFloorLegend: "金礦通關後顏色下限",
+    colorStart: "第1回合顏色權重", colorWin: "會通關的最後顏色權重", colorLose: "不會通關的最後顏色權重", upLineRate: "顏色升級插話機率", revive: "復活", fakeLose: "先演失敗再復活的機率", bonusDraw: "⑥ 當選時 RB/BB/SBB 權重", bonus: "⑦ AT", bonusTable: "⑧ AT 中的小役機率",
     koukaku: "⑨ 高確", zencho: "天井後前兆長度", fakeZencho: "假前兆", hints: "⑩ 違和感暗示", omen: "⑪ 期待度顏色（地鳴中）權重",
     toolDrop: "工具掉落", settingDist: "每日設定分配比例", adDailyLimit: "每日廣告次數",
     common: "普通", good: "綠(Replay)", rare: "藍(Bell)", epic: "紫(機會)", legend: "金(強機會)", rubble: "碎石",
@@ -249,6 +255,8 @@
       } else if (Array.isArray(v) && v.every(x => typeof x === "number")) {
         const head = parent === "hints" || k === "lenWeights" || parent === "weights" || parent === "omen"
           ? (k === "lenWeights" ? v.map((_, i) => (obj === draft.rules.gold ? i + 1 : i + 2) + "揮") : parent === "omen" ? draft.rules.omen.names : draft.rules.hints.ids)
+          : parent === "lenWeights" ? ["1回合", "2回合", "3回合", "4回合", "5回合"]
+          : (parent === "chance" && k.startsWith("color")) ? draft.rules.omen.names
           : parent === "qty" ? ["最少", "最多"] : k === "lineWeights" ? ["1行", "2行", "3行"] : k === "boonRarity" ? ["普通", "藍", "紫", "金"]
           : v.map((_, i) => "設定" + (i + 1));
         html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>

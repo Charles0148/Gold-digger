@@ -214,8 +214,8 @@
     $("mbName").textContent = mine.name;
     let stateTxt = st.state === "bonus" ? colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) : "";
     if (save.debug.showSetting) {
-      const nm = { normal: "通常", koukaku: "高確", chance: "連續演出", zencho: "前兆", bonus: "AT" }[st.state];
-      stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
+      const nm = { normal: "通常", koukaku: "高確", chance: "連續演出", revive: "復活", zencho: "前兆", bonus: "AT" }[st.state];
+      stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.state === "chance" ? `｜${st.chanceIdx}/${st.chanceRounds}回合 ${st.chanceWin ? "會過" + (st.chanceFake ? "(先演失敗)" : "") : "不會過"}` : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
     }
     $("mbState").innerHTML = stateTxt;
     $("mbSwings").textContent = fmt(ms.swings);
@@ -315,7 +315,16 @@
     }
 
     const oc = rules.omen.colors;
-    if (r.omen > 0 && T.omenLine[r.omen]) lines.push(colored(T.omenLine[r.omen], oc[r.omen]));
+    const cr = r.chanceRound;
+    if (cr) {
+      // 連續演出：照回合數的劇本走，顏色只升不降
+      const script = (T.chanceScript || {})["r" + cr.total] || [];
+      const line = script[cr.idx - 1] || script[script.length - 1] || "";
+      if (line) lines.push(colored(line, oc[cr.color]));
+      if (cr.upLine && (T.chanceUpLines || []).length) lines.push(colored(pickOne(T.chanceUpLines), oc[cr.color]));
+    }
+    const isRevive = r.events.some(e => e.t === "revive");
+    if (!cr && !isRevive && r.omen > 0 && T.omenLine[r.omen]) lines.push(colored(T.omenLine[r.omen], oc[r.omen]));
     else if (st.state === "koukaku" && Math.random() < 0.25) lines.push(colored(T.koukakuHint, sub));
     if (r.hint === "drip") lines.push(colored(T.hintDrip, sub));
     if (r.hint === "glow") lines.push(colored(T.hintGlow, "#ffe08a"));
@@ -324,9 +333,11 @@
     const enter = ["chanceStart", "fakeStart", "tenjou"];
     for (const e of r.events) {
       if (enter.includes(e.t)) lines.unshift(colored(T.omenEnter, config.theme.accent));
-      if ((e.t === "chanceLose" && !e.short) || e.t === "fakeEnd") lines.push(colored(T.chanceLose, sub));
+      if (e.t === "chanceLose" && cr) lines.push(colored(T.chanceCollapse, "#ff7755"));
+      else if ((e.t === "chanceLose" && !e.short) || e.t === "fakeEnd") lines.push(colored(T.chanceLose, sub));
+      if (e.t === "revive") lines.push(colored(T.revive, r.omen === 5 ? "rainbow" : (oc[6] || "#ffcc33")));
       if (e.t === "directWin") lines.push(colored(T.directWin, "#ffaa00"));
-      if (e.t === "bonusStart") lines.push(colored(T.bonusStart[e.type], TYPE_COLOR[e.type]));
+      if (e.t === "bonusStart") { if (e.from === "chance") lines.push(colored(T.chanceWin, config.theme.accent)); lines.push(colored(T.bonusStart[e.type], TYPE_COLOR[e.type])); }
       if (e.t === "stock" && e.shown) lines.push(colored(T.stock, "rainbow"));
       if (e.t === "upgrade" && e.shown) lines.push(colored(`${T.upgrade} ${veinName(e.from)}→${veinName(e.to)}`, "rainbow"));
       if (e.t === "bonusChain") lines.push(colored((e.surprise ? T.bonusChainSurprise : T.bonusChain) + " " + T.bonusStart[e.type], TYPE_COLOR[e.type]));
@@ -358,7 +369,7 @@
     }
 
     const boxOmen = (r.stateBefore === "bonus" && st.state === "bonus") ? (st.bonusType === "SBB" ? "vein" : 0) : Math.max(0, r.omen);
-    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink", tag: r.inOmen && !ev("bonusStart") && !ev("chanceLose") && !ev("fakeEnd") ? T.omenTag : "" });
+    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink" || isRevive, tag: r.inOmen && !ev("bonusStart") && !ev("chanceLose") && !ev("fakeEnd") ? T.omenTag : "" });
     const big = $("sceneBig");
     big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
     $("sceneSub").textContent = "";
@@ -390,7 +401,7 @@
 
   /* ---------------- 自動模式 ---------------- */
   let autoTimer = null;
-  const AUTO_STOP = ["chanceStart", "fakeStart", "tenjou", "directWin", "bonusStart", "bonusChain", "bonusEnd", "stock", "upgrade"];
+  const AUTO_STOP = ["chanceStart", "fakeStart", "tenjou", "directWin", "bonusStart", "bonusChain", "bonusEnd", "stock", "upgrade", "chanceUp", "revive"];
   function autoStep() {
     if (!save.auto) return;
     const res = doSwing();
@@ -398,7 +409,7 @@
     const stopAt = (config.play && config.play.autoStopOmen) || 3;
     const r = res.r;
     const stop = r.events.some(e => AUTO_STOP.includes(e.t) && !((e.t === "stock" || e.t === "upgrade") && !e.shown)) ||
-      (r.omen >= stopAt && r.stateBefore !== "bonus") || res.st.state === "zencho" || res.st.state === "chance" ||
+      (r.omen >= stopAt && r.stateBefore !== "bonus") || res.st.state === "zencho" || res.st.state === "chance" || res.st.state === "revive" ||
       (res.broke && !activeTool());
     if (stop) { stopAuto(); return; }
     autoTimer = setTimeout(autoStep, ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
