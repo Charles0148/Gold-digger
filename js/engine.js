@@ -75,7 +75,7 @@
       chanceColors: [], chanceColor: 0, chanceFake: false, reviveType: null,
       zenchoLeft: 0, zenchoType: null,       // 前兆
       fakeLeft: 0,                           // 假前兆
-      bonusType: null, bonusLeft: 0, stock: [], chain: 0, atHigh: 0,   // atHigh = 礦層共鳴剩幾揮
+      bonusType: null, bonusLeft: 0, stock: [], chain: 0, atHigh: 0, atSwings: 0,   // atHigh = 礦層共鳴剩幾揮
       rbLeft: -1, rbOn: false                // 彩色演出（確定 SBB）倒數
     };
   }
@@ -192,6 +192,9 @@
     if (st.state === "bonus") {
       const type = st.bonusType;
       res.bonusType = type;
+      st.atSwings = (st.atSwings || 0) + 1;
+      const capSw = (rules.bonus.cap || {}).swings || 0;
+      const capped = capSw > 0 && st.atSwings >= capSw;   // 有利區間上限：一次礦脈的總揮數上限
       res.cat = rollCat(res, rng, `礦脈中（${type} 剩${st.bonusLeft}揮）挖到`, rules.bonusTable[type], s, true);
       res.toolDrop = rng() < rules.toolDrop.bonus;
       res.omen = -1; res.omenKey = null;
@@ -220,7 +223,7 @@
       const inHigh = st.atHigh > 0;
       res.atHigh = inHigh;
       res.atHighDeep = !!deep;
-      if (!st.stock.length) {
+      if (!st.stock.length && !capped) {
         const hi = st.chain >= CT.boostAfter, T = hi ? CT.high : CT.low;
         const p = inHigh
           ? Math.min(1, res.cat === "legend" ? AH.contLegend[s] : res.cat === "epic" ? AH.contEpic[s] : (AH.base || 0))
@@ -228,7 +231,9 @@
         if (roll(res, rng, `礦脈延伸抽選（第${st.chain}隻 ${type}${inHigh ? (deep ? "・深層共鳴中" : "・共鳴中") : hi ? "・加強" : ""}，挖到${CAT_NAME[res.cat]}）`, p, true)) {
           const B = rules.bonus;
           const shown = roll(res, rng, "延伸→當下告知", B.announceRate);
-          const next = { type: rollType(res, rng, "延伸的下一隻", rules.bonusDraw.next), announced: shown };
+          const BD = rules.bonusDraw;
+          const upper = BD.upperAfter && st.chain >= BD.upperAfter && BD.upper;
+          const next = { type: rollType(res, rng, upper ? "延伸的下一隻（上位）" : "延伸的下一隻", upper ? BD.upper : BD.next), announced: shown };
           st.stock.push(next);
           res.events.push({ t: "stock", type: next.type, shown });
         } else if (!inHigh && (res.cat === "epic" || res.cat === "legend")) {
@@ -251,16 +256,23 @@
       if (hidden) res.hint = pickHint(rules, hidden.type, rng);
 
       st.bonusLeft--;
+      if (capped && st.bonusLeft > 0) {
+        res.rolls.push({ label: `礦脈總揮數達上限 ${capSw} → 強制結束`, info: true, major: true });
+        st.bonusLeft = 0;
+      }
+      if (st.bonusLeft <= 0 && capped) res.events.push({ t: "veinCap", swings: st.atSwings });
       if (st.bonusLeft <= 0) {
         res.rolls.push({ label: `礦脈最後一揮：已確定延伸 ${st.stock.length} 隻` + (st.stock.length ? `（下一隻 ${st.stock[0].type}）→ 延伸` : " → 結束"), info: true, major: true });
-        if (st.stock.length) {
+        if (st.stock.length && !capped) {
           const next = st.stock.shift();
           st.chain++;
+          if (rules.bonusDraw.upperAfter && st.chain === rules.bonusDraw.upperAfter) res.events.push({ t: "upperStart", chain: st.chain });
           res.events.push({ t: "bonusChain", type: next.type, surprise: !next.announced });
           startBonus(rules, st, next.type);
         } else {
           res.events.push({ t: "bonusEnd", chain: st.chain });
           st.state = "normal"; st.base = "normal"; st.sinceHit = 0; st.chain = 0; st.bonusType = null; st.atHigh = 0;
+          st.atSwings = 0; st.stock = [];
         }
       }
       res.stateAfter = st.state;

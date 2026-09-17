@@ -22,11 +22,11 @@
     // value = 平常挖到的基本售價；veinValue = 礦脈中挖到「脈晶」的基本售價（都 × 礦坑倍率）
     categories: [
       { id: "rubble", name: "碎石", rarity: 0, value: 0, veinValue: 0 },
-      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.46 },
-      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4.1 },
-      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8.19 },
-      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 20.47 },
-      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 49.12 }
+      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.47 },
+      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4.12 },
+      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8.24 },
+      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 20.6 },
+      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 49.44 }
     ],
 
     rules: {
@@ -83,12 +83,15 @@
         first: { RB: 60, BB: 39, SBB: 1 },
         fromEpic: { RB: 58, BB: 39, SBB: 3 },     // 發展中靠紫礦當選 → SBB 機會增加
         fromLegend: { RB: 55, BB: 39, SBB: 6 },   // 靠金礦當選 → SBB 機會更高
-        next: { RB: 15, BB: 80, SBB: 5 }          // 連莊的下一隻
+        next: { RB: 15, BB: 80, SBB: 5 },        // 連莊的下一隻
+        upper: { RB: 0, BB: 70, SBB: 30 },       // 上位（連到第 upperAfter 隻之後）：不再出小礦脈
+        upperAfter: 10
       },
 
       /* ⑦ AT */
       bonus: {
         length: { RB: 12, BB: 50, SBB: 84 },
+        cap: { swings: 700 },   // 一次礦脈（含所有延伸）的總揮數上限，類似實機的有利區間上限
         /* 延伸（連莊）抽選：礦脈中每一揮都抽，直到確定下一隻為止
            p = base[種類][設定] + add[挖到的小役][設定]
            一條礦脈從頭到尾「至少抽中一次」的機率 = 通過率 */
@@ -104,7 +107,7 @@
           },
           /* 礦脈中的高確（畫面上叫「礦層共鳴」）：挖到機會牌 → 有機率進入，期間延伸率大幅提高 */
           atHigh: {
-            enterEpic: [0.3, 0.318, 0.342, 0.372, 0.396, 0.42],
+            enterEpic: [0.3, 0.315, 0.335, 0.36, 0.38, 0.4],
             enterLegend: [0.5, 0.518, 0.542, 0.572, 0.596, 0.62],
             len: { RB: 5, BB: 12, SBB: 20 },
             contEpic: [0.7, 0.709, 0.721, 0.736, 0.748, 0.76],
@@ -113,8 +116,8 @@
             /* 連到第 boostAfter 隻（含）之後，共鳴也一起加強（深層共鳴） */
             boost: {
               enterEpic: [0.5, 0.518, 0.542, 0.572, 0.596, 0.62],
-              enterLegend: [0.75, 0.768, 0.792, 0.822, 0.846, 0.87],
-              contEpic: [0.85, 0.8575, 0.8675, 0.88, 0.89, 0.9],
+              enterLegend: [0.75, 0.7605, 0.7745, 0.792, 0.806, 0.82],
+              contEpic: [0.85, 0.853, 0.857, 0.862, 0.866, 0.87],
               contLegend: [1, 1, 1, 1, 1, 1],
               len: { RB: 7, BB: 16, SBB: 24 }
             }
@@ -292,6 +295,8 @@
       bonusChain: "礦脈延伸！",
       bonusChainSurprise: "……岩層還在震動！礦脈延伸！",
       bonusEnd: "礦脈枯竭了",
+      veinCap: "……這條礦脈被挖到極限了",
+      upperStart: "★ 礦脈進入核心層 ★",
       hintSfx: "……鏗？",
       hintDrip: "遠處傳來水滴聲",
       hintGlow: "岩壁上的紋路亮了一下",

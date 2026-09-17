@@ -347,6 +347,8 @@
       if (e.t === "stock" && e.shown) lines.push(colored(T.stock, "rainbow"));
       if (e.t === "upgrade" && e.shown) lines.push(colored(`${T.upgrade} ${veinName(e.from)}→${veinName(e.to)}`, "rainbow"));
       if (e.t === "bonusChain") lines.push(colored((e.surprise ? T.bonusChainSurprise : T.bonusChain) + " " + T.bonusStart[e.type], TYPE_COLOR[e.type]));
+      if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
+      if (e.t === "veinCap") lines.push(colored(T.veinCap, "#ff7755"));
       if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　共${e.chain}脈　收穫 $${money(veinGain)}`, config.theme.accent));
     }
 
