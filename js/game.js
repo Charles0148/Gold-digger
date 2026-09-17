@@ -230,6 +230,7 @@
       const shownStock = st.stock.filter(x => x.announced).length;
       $("vbChain").innerHTML = colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) + ` 第${st.chain}脈` + (shownStock ? ` <span style="color:#ff5555">+${shownStock}</span>` : "");
       $("vbLeft").textContent = st.bonusLeft;
+      if (st.atHigh > 0) $("vbChain").innerHTML += ` <span style="color:${config.rules.omen.colors[6] || "#ffcc33"}">≋共鳴${st.atHigh}</span>`;
       $("vbGain").textContent = money(veinGain);
     }
     const t = activeTool();
@@ -326,6 +327,7 @@
     const isRevive = r.events.some(e => e.t === "revive");
     if (!cr && !isRevive && r.omen > 0 && T.omenLine[r.omen]) lines.push(colored(T.omenLine[r.omen], oc[r.omen]));
     else if (st.state === "koukaku" && Math.random() < 0.25) lines.push(colored(T.koukakuHint, sub));
+    if (r.atHigh && !r.events.some(e => e.t === "atHighStart") && Math.random() < 0.3) lines.push(colored(T.atHighHint, oc[6] || "#ffcc33"));
     if (r.hint === "drip") lines.push(colored(T.hintDrip, sub));
     if (r.hint === "glow") lines.push(colored(T.hintGlow, "#ffe08a"));
 
@@ -338,6 +340,8 @@
       if (e.t === "revive") lines.push(colored(T.revive, r.omen === 5 ? "rainbow" : (oc[6] || "#ffcc33")));
       if (e.t === "directWin") lines.push(colored(T.directWin, "#ffaa00"));
       if (e.t === "bonusStart") { if (e.from === "chance") lines.push(colored(T.chanceWin, config.theme.accent)); lines.push(colored(T.bonusStart[e.type], TYPE_COLOR[e.type])); }
+      if (e.t === "atHighStart") lines.push(colored(T.atHighEnter, oc[6] || "#ffcc33"));
+      if (e.t === "atHighEnd") lines.push(colored(T.atHighEnd, sub));
       if (e.t === "stock" && e.shown) lines.push(colored(T.stock, "rainbow"));
       if (e.t === "upgrade" && e.shown) lines.push(colored(`${T.upgrade} ${veinName(e.from)}→${veinName(e.to)}`, "rainbow"));
       if (e.t === "bonusChain") lines.push(colored((e.surprise ? T.bonusChainSurprise : T.bonusChain) + " " + T.bonusStart[e.type], TYPE_COLOR[e.type]));
@@ -368,8 +372,10 @@
       broke = true;
     }
 
-    const boxOmen = (r.stateBefore === "bonus" && st.state === "bonus") ? (st.bonusType === "SBB" ? "vein" : 0) : Math.max(0, r.omen);
-    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink" || isRevive, tag: r.inOmen && !ev("bonusStart") && !ev("chanceLose") && !ev("fakeEnd") ? T.omenTag : "" });
+    const boxOmen = (r.stateBefore === "bonus" && st.state === "bonus")
+      ? (st.bonusType === "SBB" ? "vein" : (r.atHigh ? 6 : 0))
+      : Math.max(0, r.omen);
+    setTextbox(lines.slice(0, 5), boxOmen, { tap: r.hint === "tap" ? T.hintTap : null, blink: r.hint === "blink" || isRevive, tag: (r.atHigh && !ev("atHighEnd")) ? T.atHighTag : (r.inOmen && !ev("bonusStart") && !ev("chanceLose") && !ev("fakeEnd") ? T.omenTag : "") });
     const big = $("sceneBig");
     big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
     $("sceneSub").textContent = "";
