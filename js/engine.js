@@ -214,15 +214,18 @@
       // 每一揮都抽「延伸」：還沒確定下一隻時才抽
       // 礦層共鳴（AT 中的高確）中改用共鳴的機率；通常狀態則是基本機率＋機會牌加成
       // 連到第 boostAfter 隻（含）之後，通常狀態改用 high 表
-      const CT = rules.bonus.cont, AH = CT.atHigh || {};
+      const CT = rules.bonus.cont, AH0 = CT.atHigh || {};
+      const deep = st.chain >= CT.boostAfter && AH0.boost;          // 深層共鳴（第5隻以後加強）
+      const AH = deep ? Object.assign({}, AH0, AH0.boost) : AH0;
       const inHigh = st.atHigh > 0;
       res.atHigh = inHigh;
+      res.atHighDeep = !!deep;
       if (!st.stock.length) {
         const hi = st.chain >= CT.boostAfter, T = hi ? CT.high : CT.low;
         const p = inHigh
           ? Math.min(1, res.cat === "legend" ? AH.contLegend[s] : res.cat === "epic" ? AH.contEpic[s] : (AH.base || 0))
           : Math.min(1, T.base[type][s] + ((T.add[res.cat] || [])[s] || 0));
-        if (roll(res, rng, `礦脈延伸抽選（第${st.chain}隻 ${type}${inHigh ? "・共鳴中" : hi ? "・加強" : ""}，挖到${CAT_NAME[res.cat]}）`, p, true)) {
+        if (roll(res, rng, `礦脈延伸抽選（第${st.chain}隻 ${type}${inHigh ? (deep ? "・深層共鳴中" : "・共鳴中") : hi ? "・加強" : ""}，挖到${CAT_NAME[res.cat]}）`, p, true)) {
           const B = rules.bonus;
           const shown = roll(res, rng, "延伸→當下告知", B.announceRate);
           const next = { type: rollType(res, rng, "延伸的下一隻", rules.bonusDraw.next), announced: shown };
@@ -231,10 +234,10 @@
         } else if (!inHigh && (res.cat === "epic" || res.cat === "legend")) {
           // 沒中 → 抽礦層共鳴（高確）
           const pe = res.cat === "legend" ? AH.enterLegend[s] : AH.enterEpic[s];
-          if (roll(res, rng, `${CAT_NAME[res.cat]}→礦層共鳴（高確 ${AH.len[type]}揮）`, pe, true)) {
+          if (roll(res, rng, `${CAT_NAME[res.cat]}→${deep ? "深層共鳴" : "礦層共鳴"}（高確 ${AH.len[type]}揮）`, pe, true)) {
             st.atHigh = AH.len[type];
             res.atHigh = true;
-            res.events.push({ t: "atHighStart", len: st.atHigh });
+            res.events.push({ t: "atHighStart", len: st.atHigh, deep: !!deep });
           }
         }
       }

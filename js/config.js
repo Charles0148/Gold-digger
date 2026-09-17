@@ -22,11 +22,11 @@
     // value = 平常挖到的基本售價；veinValue = 礦脈中挖到「脈晶」的基本售價（都 × 礦坑倍率）
     categories: [
       { id: "rubble", name: "碎石", rarity: 0, value: 0, veinValue: 0 },
-      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.67 },
-      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4.46 },
-      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8.9 },
-      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 22.25 },
-      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 53.39 }
+      { id: "common", name: "普通礦", rarity: 1, value: 1, veinValue: 2.46 },
+      { id: "good", name: "綠礦（Replay）", rarity: 2, value: 1, veinValue: 4.1 },
+      { id: "rare", name: "藍礦（Bell）", rarity: 3, value: 2, veinValue: 8.19 },
+      { id: "epic", name: "紫礦（機會）", rarity: 4, value: 5, veinValue: 20.47 },
+      { id: "legend", name: "金礦（強機會）", rarity: 5, value: 15, veinValue: 49.12 }
     ],
 
     rules: {
@@ -109,7 +109,15 @@
             len: { RB: 5, BB: 12, SBB: 20 },
             contEpic: [0.7, 0.709, 0.721, 0.736, 0.748, 0.76],
             contLegend: [0.90, 0.90, 0.90, 0.90, 0.90, 0.90],
-            base: 0.002
+            base: 0.002,
+            /* 連到第 boostAfter 隻（含）之後，共鳴也一起加強（深層共鳴） */
+            boost: {
+              enterEpic: [0.5, 0.518, 0.542, 0.572, 0.596, 0.62],
+              enterLegend: [0.75, 0.768, 0.792, 0.822, 0.846, 0.87],
+              contEpic: [0.85, 0.8575, 0.8675, 0.88, 0.89, 0.9],
+              contLegend: [1, 1, 1, 1, 1, 1],
+              len: { RB: 7, BB: 16, SBB: 24 }
+            }
           }
         },
         upgrade: {                                 // 已有下一隻時再挖到金礦 → 抽升格
@@ -275,6 +283,8 @@
       bonusStart: { RB: "◆ 挖到小礦脈了 ◆", BB: "★ 挖到大礦脈了 ★", SBB: "✦ 星辰礦脈現身 ✦" },
       stock: "礦脈延伸！",
       atHighTag: "≋ 礦層在共鳴 ≋",
+      atHighTagDeep: "≋ 礦脈深層共鳴 ≋",
+      atHighEnterDeep: "……整座礦山開始共鳴",
       atHighEnter: "……整片岩層開始共鳴",
       atHighHint: "岩層還在震動",
       atHighEnd: "共鳴平息了",
