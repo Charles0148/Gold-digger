@@ -193,6 +193,7 @@
       el.style.display = L.hidden ? "none" : "";
     });
     $("tbTap").textContent = config.texts.tap;
+    $("verTag").textContent = "v" + (window.GAME_VERSION || "?");
     document.title = config.gameTitle;
   }
 

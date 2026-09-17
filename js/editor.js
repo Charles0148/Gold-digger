@@ -31,7 +31,7 @@
   const TABS = [["layout", "版面"], ["theme", "顏色"], ["images", "圖片"], ["texts", "文字"], ["numbers", "數值"], ["sim", "模擬"], ["data", "存檔/測試"]];
   function render() {
     ed.innerHTML = `
-      <div class="ed-head"><span class="ttl">✎ 編輯模式</span>
+      <div class="ed-head"><span class="ttl">✎ 編輯模式 <span style="opacity:.6;font-size:.8em">v${window.GAME_VERSION || "?"}</span></span>
         <button class="ed-btn" id="edMini">縮小</button>
         <button class="ed-btn" id="edClose">關閉</button></div>
       <div class="ed-tabs">${TABS.map(([k, n]) => `<button data-tab="${k}" class="${k === tab ? "active" : ""}">${n}</button>`).join("")}</div>
