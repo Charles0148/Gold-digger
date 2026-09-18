@@ -228,3 +228,7 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .tb-choice { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
 .tb-choice .px-btn { text-align: left; }
 .dig-plus { color: var(--accent); font-weight: bold; }
+
+/* 鏟子挖出的 +N 數字 */
+.dig-num { position: absolute; font-weight: bold; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; animation: digPop .2s steps(3); }
+@keyframes digPop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
