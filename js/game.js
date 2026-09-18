@@ -3,6 +3,7 @@
    ========================================================= */
 (function () {
   const E = window.MineEngine;
+  const E2 = window.MineEngine2;
   const CFG_KEY = "mine_config_v4";
   const SAVE_KEY = "mine_save_v1";
   const $ = id => document.getElementById(id);
@@ -19,6 +20,12 @@
   function todayKey() {
     const d = new Date();
     return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+  }
+  function pwHash(str) { // 密碼雜湊（不把密碼本身寫在程式裡）
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) { h = Math.imul(h ^ str.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+    h = Math.imul(h ^ (h >>> 16), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
+    return ((h ^= h >>> 16) >>> 0).toString(36);
   }
   function seeded(str) { // 以字串產生固定亂數（同一天同一礦坑 → 同一個設定）
     let h = 1779033703 ^ str.length;
@@ -51,8 +58,8 @@
       ores: {}, dex: {},
       boss: newBoss(),
       unlocked: ["m1"], mineId: "m1",
-      plays: {}, today: { date: todayKey(), stats: {} },
-      ads: { date: todayKey(), count: 0 },
+      plays: {}, plays2: {}, today: { date: todayKey(), stats: {} },
+      ads: { date: todayKey(), count: 0 }, pw: {},
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
   }
@@ -62,6 +69,8 @@
   if (!save || save.v !== 1) { save = newSave(); needStarter = true; }
   save.auto = false;
   if (!save.boss) save.boss = newBoss();
+  if (!save.plays2) save.plays2 = {};
+  if (!save.pw) save.pw = {};
   delete save.upgrades;
   let saveTimer = null;
   function persist(now) {
@@ -110,6 +119,11 @@
     return idx;
   }
   function basePrice(name) {
+    const m2 = (config.machine2 || {}).prices || {};
+    if (m2[name] !== undefined) {
+      const mine = config.mines.find(m => m.engine === 2) || {};
+      return Math.round(m2[name] * (mine.mult || 1) * 10) / 10;
+    }
     const it = itemIndex()[name]; if (!it) return 0;
     const base = it.vein ? (it.cat.veinValue ?? it.cat.value) : it.cat.value;
     return Math.round(base * it.mine.mult * 10) / 10;
@@ -204,12 +218,24 @@
     $("hudPlays").textContent = fmt(totalPlays());
   }
 
+  /* ---------------- 第二台機台（三位前輩的考驗） ---------------- */
+  const M2 = () => config.machine2;
+  const isM2 = () => curMine().engine === 2;
+  const FREE2 = ["date", "stIntro", "pick", "dig"];
+  function state2() {
+    const id = curMine().id;
+    if (!save.plays2[id] || !save.plays2[id].counts) save.plays2[id] = E2.newState2();
+    return save.plays2[id];
+  }
+  const bossName2 = id => (M2().bosses.find(b => b.id === id) || {}).name || id;
+
   /* ---------------- 挖礦畫面 ---------------- */
   let veinGain = 0;
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() {
     checkDay();
+    if (isM2()) return renderMine2();
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
     let stateTxt = st.state === "bonus" ? colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) : "";
@@ -252,6 +278,42 @@
     renderHud();
   }
 
+  function renderMine2() {
+    const mine = curMine(), st = state2(), ms = mineStats(mine.id);
+    $("mbName").textContent = mine.name;
+    const PH = { normal: "", date: "談話中", at: "報酬", stIntro: "挑戰準備", st: "ST", reward: "一轉定勝負", pick: "選擇", dig: "挖掘中", bonus: "BONUS" };
+    let txt = st.upper ? colored("上位", "#ffcc33") + " " : "";
+    txt += PH[st.state] ? colored(PH[st.state], config.theme.accent) : "";
+    if (save.debug.showSetting) {
+      txt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${st.state}｜累${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手" + bossName2(st.stBoss) : ""}${st.bonusTotal ? "｜報酬" + st.bonusTotal + "轉" : ""}</span>`;
+    }
+    $("mbState").innerHTML = txt;
+    $("mbSwings").textContent = fmt(ms.swings);
+    $("mbHits").textContent = ms.hits || 0;
+    $("mbEpic").textContent = ms.dates || 0;
+    $("mbSince").textContent = st.sinceAt;
+    const inRun = ["at", "st", "reward", "pick", "dig", "bonus", "stIntro"].includes(st.state);
+    $("veinBanner").classList.toggle("hidden", !inRun);
+    $("scene").classList.toggle("vein-on", !!st.upper);
+    if (inRun) {
+      $("vbChain").innerHTML = (st.upper ? colored("上位", "#ffcc33") + " " : "") + (st.state === "bonus" ? "BONUS" : st.state === "st" ? `ST 第${st.stRound}關` : st.state === "at" ? "報酬" : "挑戰");
+      $("vbLeft").textContent = st.state === "bonus" ? st.bonusLeft : st.state === "st" ? st.stLeft : st.state === "at" ? st.atLeft : "—";
+      $("vbGain").textContent = money(st.gain * (mine.mult || 1));
+    }
+    const t = activeTool();
+    if (t) {
+      const d = toolDef(t.id), f = toolFactor(t, mine);
+      $("tiName").innerHTML = `<span style="color:${rarityColor(d.rarity)}">${d.name}</span>` + (f < 1 ? ` <span style="color:#ff7755">收益${Math.round(f * 100)}%</span>` : "");
+      $("tiBar").style.width = (t.dur / t.max * 100) + "%";
+      $("tiBar").style.background = t.dur / t.max > .5 ? "#55ff55" : t.dur / t.max > .2 ? "#ffcc33" : "#ff5555";
+      $("tiDur").textContent = t.dur + "/" + t.max;
+    } else { $("tiName").textContent = "無工具"; $("tiBar").style.width = "0"; $("tiDur").textContent = ""; }
+    $("rollLog").classList.toggle("hidden", !save.debug.showRolls);
+    $("btnAuto").textContent = save.auto ? "自動" : "手動";
+    $("btnAuto").classList.toggle("on", save.auto);
+    renderHud();
+  }
+
   function setTextbox(lines, omen, opts) {
     opts = opts || {};
     const box = $("textbox");
@@ -268,7 +330,119 @@
   }
   function colored(txt, color) { return color === "rainbow" ? `<span class="rainbow-text">${txt}</span>` : `<span style="color:${color}">${txt}</span>`; }
 
+  /* ---------------- 第二台機台：一次點擊 ---------------- */
+  function doSwing2(input) {
+    checkDay();
+    const mine = curMine(), R = M2(), st = state2(), T = R.lines, sub = config.theme.sub;
+    const free = FREE2.includes(st.state);
+    const tool = activeTool();
+    if (!free && !tool) {
+      const need = config.tools.find(t => t.tier === mine.tier);
+      setTextbox([colored(config.texts.noTool, "#ff5555"), colored(`建議使用「${need ? need.name : ""}」以上`, sub), `到${config.boss.name}那裡買，或看廣告領取`], 0);
+      setChoices(null); stopAuto(); renderMine();
+      return null;
+    }
+    const res = E2.step2(R, todaySetting(mine.id), st, Math.random, input || {});
+    const ms = mineStats(mine.id);
+    const lines = [];
+    let bigHtml = null, newFind = false;
+
+    if (!res.free) {
+      ms.swings++;
+      const phase = res.stateBefore === "normal" ? "normal" : "vein";
+      const g = ((R.map || {})[phase] || {})[res.cat];
+      const name = Array.isArray(g) ? pickOne(g) : g;
+      const factor = toolFactor(tool, mine);
+      const sfx = pickOne(config.texts.swing);
+      if (!name) {
+        lines.push(colored(sfx + " " + pickOne(config.texts.rubble), rarityColor(0)));
+        bigHtml = colored("·", rarityColor(0));
+      } else if (factor < 1 && Math.random() >= factor) {
+        lines.push(sfx + " " + colored(name, oreColor(name)) + colored(" 碎掉了…", "#ff7755"));
+        bigHtml = `<s>${colored(name, oreColor(name))}</s>`;
+      } else {
+        save.ores[name] = (save.ores[name] || 0) + 1;
+        if (!save.dex[name]) { save.dex[name] = { count: 0, first: todayKey() }; newFind = true; }
+        save.dex[name].count++;
+        const price = itemPrice(name);
+        lines.push(sfx + " " + colored(name, oreColor(name)) + ` <span style="color:${sub}">$${money(price)}</span>` + (newFind ? colored(" NEW", config.theme.accent) : ""));
+        bigHtml = colored(name, oreColor(name));
+      }
+      tool.dur--;
+      if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
+    }
+
+    let tag = "", omen = 0, choices = null;
+    const ev = t => res.events.find(e => e.t === t);
+    for (const e of res.events) {
+      if (e.t === "tenjou") lines.push(colored("……有人在坑口喊你", config.theme.accent));
+      if (e.t === "dateStart") { lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "call", T.call)), config.theme.accent)); ms.dates = (ms.dates || 0) + 1; }
+      if (e.t === "dateStep") {
+        const pool = bl(e.boss, e.kind, bl(e.boss, "chat", ["……"]));
+        const oc = config.rules.omen.colors;
+        lines.push(colored(pickOne(pool), oc[e.color] || "#e8e8e8"));
+        omen = Math.max(omen, e.color);
+      }
+      if (e.t === "dateWin") { lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "win", [T.dateWin])), "#ffcc33")); lines.push(colored(T.atStart, "rainbow")); ms.hits = (ms.hits || 0) + 1; }
+      if (e.t === "dateLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "lose", [T.dateLose])), sub));
+      if (e.t === "atEnd") lines.push(colored(T.stIntro, config.theme.accent));
+      if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
+      if (e.t === "askBoss") {
+        lines.push(colored(T.askBoss, config.theme.accent));
+        choices = M2().bosses.map(b => ({ v: b.id, label: `▶ 「${b.name}前輩，這次我要得到你的信任」` }));
+      }
+      if (e.t === "stStart") {
+        lines.push(colored(`第${e.round}關　${T.stAppear} ` + colored(bossName2(e.boss), "#ffcc33"), "#e8e8e8"));
+        const ap = bl(e.boss, "appear", null); if (ap) lines.push(colored(pickOne(ap), sub));
+      }
+      if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）"), "#ffcc33"));
+      if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　共${e.round}關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
+      if (e.t === "rewardRoll") lines.push(colored(T.reward, config.theme.accent));
+      if (e.t === "askPick") {
+        lines.push(colored(T.pick, config.theme.accent));
+        choices = [{ v: "drill", label: T.drill }, { v: "shovel", label: T.shovel }];
+      }
+      if (e.t === "digStart") lines.push(colored(T.digTap, config.theme.accent));
+      if (e.t === "dig") { bigHtml = `<span class="dig-plus">+${e.inc}</span>`; lines.push(colored(`目前 ${e.shown} 轉…（還要 ${e.taps - e.tap} 下）`, sub)); }
+      if (e.t === "announce") { lines.push(colored(`${T.announce} ${e.total} 轉！`, "rainbow")); bigHtml = colored(e.total + "轉", config.theme.accent); }
+      if (e.t === "bonusEnd") lines.push(colored(T.bonusEnd + `　收穫 $${money(st.gain * (mine.mult || 1))}`, config.theme.accent));
+    }
+    const stt = st.state;
+    if (stt === "date") tag = (state2().dateOdd ? "≋ 談話中（怪異）≋" : "≋ 談話中 ≋");
+    else if (stt === "at" || stt === "bonus") tag = st.upper ? "≋ 上位・報酬中 ≋" : "≋ 報酬中 ≋";
+    else if (stt === "st") tag = st.upper ? `≋ 上位ST 第${st.stRound}關 ≋` : `≋ ST 第${st.stRound}關 ≋`;
+    if (st.upper) omen = 6;
+    else if (stt === "st") omen = 2;
+
+    setTextbox(lines.slice(0, 5), omen, { tag, tap: stt === "dig" ? T.digTap : null });
+    setChoices(choices);
+    if (bigHtml) {
+      const big = $("sceneBig");
+      big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
+    }
+    $("sceneSub").textContent = "";
+    logRolls(res, ms.swings);
+    renderMine();
+    persist();
+    return { res, st };
+  }
+  const bl = (boss, key, fallback) => {
+    const v = ((M2().bossLines || {})[boss] || {})[key];
+    return (v && v.length) ? v : fallback;
+  };
+  function setChoices(list) {
+    const box = $("tbChoice");
+    if (!list || !list.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+    box.classList.remove("hidden");
+    box.innerHTML = list.map(c => `<button class="px-btn wide" data-m2="${c.v}">${c.label}</button>`).join("");
+  }
+  function oreColor(name) {
+    const it = itemIndex()[name];
+    return rarityColor(it ? it.cat.rarity : 1);
+  }
+
   function doSwing() {
+    if (isM2()) return doSwing2();
     checkDay();
     const mine = curMine(), T = config.texts, rules = config.rules, sub = config.theme.sub;
     const tool = activeTool();
@@ -404,7 +578,8 @@
       ? `<div class="pk">・${x.label}｜1~${x.total} 抽出 ${x.n} → ${x.result}（${x.ranges.join("／")}）</div>`
       : `<div class="${x.hit ? "hit" : "miss"}">・${x.label} ${pctText(x.p, x.D)}｜1~${x.D.toLocaleString("en-US")} 抽出 ${x.n.toLocaleString("en-US")}（≤${x.need.toLocaleString("en-US")} 當選）→ ${x.hit ? "當選" : "沒中"}</div>`).join("");
     const div = document.createElement("div");
-    div.innerHTML = `<div class="sw">#${swingNo} 挖到 ${catDef(r.cat).name}</div>${html}`;
+    const cn = (catDef(r.cat) || {}).name || (E2 && E2.NAME2[r.cat]) || r.cat || "—";
+    div.innerHTML = `<div class="sw">#${swingNo} ${r.cat ? "挖到 " + cn : "演出"}</div>${html}`;
     box.prepend(div);
     while (box.children.length > 60) box.lastChild.remove();
   }
@@ -414,6 +589,7 @@
   const AUTO_STOP = ["chanceStart", "fakeStart", "tenjou", "directWin", "bonusStart", "bonusChain", "bonusEnd", "stock", "upgrade", "chanceUp", "revive"];
   function autoStep() {
     if (!save.auto) return;
+    if (isM2()) return autoStep2();
     const res = doSwing();
     if (!res) return;
     const stopAt = (config.play && config.play.autoStopOmen) || 3;
@@ -423,6 +599,21 @@
       (res.broke && !activeTool());
     if (stop) { stopAuto(); return; }
     autoTimer = setTimeout(autoStep, ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
+  }
+  // 第二台機台：自動時直接跳過所有對話演出
+  const AUTO_STOP2 = ["dateWin", "upperStart", "announce", "stLose", "bonusEnd"];
+  function autoStep2() {
+    if (!save.auto) return;
+    const st = state2();
+    const input = st.state === "pick" ? { choice: "drill" }
+      : (st.state === "stIntro" && st.upper && !st.pickedBoss) ? { choice: pickOne(M2().bosses).id }
+      : {};
+    const out = doSwing2(input);
+    if (!out) return;
+    const free = FREE2.includes(out.res.stateBefore);
+    const stop = out.res.events.some(e => AUTO_STOP2.includes(e.t)) || (out.res.stateBefore !== "normal" && !activeTool());
+    if (stop && !save.auto) return;
+    autoTimer = setTimeout(autoStep2, free ? 120 : ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
   }
   function stopAuto() { save.auto = false; clearTimeout(autoTimer); renderMine(); }
   function toggleAuto() {
@@ -477,11 +668,11 @@
       const here = m.id === save.mineId;
       const epicRate = ms.epic ? `1/${Math.round(ms.normalSwings / ms.epic)}` : "—";
       const btn = here ? '<span class="sub">所在地</span>'
-        : unlocked ? `<button class="px-btn small" data-go-mine="${m.id}">前往</button>`
+        : unlocked ? `<button class="px-btn small" data-go-mine="${m.id}">${locked(m.id) ? "🔒 " : ""}前往</button>`
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
   }
 
@@ -720,8 +911,57 @@
     };
   }
 
+  const lockOf = id => ((config.locks || {})[id]) || null;
+  const locked = id => !!lockOf(id) && !save.pw[id];
+  function askPassword(id, onOk) {
+    const box = $("modalBox"), mine = mineDef(id);
+    box.innerHTML = `<div>「${mine.name}」需要密碼</div>
+      <div class="sub" style="margin-top:6px">坑口上了鎖。</div>
+      <input id="pwInput" inputmode="numeric" maxlength="16" placeholder="輸入密碼">
+      <div class="sub hidden" id="pwErr" style="color:#ff5555">密碼不對</div>
+      <div class="btns"><button class="px-btn" id="pwOk">開鎖</button><button class="px-btn" id="pwNo">取消</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("pwInput").focus();
+    const tryIt = () => {
+      const v = ($("pwInput").value || "").trim();
+      if (pwHash(v) === lockOf(id)) {
+        save.pw[id] = true; persist(true);
+        $("modal").classList.add("hidden");
+        toast("坑口的鎖開了");
+        onOk();
+      } else {
+        $("pwErr").classList.remove("hidden");
+        $("pwInput").value = "";
+      }
+    };
+    $("pwOk").onclick = tryIt;
+    $("pwInput").onkeydown = e => { if (e.key === "Enter") tryIt(); };
+    $("pwNo").onclick = () => $("modal").classList.add("hidden");
+  }
+
+  function leaveMine() {
+    const mine = curMine();
+    const box = $("modalBox");
+    box.innerHTML = `<div style="line-height:1.7">真的要離開嗎<br><span class="sub">離開了礦坑之後，坑洞將會坍塌，搜尋的結果也將重置喔…</span></div>
+      <div class="btns"><button class="px-btn" id="lvOk">離開</button><button class="px-btn" id="lvNo">留下</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("lvNo").onclick = () => $("modal").classList.add("hidden");
+    $("lvOk").onclick = () => {
+      stopAuto(); clearM2UI();
+      $("modal").classList.add("hidden");
+      go("map");
+      delete save.plays[mine.id];
+      delete save.plays2[mine.id];
+      save.today.stats[mine.id] = { swings: 0, hits: 0, epic: 0, normalSwings: 0 };
+      toast("坑洞坍塌了，" + mine.name + " 的搜尋結果已重置");
+      persist(true); renderMap();
+    };
+  }
+
   let currentScreen = "mine";
+  function clearM2UI() { const b = $("tbChoice"); if (b) { b.classList.add("hidden"); b.innerHTML = ""; } }
   function go(name) {
+    clearM2UI();
     if (name !== "mine") stopAuto();
     if (name === "shop" && currentScreen !== "shop") bossView = "menu";
     currentScreen = name;
@@ -743,6 +983,7 @@
     doSwing();
   });
   $("btnAuto").addEventListener("click", () => { if (!window.Editor?.isPicking()) toggleAuto(); });
+  $("btnLeave").addEventListener("click", () => { if (!window.Editor?.isPicking()) leaveMine(); });
   $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking()) askName(false); });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
@@ -754,12 +995,20 @@
       let sum = 0; names.forEach(n => { sum += itemPrice(n) * save.ores[n]; });
       save.coins += sum; save.ores = {}; toast(`全部賣出 +$${money(sum)}`); persist(); renderShop();
     }
+    if (d.m2) { doSwing2({ choice: d.m2 }); return; }
     if (d.boss) bossGo(d.boss);
     if (d.deliver !== undefined) deliver(+d.deliver);
     if (d.equip) { save.equipped = +d.equip; const tt = save.tools.find(x => x.uid === +d.equip); if (tt) { const f = toolFactor(tt, curMine()); if (f < 1) toast(`工具等級不足：這座礦坑收益剩 ${Math.round(f * 100)}%`); } persist(); renderBag(); }
     if (d.sell1) sell(d.sell1, 1);
     if (d.sellall) sell(d.sellall, Infinity);
-    if (d.goMine) { save.mineId = d.goMine; save.equipped = null; persist(); toast("前往 " + mineDef(d.goMine).name); go("mine"); }
+    if (d.goMine) {
+      if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
+      const from = curMine();
+      if (from.engine === 2 && from.id !== d.goMine) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
+      save.mineId = d.goMine; save.equipped = null; clearM2UI(); persist();
+      if (!(from.engine === 2 && from.id !== d.goMine)) toast("前往 " + mineDef(d.goMine).name);
+      go("mine");
+    }
     if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); } }
     if (d.buy) { const tl = toolDef(d.buy), pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); persist(); toast("購買 " + tl.name); renderShop(); } }
   });
@@ -780,6 +1029,29 @@
     setSave(s) { save = s; persist(true); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
+    setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
+    clearLockMemory(id) { delete save.pw[id]; persist(true); renderAll(); },
+    m2: {
+      get state() { return isM2() ? state2() : null; },
+      isHere: () => isM2(),
+      favor(boss) { const st = state2(); if (boss === "all") { st.favor.a = st.favor.b = st.favor.c = 1; } else st.favor[boss] = 1; persist(true); renderAll(); },
+      counts(boss, n) { const st = state2(); st.counts[boss] = Math.max(0, (st.counts[boss] || 0) + n); persist(true); renderAll(); },
+      card(cat) { state2().forceCat = cat; renderAll(); },
+      date(boss, win) {
+        const st = state2();
+        E2.forceDate(M2(), todaySetting(curMine().id), st, boss, Math.random, win !== false);
+        persist(true); go("mine");
+      },
+      at(boss) {
+        const st = state2();
+        Object.assign(st, { state: "at", atLeft: config.machine2.at.length, gain: 0, stRound: 0, upper: false, pickedBoss: null, sinceAt: 0, dateBoss: boss || "a" });
+        persist(true); go("mine");
+      },
+      upper(on) { const st = state2(); st.upper = on !== false; st.pickedBoss = null; persist(true); renderAll(); },
+      stBoss(boss) { const st = state2(); st.stBoss = boss; st.pickedBoss = boss; persist(true); renderAll(); },
+      bonus(n) { const st = state2(); st.bonusTotal = n; st.bonusLeft = n; st.state = "bonus"; persist(true); go("mine"); },
+      reset() { const id = curMine().id; delete save.plays2[id]; persist(true); renderAll(); }
+    },
     addFavor: p => { const r = addFavor(p); persist(true); renderAll(); if (r.gained.length) showBoons(r.gained); },
     newRequest: () => { save.boss.req = makeRequest(); persist(true); renderAll(); },
     toolFactor, itemPrice, basePrice

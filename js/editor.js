@@ -28,7 +28,7 @@
   function setPicking(v) { picking = v; document.body.classList.toggle("picking", v); document.body.style.touchAction = v ? "none" : ""; }
 
   /* ---------------- 外框 ---------------- */
-  const TABS = [["layout", "版面"], ["theme", "顏色"], ["images", "圖片"], ["texts", "文字"], ["numbers", "數值"], ["sim", "模擬"], ["data", "存檔/測試"]];
+  const TABS = [["layout", "版面"], ["theme", "顏色"], ["images", "圖片"], ["texts", "文字"], ["numbers", "數值"], ["m2", "前輩台"], ["sim", "模擬"], ["data", "存檔/測試"]];
   function render() {
     ed.innerHTML = `
       <div class="ed-head"><span class="ttl">✎ 編輯模式 <span style="opacity:.6;font-size:.8em">v${window.GAME_VERSION || "?"}</span></span>
@@ -40,7 +40,7 @@
     ed.querySelector("#edClose").onclick = () => fab.onclick();
     ed.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { tab = b.dataset.tab; if (tab !== "layout") setPicking(false); render(); });
     const body = ed.querySelector("#edBody");
-    ({ layout: tabLayout, theme: tabTheme, images: tabImages, texts: tabTexts, numbers: tabNumbers, sim: tabSim, data: tabData })[tab](body);
+    ({ layout: tabLayout, theme: tabTheme, images: tabImages, texts: tabTexts, numbers: tabNumbers, m2: tabM2, sim: tabSim, data: tabData })[tab](body);
   }
 
   const screenJump = () => `<div class="ed-flex">切換畫面：${[["mine", "挖礦"], ["bag", "背包"], ["map", "地圖"], ["dex", "圖鑑"], ["shop", "工坊"]].map(([k, n]) => `<button class="ed-btn" data-jump="${k}">${n}</button>`).join("")}</div>`;
@@ -213,6 +213,11 @@
       ${[1, 2, 3, 4, 5].map(n => `<div class="ed-row"><label>${n}回合</label><textarea rows="${n}" data-p="texts.chanceScript.r${n}" data-lines>${esc(((T.chanceScript || {})["r" + n] || []).join("\n"))}</textarea></div>`).join("")}
       <div class="ed-sec">顏色升級時額外插的句子（一行一句，隨機挑）</div>
       <textarea rows="4" data-p="texts.chanceUpLines" data-lines>${esc((T.chanceUpLines || []).join("\n"))}</textarea>
+      <div class="ed-sec">第二台機台：三位前輩的名字與台詞</div>
+      ${draft.machine2.bosses.map((b, i) => `<div class="ed-row"><label>前輩${i + 1}</label><input type="text" data-p="machine2.bosses.${i}.name" value="${esc(b.name)}"></div>`).join("")}
+      <div class="ed-row"><label>找你談話(多句)</label><textarea rows="3" data-p="machine2.lines.call" data-lines>${esc((draft.machine2.lines.call || []).join("\n"))}</textarea></div>
+      <div class="ed-row"><label>約會對話(一行一句)</label><textarea rows="3" data-p="machine2.lines.dateStep" data-lines>${esc((draft.machine2.lines.dateStep || []).join("\n"))}</textarea></div>
+      ${Object.keys(draft.machine2.lines).filter(k => !["call", "dateStep"].includes(k)).map(k => `<div class="ed-row"><label>${{ dateWin: "約會成功", dateLose: "約會失敗", atStart: "進入報酬", stIntro: "挑戰開始", stAppear: "對手出現", stPass: "通關", stLose: "失敗", reward: "一轉定勝負", pick: "選擇告知", drill: "鑽頭選項", shovel: "鏟子選項", digTap: "挖掘提示", announce: "告知轉數", upperStart: "進入上位", askBoss: "選擇前輩", bonusEnd: "BONUS結束" }[k] || k}</label><input type="text" data-p="machine2.lines.${k}" value="${esc(draft.machine2.lines[k])}"></div>`).join("")}
       <div class="ed-sec">礦坑老闆</div>
       <div class="ed-row"><label>名字</label><input type="text" data-p="boss.name" value="${esc(draft.boss.name)}"></div>
       <div class="ed-row"><label>打招呼(多句)</label><textarea rows="3" data-p="boss.lines.greet" data-lines>${draft.boss.lines.greet.join("\n")}</textarea></div>
@@ -241,6 +246,11 @@
     enter: "進入高確率", drop: "每揮轉落率", min: "最短", max: "最長", rate: "確定後每揮出現率", weights: "各暗示權重",
     RB: "RB", BB: "BB", SBB: "SBB", fake: "假前兆", chanceLow: "連續演出(低機率沒中)", chanceHigh: "連續演出(高機率沒中)", highP: "高機率門檻", chanceWin: "連續演出(已當選)", zencho_: "前兆", sbbRainbow: "SBB出彩色機率", sameTier: "同階機率", minDur: "耐久下限", maxDur: "耐久上限", bonus_: "AT中",
     autoInterval: "自動間隔(ms)", autoStopOmen: "自動停止期待度(0~5)",
+    machine2: "第二台機台", bosses: "三位前輩", date: "談話（約會）", steps: "長度範圍(最短,最長)", oddChance: "違和感長度出現率", shortLen: "違和感・短(最短,最長)", longLen: "違和感・長(最短,最長)",
+    colorWin: "會過時的顏色權重(白藍黃綠紅)", colorLose: "不會過時的顏色權重", upAt: "從第幾色用升溫台詞", hotAt: "從第幾色用確信台詞", hit: "ST對應牌通過率", call: "找你談話", guarantee: "保底（第幾個必定）", rate: "各累積數的機率",
+    steps: "對話步數", favorMin: "好感度保留下限", favorMax: "好感度保留上限", atTable: "報酬10轉的小役", bonusTable: "BONUS的小役", stTable: "ST的小役（依對手）", stTableUpper: "上位ST的小役",
+    appear: "哪位前輩出現的權重", otherPass: "抽到別人的牌也通過", hitRight: "上位・壓對", hitWrong: "上位・壓錯", rewardTable: "一轉定勝負的小役", reward: "報酬轉數範圍", low: "無（最低）", mid: "銅鐘/空掘", card: "機會牌",
+    dig: "鏟子", taps: "至少點幾下", plusTwo: "出現+2的機率", prices: "礦石基本售價", cardA: "甲的機會牌", cardB: "乙的機會牌", cardC: "丙的機會牌", bell: "銅鐘", replay: "空掘",
     reqHours: "幾小時換委託", lineWeights: "委託1/2/3行權重", catWeights: "委託礦石稀有度權重", qty: "需求數量(最少,最多)", points: "恩惠點數",
     completeBonus: "全部完成加點", veinChance: "要求脈晶機率", deliverMul: "交付金額倍率", levelNeed: "升級所需點數", step: "每段增加", every: "每幾級一段",
     boonRarity: "恩惠稀有度權重(普通/藍/紫/金)", r: "稀有度(0普通~3金)", v: "效果數值", underMul: "低階工具額外折扣"
@@ -280,6 +290,11 @@
       <div class="ed-note">機率用小數：0.01 = 1%。權重是相對比例。改完到「模擬」分頁跑一次，確認初當與機械割。</div>
       ${numTree(draft.rules, "rules", "", 0)}
       <div class="ed-sec">自動模式</div>${numTree(draft.play, "play", "", 1)}
+      <div class="ed-sec">第二台機台：三位前輩的考驗</div>
+      <div class="ed-note">bosses：date = 約會成功率、hit = ST 中抽到對應機會牌的通過率。call.rate = 累積第 n 個機會牌時「前輩找你談話」的機率。</div>
+      ${numTree(draft.machine2, "machine2", "", 1)}
+      <div class="ed-sec">第二台機台：礦石基本售價</div>
+      ${Object.keys(draft.machine2.prices).map(k => `<div class="ed-row"><label>${k}</label><input type="number" step="any" data-n="machine2.prices.${k}" value="${draft.machine2.prices[k]}"></div>`).join("")}
       <div class="ed-sec">礦坑老闆（委託／恩惠）</div>
       <div class="ed-note">升級所需 = 基本 + 每段增加 × floor(等級 ÷ 每幾級一段)。恩惠「效果數值」0.05 = 5%。</div>
       ${numTree(draft.boss, "boss", "", 1)}
@@ -294,6 +309,64 @@
       if (inp.value === "" || isNaN(+inp.value)) { inp.value = getPath(draft, inp.dataset.n); return; }
       setPath(draft, inp.dataset.n, +inp.value); commit();
     });
+  }
+
+  /* ================= 前輩台（第二台機台：台詞 + 開發者測試） ================= */
+  function tabM2(body) {
+    const M = draft.machine2, S = G.save;
+    const here = G.m2 && G.m2.isHere();
+    const st = here ? G.m2.state : null;
+    const KEYS = [["call", "找你談話"], ["chat", "談話・一般（白藍黃）"], ["up", "談話・升溫（綠）"], ["hot", "談話・確信（紅）"], ["win", "約會成功"], ["lose", "約會失敗"], ["appear", "ST 出場"], ["pass", "ST 通關"], ["fail", "ST 失敗"]];
+    body.innerHTML = `
+      <div class="ed-note">每個欄位一行一句，遊戲會隨機挑一句。談話每一轉會抽一個信賴度顏色：白／藍／黃用「一般」、綠用「升溫」、紅用「確信」的句子。紅色出現越多次＝越容易過關。談話長度 5～15 轉，抽到 1～2 轉或 16～20 轉就是違和感（確定過關）。</div>
+      ${M.bosses.map((b, i) => `
+        <div class="ed-sec">${b.name}（${["甲・通關高", "乙・中", "丙・低"][i]}）</div>
+        <div class="ed-row"><label>名字</label><input type="text" data-p="machine2.bosses.${i}.name" value="${esc(b.name)}"></div>
+        ${KEYS.map(([k, n]) => `<div class="ed-row"><label>${n}</label><textarea rows="2" data-p="machine2.bossLines.${b.id}.${k}" data-lines>${esc((((M.bossLines || {})[b.id] || {})[k] || []).join("\n"))}</textarea></div>`).join("")}
+      `).join("")}
+      <div class="ed-note">個性：${M.bosses[0].name}＝容易被逗笑的女生（認真起來就是升溫）／${M.bosses[1].name}＝口語的年輕男生（把你當兄弟就是升溫）／${M.bosses[2].name}＝不苟言笑（他笑出來就是確信）。</div>
+      <div class="ed-sec">共用演出文字</div>
+      ${["atStart", "stIntro", "stAppear", "reward", "pick", "drill", "shovel", "digTap", "announce", "upperStart", "askBoss", "bonusEnd"].map(k => `<div class="ed-row"><label>${{ atStart: "進入報酬", stIntro: "挑戰開始", stAppear: "對手出現", reward: "一轉定勝負", pick: "選擇告知", drill: "鑽頭選項", shovel: "鏟子選項", digTap: "挖掘提示", announce: "告知轉數", upperStart: "進入上位", askBoss: "選擇前輩", bonusEnd: "BONUS結束" }[k]}</label><input type="text" data-p="machine2.lines.${k}" value="${esc(M.lines[k] || "")}"></div>`).join("")}
+
+      <div class="ed-sec">進入密碼</div>
+      <div class="ed-note">這座礦坑要輸入密碼才能進入（密碼只存雜湊，程式裡看不到原本的數字）。開過一次之後這台裝置會記住；按「忘記這台裝置」會再問一次。</div>
+      <div class="ed-flex"><input type="text" id="m2pw" placeholder="輸入新密碼" style="flex:1;min-width:120px"><button class="ed-btn" id="m2pwSet">設定</button><button class="ed-btn" id="m2pwOff">取消上鎖</button><button class="ed-btn" id="m2pwForget">忘記這台裝置</button></div>
+      <div class="ed-sec">開發者測試（只對「三位前輩的考驗」有效）</div>
+      ${here ? `<div class="ed-note">目前狀態：<b>${st.state}</b>｜累積 ${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感度 ${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手 " + (M.bosses.find(b => b.id === st.stBoss) || {}).name : ""}${st.upper ? "｜上位中" : ""}</div>` : `<div class="ed-note" style="color:#ff9">你現在不在這座礦坑。先到地圖前往「三位前輩的考驗」。</div>`}
+      <div class="ed-note" style="margin:6px 0 2px">好感度加滿</div>
+      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2fav="${b.id}">${b.name} 100%</button>`).join("")}<button class="ed-btn" data-m2fav="all">三位全滿</button></div>
+      <div class="ed-note" style="margin:6px 0 2px">累積機會牌</div>
+      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2cnt="${b.id}">${b.name} +5</button>`).join("")}</div>
+      <div class="ed-note" style="margin:6px 0 2px">下一轉指定抽到</div>
+      <div class="ed-flex">${[["cardA", M.bosses[0].name + "的機會牌"], ["cardB", M.bosses[1].name + "的機會牌"], ["cardC", M.bosses[2].name + "的機會牌"], ["bell", "銅鐘"], ["replay", "空掘"], ["rubble", "碎石"]].map(([c, n]) => `<button class="ed-btn" data-m2card="${c}">${n}</button>`).join("")}</div>
+      <div class="ed-note" style="margin:6px 0 2px">直接進流程</div>
+      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2date="${b.id}">${b.name} 約會(必成功)</button>`).join("")}</div>
+      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2datelose="${b.id}">${b.name} 約會(必失敗)</button>`).join("")}</div>
+      <div class="ed-flex"><button class="ed-btn primary" data-m2at="1">直接進報酬 10 轉</button><button class="ed-btn" data-m2upper="1">切換上位</button><button class="ed-btn danger" data-m2reset="1">重置這座礦坑</button></div>
+      <div class="ed-note" style="margin:6px 0 2px">直接進 BONUS（指定轉數）</div>
+      <div class="ed-flex">${[10, 30, 50, 100, 200].map(n => `<button class="ed-btn" data-m2bonus="${n}">${n} 轉</button>`).join("")}</div>`;
+    bindP(body);
+    body.querySelectorAll("[data-sets]").forEach(inp => inp.onchange = inp.oninput = () => {
+      const v = inp.value.split("\n").map(l => l.split(/[｜|]/).map(x => x.trim()).filter(Boolean)).filter(a => a.length);
+      setPath(draft, inp.dataset.p, v); commit();
+    });
+    const dev = (sel, fn) => body.querySelectorAll(sel).forEach(b => b.onclick = () => {
+      if (!G.m2.isHere()) { G.toast("先到「三位前輩的考驗」礦坑"); return; }
+      fn(b); render();
+    });
+    const $m = id => body.querySelector("#" + id);
+    $m("m2pwSet").onclick = () => { const v = ($m("m2pw").value || "").trim(); if (!v) { G.toast("先輸入密碼"); return; } G.setLock("m6", v); draft = clone(G.config); G.toast("密碼已更新"); render(); };
+    $m("m2pwOff").onclick = () => { G.setLock("m6", null); draft = clone(G.config); G.toast("已取消上鎖"); render(); };
+    $m("m2pwForget").onclick = () => { G.clearLockMemory("m6"); G.toast("下次進入會再問密碼"); };
+    dev("[data-m2fav]", b => { G.m2.favor(b.dataset.m2fav); G.toast("好感度已加滿"); });
+    dev("[data-m2cnt]", b => { G.m2.counts(b.dataset.m2cnt, 5); G.toast("累積 +5"); });
+    dev("[data-m2card]", b => { G.m2.card(b.dataset.m2card); G.toast("下一轉將抽到指定的小役"); });
+    dev("[data-m2date]", b => { G.m2.date(b.dataset.m2date, true); });
+    dev("[data-m2datelose]", b => { G.m2.date(b.dataset.m2datelose, false); });
+    dev("[data-m2at]", () => { G.m2.at(); });
+    dev("[data-m2upper]", () => { const on = !G.m2.state.upper; G.m2.upper(on); G.toast(on ? "已進入上位" : "已解除上位"); });
+    dev("[data-m2bonus]", b => { G.m2.bonus(+b.dataset.m2bonus); });
+    dev("[data-m2reset]", () => { G.m2.reset(); G.toast("已重置"); });
   }
 
   /* ================= 模擬 ================= */
