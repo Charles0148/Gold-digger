@@ -7,10 +7,11 @@
    - 對話演出轉不消耗任何東西（res.free = true）
    ========================================================= */
 (function (root) {
-  const CATS2 = ["cardA", "cardB", "cardC", "bell", "replay", "common", "rubble"];
-  const NAME2 = { cardA: "甲的機會牌", cardB: "乙的機會牌", cardC: "丙的機會牌", bell: "銅鐘", replay: "空掘（Replay）", common: "普通礦", rubble: "碎石" };
+  const CATS2 = ["goldA", "goldB", "goldC", "cardA", "cardB", "cardC", "bell", "replay", "common", "rubble"];
+  const NAME2 = { goldA: "甲的金機會牌", goldB: "乙的金機會牌", goldC: "丙的金機會牌", cardA: "甲的機會牌", cardB: "乙的機會牌", cardC: "丙的機會牌", bell: "銅鐘", replay: "空掘（Replay）", common: "普通礦", rubble: "碎石" };
   const CARD_OF = { a: "cardA", b: "cardB", c: "cardC" };
   const BOSS_OF = { cardA: "a", cardB: "b", cardC: "c" };
+  const GOLD_OF = { goldA: "a", goldB: "b", goldC: "c" };
 
   const randInt = (rng, a, b) => a + Math.floor(rng() * (b - a + 1));
   const denom = p => { if (p <= 0) return 100; let D = 100; while (p * D < 1 && D < 1e7) D *= 10; return D; };
@@ -38,7 +39,7 @@
       if (res) res.rolls.push({ label: label + "（強制 " + (NAME2[forced] || forced) + "）", info: true, major: true });
       return forced;
     }
-    const order = ["cardA", "cardB", "cardC", "bell", "replay", "common"];
+    const order = ["goldA", "goldB", "goldC", "cardA", "cardB", "cardC", "bell", "replay", "common"];
     const r = rng(); let acc = 0, cat = "rubble";
     for (const c of order) { acc += (table[c] || [])[s] || 0; if (r < acc) { cat = c; break; } }
     if (res) {
@@ -58,6 +59,8 @@
       favor: { a: 0, b: 0, c: 0 },    // 好感度 0~1（內部，玩家看不到）
       sinceAt: 0,               // 天井計數
       dateBoss: null, dateStep: 0, dateWin: false, dateSteps: 5, dateColors: [], dateOdd: false, forceCat: null,
+      dateQueue: [],            // 同一轉有兩位以上當選時排隊
+      cleared: 0,               // 這一輪已通關幾關（上位抽選用）
       atLeft: 0,
       stBoss: null, stLeft: 0, stRound: 0, stPass: false,
       upper: false, pickedBoss: null,
@@ -79,28 +82,41 @@
     const res = { rolls: [], events: [], stateBefore: st.state, cat: null, free: true, pay: 0 };
     const forced = st.forceCat || null; st.forceCat = null;    // 開發者：指定下一轉的小役
 
-    /* ===== 通常：累積機會牌 ===== */
+    /* ===== 通常：抽機會牌 → 加好感度 → 抽「前輩找你談話」 ===== */
     if (st.state === "normal") {
       res.free = false;
       st.sinceAt++;
       res.cat = rollCat(res, rng, "挖到", R.itemTable, s, false, forced);
       res.pay = payOf(R, res.cat, "normal");
-      const boss = BOSS_OF[res.cat];
-      if (boss) {
-        st.counts[boss]++;
-        res.events.push({ t: "card", boss, count: st.counts[boss] });
-        // 前輩找你談話（機率隨累積數提升，到保底必定發生）
-        const tbl = R.call.rate;
-        const n = Math.min(tbl.length, st.counts[boss]);
-        const p = n >= R.call.guarantee ? 1 : tbl[n - 1];
-        if (roll(res, rng, `${bossName(R, boss)}找你談話（累積${st.counts[boss]}個${n >= R.call.guarantee ? "・保底" : ""}）`, p, true)) {
-          startDate(R, st, boss, s, rng, res);
-        }
+      const F = R.favor;
+      const hits = [];               // 這一轉當選的前輩（可能兩位以上）
+      const addFavor = (boss, lo, hi, why) => {
+        const add = lo + rng() * (hi - lo);
+        st.favor[boss] = Math.min(1, (st.favor[boss] || 0) + add);
+        st.counts[boss] = (st.counts[boss] || 0) + 1;
+        res.rolls.push({ label: `${bossName(R, boss)} 好感度 +${Math.round(add * 100)}%（${why}）→ 目前 ${Math.round(st.favor[boss] * 100)}%`, info: true, major: true });
+        // 好感度就是「被找去談話」的機率；100% 必定
+        const p = st.favor[boss];
+        if (roll(res, rng, `${bossName(R, boss)}找你談話（好感度 ${Math.round(p * 100)}%）`, p, true)) hits.push(boss);
+      };
+      const pBoss = BOSS_OF[res.cat], gBoss = GOLD_OF[res.cat];
+      if (pBoss) {
+        res.events.push({ t: "card", boss: pBoss, gold: false });
+        addFavor(pBoss, F.purpleMin, F.purpleMax, "紫機會牌");
+      } else if (gBoss) {
+        res.events.push({ t: "card", boss: gBoss, gold: true });
+        const targets = (F.goldTargets || {})[res.cat] || [gBoss];
+        for (const t of targets) addFavor(t, F.goldMin, F.goldMax, "金機會牌");
       }
-      if (st.state === "normal" && st.sinceAt >= R.tenjou) {
-        // 天井：累積最多的前輩直接找你
-        const boss = ["a", "b", "c"].sort((x, y) => st.counts[y] - st.counts[x])[0];
+      if (hits.length) {
+        st.dateQueue = hits.slice(1);
+        startDate(R, st, hits[0], s, rng, res);
+        if (hits.length > 1) res.events.push({ t: "alsoWants", boss: hits[1] });
+      } else if (st.sinceAt >= R.tenjou) {
+        // 天井：好感度最高的前輩直接找你
+        const boss = ["a", "b", "c"].sort((x, y) => (st.favor[y] || 0) - (st.favor[x] || 0))[0];
         res.rolls.push({ label: `天井 ${R.tenjou} 到達 → ${bossName(R, boss)}找你談話`, info: true, major: true });
+        st.dateQueue = [];
         startDate(R, st, boss, s, rng, res);
         res.events.push({ t: "tenjou" });
       }
@@ -115,21 +131,29 @@
       const kind = col >= (R.date.hotAt || 4) ? "hot" : col >= (R.date.upAt || 3) ? "up" : "chat";
       res.events.push({ t: "dateStep", step: st.dateStep, total: st.dateSteps, color: col, kind, odd: !!st.dateOdd, boss: st.dateBoss, win: st.dateWin });
       if (st.dateStep >= (st.dateSteps || 5)) {
+        const boss = st.dateBoss;
         if (st.dateWin) {
-          st.counts[st.dateBoss] = 0;        // 取得認同 → 累積歸零
-          st.favor[st.dateBoss] = 0;
+          // 取得認同：只有成功的那一位歸零，其他人的好感度保留
+          st.counts[boss] = 0;
+          st.favor[boss] = 0;
+          st.dateQueue = [];
+          // 每次進 AT，這一輪的狀態全部重算
           st.state = "at"; st.atLeft = R.at.length; st.gain = 0;
-          st.stRound = 0; st.upper = false; st.pickedBoss = null;
-          st.sinceAt = 0;
-          res.events.push({ t: "dateWin", boss: st.dateBoss });
+          st.stRound = 0; st.cleared = 0; st.upper = false; st.pickedBoss = null;
+          st.stBoss = null; st.stLeft = 0; st.bonusLeft = 0; st.bonusTotal = 0;
+          st.sinceAt = 0; st.dateStep = 0;
+          res.events.push({ t: "dateWin", boss });
         } else {
-          const add = R.date.favorMin + rng() * (R.date.favorMax - R.date.favorMin);
-          st.favor[st.dateBoss] = Math.min(1, st.favor[st.dateBoss] + add);
-          res.rolls.push({ label: `約會失敗 → 好感度 +${Math.round(add * 100)}%（目前 ${Math.round(st.favor[st.dateBoss] * 100)}%）`, info: true, major: true });
-          res.events.push({ t: "dateLose", boss: st.dateBoss });
-          st.state = "normal";
+          res.events.push({ t: "dateLose", boss });
+          st.dateStep = 0;
+          if (st.dateQueue && st.dateQueue.length) {
+            const next = st.dateQueue.shift();
+            startDate(R, st, next, s, rng, res);
+            res.events.push({ t: "dateNext", boss: next });
+          } else {
+            st.state = "normal";
+          }
         }
-        st.dateBoss = st.dateBoss; st.dateStep = 0;
       }
       res.stateAfter = st.state;
       return res;
@@ -151,12 +175,12 @@
     /* ===== ST 前的演出：三位前輩走出來，隨機一位（上位時由玩家選） ===== */
     if (st.state === "stIntro") {
       st.stRound++;
-      // 上位抽選（第 1/3/7/10 關）
-      if (!st.upper) {
-        const up = R.upper.rounds[String(st.stRound)];
-        if (up !== undefined && roll(res, rng, `第${st.stRound}關 → 上位抽選`, up[s] !== undefined ? up[s] : up, true)) {
+      // 上位抽選：通關第 N 關「之後」才抽（所以第一關不會直接上位）
+      if (!st.upper && st.cleared > 0) {
+        const up = R.upper.rounds[String(st.cleared)];
+        if (up !== undefined && roll(res, rng, `已通關${st.cleared}關 → 上位抽選`, up[s] !== undefined ? up[s] : up, true)) {
           st.upper = true;
-          res.events.push({ t: "upperStart", round: st.stRound });
+          res.events.push({ t: "upperStart", round: st.stRound, cleared: st.cleared });
         }
       }
       if (st.upper && !st.pickedBoss) {
@@ -191,7 +215,8 @@
         if (st.upper) p = right ? R.upper.hitRight[s] : R.upper.hitWrong[s];
         if (roll(res, rng, `${right ? "對應的" : "其他"}機會牌 → ${bossName(R, st.stBoss)}的認可`, p, true)) {
           st.stPass = true;
-          res.events.push({ t: "stPass", boss: st.stBoss, right });
+          st.cleared = (st.cleared || 0) + 1;
+          res.events.push({ t: "stPass", boss: st.stBoss, right, cleared: st.cleared });
           st.state = "reward";
           res.stateAfter = st.state;
           return res;
@@ -200,8 +225,9 @@
       st.stLeft--;
       res.events.push({ t: "stSwing", left: st.stLeft });
       if (st.stLeft <= 0) {
-        res.events.push({ t: "stLose", boss: st.stBoss, round: st.stRound, gain: st.gain });
+        res.events.push({ t: "stLose", boss: st.stBoss, round: st.stRound, cleared: st.cleared, gain: st.gain });
         st.state = "normal"; st.upper = false; st.pickedBoss = null; st.stBoss = null;
+        st.stRound = 0; st.cleared = 0; st.stLeft = 0; st.bonusLeft = 0; st.bonusTotal = 0;
       }
       res.stateAfter = st.state;
       return res;
@@ -213,10 +239,10 @@
       res.cat = rollCat(res, rng, "一轉定勝負 → 挖到", R.rewardTable, s, true, forced);
       res.pay = payOf(R, res.cat, "st");
       st.gain += res.pay;
-      const tier = BOSS_OF[res.cat] ? "card" : (res.cat === "bell" || res.cat === "replay") ? "mid" : "low";
-      const rg = R.reward[tier];
+      const tier = (BOSS_OF[res.cat] || GOLD_OF[res.cat]) ? "card" : (res.cat === "bell" || res.cat === "replay") ? "mid" : "low";
+      const rg = (st.upper && R.upper.reward ? R.upper.reward : R.reward)[tier];
       st.bonusTotal = randInt(rng, rg[0], rg[1]);
-      res.rolls.push({ label: `報酬等級 ${tier === "card" ? "機會牌（45~100轉）" : tier === "mid" ? "銅鐘/空掘（18~50轉）" : "無（10~20轉）"} → ${st.bonusTotal}轉`, info: true, major: true });
+      res.rolls.push({ label: `報酬等級 ${tier === "card" ? "機會牌" : tier === "mid" ? "銅鐘/空掘" : "無"}（${rg[0]}~${rg[1]}轉${st.upper ? "・上位" : ""}）→ ${st.bonusTotal}轉`, info: true, major: true });
       st.bonusLeft = st.bonusTotal; st.bonusShown = false; st.digTaps = 0; st.digShown = 0;
       st.state = "pick";
       res.events.push({ t: "rewardRoll", tier, total: st.bonusTotal });
@@ -265,7 +291,9 @@
     if (st.state === "bonus") {
       res.free = false;
       res.cat = rollCat(res, rng, `BONUS（剩${st.bonusLeft}轉）挖到`, R.bonusTable, s, false, forced);
-      res.pay = payOf(R, res.cat, "bonus");
+      const qw = R.bonusQty || [1];
+      res.qty = res.cat === "rubble" ? 0 : 1 + rollPick(null, rng, "", qw.map((_, i) => String(i + 1)), qw);
+      res.pay = payOf(R, res.cat, "bonus") * (res.qty || 1);
       st.gain += res.pay;
       st.bonusLeft--;
       res.events.push({ t: "bonusSwing", left: st.bonusLeft });
@@ -287,7 +315,7 @@
     const D = R.date;
     const base = need(R, boss, "date")[s];
     const fav = st.favor[boss] || 0;
-    const p = fav >= 1 ? 1 : Math.min(1, base + fav);
+    const p = fav >= 1 ? 1 : base;   // 好感度只決定「被找去談話」；約會本身用該前輩自己的通過率，滿 100% 才必過
     st.dateWin = roll(res, rng, `約會（${bossName(R, boss)}・好感度${Math.round(fav * 100)}%）→ 成功`, p, true);
     if (forceWin !== undefined) st.dateWin = !!forceWin;
     // 長度：一般 5～15 轉；會過時有機率改用「違和感長度」（1～2 或 16～20，出現就是確定過關）
@@ -348,7 +376,7 @@
         if (e.t === "stPass") stat.stPasses++;
         if (e.t === "upperStart") stat.uppers++;
         if (e.t === "bonusEnd") stat.bonusTotal += e.total;
-        if (e.t === "stLose") stat.chains.push(st.stRound || 0);
+        if (e.t === "stLose") stat.chains.push(e.cleared || 0);
       }
     }
     stat.cost = stat.paidSwings * costPerSwing;

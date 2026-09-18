@@ -292,11 +292,12 @@
     $("mbHits").textContent = ms.hits || 0;
     $("mbEpic").textContent = ms.dates || 0;
     $("mbSince").textContent = st.sinceAt;
+    $("mbHits").textContent = ms.hits || 0;
     const inRun = ["at", "st", "reward", "pick", "dig", "bonus", "stIntro"].includes(st.state);
     $("veinBanner").classList.toggle("hidden", !inRun);
     $("scene").classList.toggle("vein-on", !!st.upper);
     if (inRun) {
-      $("vbChain").innerHTML = (st.upper ? colored("上位", "#ffcc33") + " " : "") + (st.state === "bonus" ? "BONUS" : st.state === "st" ? `ST 第${st.stRound}關` : st.state === "at" ? "報酬" : "挑戰");
+      $("vbChain").innerHTML = (st.upper ? colored("上位", "#ffcc33") + " " : "") + (st.state === "bonus" ? `BONUS(${st.bonusTotal}轉)` : st.state === "st" ? `ST 第${st.stRound}關` : st.state === "at" ? "報酬" : "挑戰") + (st.cleared ? ` <span class="sub">通關${st.cleared}</span>` : "");
       $("vbLeft").textContent = st.state === "bonus" ? st.bonusLeft : st.state === "st" ? st.stLeft : st.state === "at" ? st.atLeft : "—";
       $("vbGain").textContent = money(st.gain * (mine.mult || 1));
     }
@@ -361,12 +362,13 @@
         lines.push(sfx + " " + colored(name, oreColor(name)) + colored(" 碎掉了…", "#ff7755"));
         bigHtml = `<s>${colored(name, oreColor(name))}</s>`;
       } else {
-        save.ores[name] = (save.ores[name] || 0) + 1;
+        const qty = Math.max(1, res.qty || 1);
+        save.ores[name] = (save.ores[name] || 0) + qty;
         if (!save.dex[name]) { save.dex[name] = { count: 0, first: todayKey() }; newFind = true; }
-        save.dex[name].count++;
+        save.dex[name].count += qty;
         const price = itemPrice(name);
-        lines.push(sfx + " " + colored(name, oreColor(name)) + ` <span style="color:${sub}">$${money(price)}</span>` + (newFind ? colored(" NEW", config.theme.accent) : ""));
-        bigHtml = colored(name, oreColor(name));
+        lines.push(sfx + " " + colored(name, oreColor(name)) + (qty > 1 ? colored(` ×${qty}`, config.theme.accent) : "") + ` <span style="color:${sub}">$${money(price * qty)}</span>` + (newFind ? colored(" NEW", config.theme.accent) : ""));
+        bigHtml = colored(name, oreColor(name)) + (qty > 1 ? colored(` ×${qty}`, config.theme.accent) : "");
       }
       tool.dur--;
       if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
@@ -376,6 +378,9 @@
     const ev = t => res.events.find(e => e.t === t);
     for (const e of res.events) {
       if (e.t === "tenjou") lines.push(colored("……有人在坑口喊你", config.theme.accent));
+      if (e.t === "card" && e.gold) lines.push(colored(`【${bossName2(e.boss)}】` + (T.goldGift || "……有人幫你說了好話"), "#ffcc33"));
+      if (e.t === "alsoWants") lines.push(colored(`【${bossName2(e.boss)}】` + (T.alsoWants || "也想找你聊聊"), "#ffcc33"));
+      if (e.t === "dateNext") lines.push(colored(`【${bossName2(e.boss)}】` + (T.alsoWants || "也想找你聊聊") + "——", "#ffcc33"));
       if (e.t === "dateStart") { lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "call", T.call)), config.theme.accent)); ms.dates = (ms.dates || 0) + 1; }
       if (e.t === "dateStep") {
         const pool = bl(e.boss, e.kind, bl(e.boss, "chat", ["……"]));
@@ -395,8 +400,8 @@
         lines.push(colored(`第${e.round}關　${T.stAppear} ` + colored(bossName2(e.boss), "#ffcc33"), "#e8e8e8"));
         const ap = bl(e.boss, "appear", null); if (ap) lines.push(colored(pickOne(ap), sub));
       }
-      if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）"), "#ffcc33"));
-      if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　共${e.round}關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
+      if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）") + `　通關 ${e.cleared} 關`, "#ffcc33"));
+      if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　通關 ${e.cleared || 0} 關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
       if (e.t === "rewardRoll") lines.push(colored(T.reward, config.theme.accent));
       if (e.t === "askPick") {
         lines.push(colored(T.pick, config.theme.accent));
@@ -601,7 +606,8 @@
     autoTimer = setTimeout(autoStep, ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
   }
   // 第二台機台：自動時直接跳過所有對話演出
-  const AUTO_STOP2 = ["dateWin", "upperStart", "announce", "stLose", "bonusEnd"];
+  // 演出開始就停自動：玩家可以自己點，或再按一次自動＝快速跳過
+  const AUTO_STOP2 = ["dateStart", "alsoWants", "dateNext", "dateWin", "upperStart", "askBoss", "askPick", "rewardRoll", "stLose"];
   function autoStep2() {
     if (!save.auto) return;
     const st = state2();
@@ -611,9 +617,9 @@
     const out = doSwing2(input);
     if (!out) return;
     const free = FREE2.includes(out.res.stateBefore);
-    const stop = out.res.events.some(e => AUTO_STOP2.includes(e.t)) || (out.res.stateBefore !== "normal" && !activeTool());
-    if (stop && !save.auto) return;
-    autoTimer = setTimeout(autoStep2, free ? 120 : ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
+    if (out.res.events.some(e => AUTO_STOP2.includes(e.t))) { stopAuto(); return; }
+    if (!activeTool() && !FREE2.includes(state2().state)) { stopAuto(); return; }
+    autoTimer = setTimeout(autoStep2, free ? 90 : ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
   }
   function stopAuto() { save.auto = false; clearTimeout(autoTimer); renderMine(); }
   function toggleAuto() {
@@ -1035,6 +1041,7 @@
       get state() { return isM2() ? state2() : null; },
       isHere: () => isM2(),
       favor(boss) { const st = state2(); if (boss === "all") { st.favor.a = st.favor.b = st.favor.c = 1; } else st.favor[boss] = 1; persist(true); renderAll(); },
+      setFavor(boss, v) { const st = state2(); st.favor[boss] = Math.max(0, Math.min(1, v)); persist(true); renderAll(); },
       counts(boss, n) { const st = state2(); st.counts[boss] = Math.max(0, (st.counts[boss] || 0) + n); persist(true); renderAll(); },
       card(cat) { state2().forceCat = cat; renderAll(); },
       date(boss, win) {
