@@ -350,7 +350,7 @@
 
     if (!res.free) {
       ms.swings++;
-      const phase = res.stateBefore === "normal" ? "normal" : "vein";
+      const phase = res.stateBefore === "normal" ? "normal" : res.stateBefore === "bonus" ? "bonus" : "st";
       const g = ((R.map || {})[phase] || {})[res.cat];
       const name = Array.isArray(g) ? pickOne(g) : g;
       const factor = toolFactor(tool, mine);
@@ -374,7 +374,7 @@
       if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
     }
 
-    let tag = "", omen = 0, choices = null;
+    let tag = "", omen = 0, choices = null, skipBig = false;
     const ev = t => res.events.find(e => e.t === t);
     for (const e of res.events) {
       if (e.t === "tenjou") lines.push(colored("……有人在坑口喊你", config.theme.accent));
@@ -400,6 +400,7 @@
         lines.push(colored(`第${e.round}關　${T.stAppear} ` + colored(bossName2(e.boss), "#ffcc33"), "#e8e8e8"));
         const ap = bl(e.boss, "appear", null); if (ap) lines.push(colored(pickOne(ap), sub));
       }
+      if (e.t === "stPass" && e.gold) lines.push(colored("金機會牌——直接認可！", "#ffcc33"));
       if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）") + `　通關 ${e.cleared} 關`, "#ffcc33"));
       if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　通關 ${e.cleared || 0} 關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
       if (e.t === "rewardRoll") lines.push(colored(T.reward, config.theme.accent));
@@ -407,9 +408,13 @@
         lines.push(colored(T.pick, config.theme.accent));
         choices = [{ v: "drill", label: T.drill }, { v: "shovel", label: T.shovel }];
       }
-      if (e.t === "digStart") lines.push(colored(T.digTap, config.theme.accent));
-      if (e.t === "dig") { bigHtml = `<span class="dig-plus">+${e.inc}</span>`; lines.push(colored(`目前 ${e.shown} 轉…（還要 ${e.taps - e.tap} 下）`, sub)); }
-      if (e.t === "announce") { lines.push(colored(`${T.announce} ${e.total} 轉！`, "rainbow")); bigHtml = colored(e.total + "轉", config.theme.accent); }
+      if (e.t === "digStart") { clearDigNums(); lines.push(colored(T.digTap, config.theme.accent)); }
+      if (e.t === "dig") { addDigNum(e.inc); lines.push(colored(`挖出 +${e.inc}`, e.inc >= 5 ? "#ffcc33" : e.inc >= 3 ? "#4cff6a" : sub)); skipBig = true; }
+      if (e.t === "announce") {
+        lines.push(colored(`${T.announce} ${e.total} 轉！`, "rainbow"));
+        if (e.how === "shovel") setTimeout(clearDigNums, 1500);
+        bigHtml = colored(e.total + "轉", config.theme.accent);
+      }
       if (e.t === "bonusEnd") lines.push(colored(T.bonusEnd + `　收穫 $${money(st.gain * (mine.mult || 1))}`, config.theme.accent));
     }
     const stt = st.state;
@@ -421,7 +426,7 @@
 
     setTextbox(lines.slice(0, 5), omen, { tag, tap: stt === "dig" ? T.digTap : null });
     setChoices(choices);
-    if (bigHtml) {
+    if (bigHtml && !skipBig) {
       const big = $("sceneBig");
       big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
     }
@@ -435,6 +440,26 @@
     const v = ((M2().bossLines || {})[boss] || {})[key];
     return (v && v.length) ? v : fallback;
   };
+  /* 鏟子：+N 的數字散落在場景框裡，不重疊 */
+  let digCells = [];
+  function clearDigNums() { const sc = $("scene"); sc.querySelectorAll(".dig-num").forEach(n => n.remove()); digCells = []; }
+  function addDigNum(inc) {
+    const sc = $("scene"), cols = 4, rows = 6;
+    if (digCells.length >= cols * rows) clearDigNums();
+    let cell;
+    for (let i = 0; i < 60; i++) { const c = Math.floor(Math.random() * cols * rows); if (!digCells.includes(c)) { cell = c; break; } }
+    if (cell === undefined) cell = digCells.length % (cols * rows);
+    digCells.push(cell);
+    const col = cell % cols, row = Math.floor(cell / cols);
+    const el = document.createElement("div");
+    el.className = "dig-num";
+    el.textContent = "+" + inc;
+    el.style.left = (8 + col * (84 / cols) + Math.random() * 6) + "%";
+    el.style.top = (8 + row * (84 / rows) + Math.random() * 4) + "%";
+    el.style.color = inc >= 5 ? "#ffcc33" : inc >= 3 ? "#4cff6a" : "#e8e8e8";
+    el.style.fontSize = inc >= 5 ? "1.6em" : inc >= 3 ? "1.3em" : "1.05em";
+    sc.appendChild(el);
+  }
   function setChoices(list) {
     const box = $("tbChoice");
     if (!list || !list.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }

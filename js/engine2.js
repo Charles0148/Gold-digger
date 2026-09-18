@@ -64,7 +64,7 @@
       atLeft: 0,
       stBoss: null, stLeft: 0, stRound: 0, stPass: false,
       upper: false, pickedBoss: null,
-      bonusLeft: 0, bonusTotal: 0, bonusShown: false, digTaps: 0, digShown: 0,
+      bonusLeft: 0, bonusTotal: 0, bonusShown: false, digTaps: 0, digShown: 0, digSeq: null,
       gain: 0                  // 這一輪（從約會成功到結束）的收益，UI 顯示用
     };
   }
@@ -208,7 +208,17 @@
       res.cat = rollCat(res, rng, `ST（${bossName(R, st.stBoss)}・剩${st.stLeft}轉）挖到`, table, s, false, forced);
       res.pay = payOf(R, res.cat, "st");
       st.gain += res.pay;
-      const boss = BOSS_OF[res.cat];
+      const boss = BOSS_OF[res.cat], gold = GOLD_OF[res.cat];
+      if (gold) {
+        // 金機會牌：ST 中出現就一定過關（上位也一樣）
+        res.rolls.push({ label: `金機會牌（${bossName(R, gold)}）→ ${bossName(R, st.stBoss)}的認可（確定）`, p: 1, D: 100, n: 1, need: 100, hit: true, major: true });
+        st.stPass = true;
+        st.cleared = (st.cleared || 0) + 1;
+        res.events.push({ t: "stPass", boss: st.stBoss, right: true, gold: true, cleared: st.cleared });
+        st.state = "reward";
+        res.stateAfter = st.state;
+        return res;
+      }
       if (boss) {
         const right = boss === st.stBoss;
         let p = right ? need(R, st.stBoss, "hit")[s] : R.st.otherPass[s];
@@ -239,11 +249,13 @@
       res.cat = rollCat(res, rng, "一轉定勝負 → 挖到", R.rewardTable, s, true, forced);
       res.pay = payOf(R, res.cat, "st");
       st.gain += res.pay;
-      const tier = (BOSS_OF[res.cat] || GOLD_OF[res.cat]) ? "card" : (res.cat === "bell" || res.cat === "replay") ? "mid" : "low";
-      const rg = (st.upper && R.upper.reward ? R.upper.reward : R.reward)[tier];
+      const tier = GOLD_OF[res.cat] ? "gold" : BOSS_OF[res.cat] ? "card" : (res.cat === "bell" || res.cat === "replay") ? "mid" : "low";
+      const table = (st.upper && R.upper.reward ? R.upper.reward : R.reward);
+      const rg = table[tier] || R.reward[tier] || R.reward.low;
       st.bonusTotal = randInt(rng, rg[0], rg[1]);
-      res.rolls.push({ label: `報酬等級 ${tier === "card" ? "機會牌" : tier === "mid" ? "銅鐘/空掘" : "無"}（${rg[0]}~${rg[1]}轉${st.upper ? "・上位" : ""}）→ ${st.bonusTotal}轉`, info: true, major: true });
+      res.rolls.push({ label: `報酬等級 ${tier === "gold" ? "金機會牌" : tier === "card" ? "機會牌" : tier === "mid" ? "銅鐘/空掘" : "無"}（${rg[0]}~${rg[1]}轉${st.upper ? "・上位" : ""}）→ ${st.bonusTotal}轉`, info: true, major: true });
       st.bonusLeft = st.bonusTotal; st.bonusShown = false; st.digTaps = 0; st.digShown = 0;
+      st.digSeq = buildDigSeq(R, st.bonusTotal, rng);
       st.state = "pick";
       res.events.push({ t: "rewardRoll", tier, total: st.bonusTotal });
       res.stateAfter = st.state;
@@ -266,22 +278,19 @@
       return res;
     }
 
-    /* ===== 鏟子：點按數次後告知（總數一定等於內部決定的轉數） ===== */
+    /* ===== 鏟子：一下一下挖出來（每下 +N，總和一定等於內部決定的轉數） ===== */
     if (st.state === "dig") {
+      const seq = st.digSeq || (st.digSeq = buildDigSeq(R, st.bonusTotal, rng));
+      const inc = seq[st.digTaps] || 1;
       st.digTaps++;
-      const taps = R.dig.taps;                       // 至少點幾下
-      const left = Math.max(0, taps - st.digTaps);
-      if (st.digTaps < taps) {
-        // 每下顯示 +1 / +2（只是演出，總和會在最後補齊成真正的轉數）
-        const inc = Math.min(st.bonusTotal - st.digShown - left, 1 + (rng() < R.dig.plusTwo ? 1 : 0));
-        st.digShown += Math.max(1, inc);
-        res.events.push({ t: "dig", inc: Math.max(1, inc), shown: st.digShown, tap: st.digTaps, taps });
-      } else {
-        const rest = st.bonusTotal - st.digShown;
+      st.digShown += inc;
+      const last = st.digTaps >= seq.length;
+      res.events.push({ t: "dig", inc, shown: st.digShown, tap: st.digTaps, taps: seq.length, last });
+      if (last) {
         st.digShown = st.bonusTotal;
         st.bonusShown = true;
         st.state = "bonus";
-        res.events.push({ t: "announce", total: st.bonusTotal, how: "shovel", last: rest });
+        res.events.push({ t: "announce", total: st.bonusTotal, how: "shovel" });
       }
       res.stateAfter = st.state;
       return res;
@@ -308,6 +317,35 @@
 
     res.stateAfter = st.state;
     return res;
+  }
+
+  // 依轉數排出一串 +N（多半 +1／+2，偶爾 +3／+5），總和 = 轉數
+  function buildDigSeq(R, total, rng) {
+    const D = R.dig || {};
+    // 依轉數決定「一下挖多少」：讓點按次數大致落在 targetTaps 附近
+    const unit = Math.max(1, Math.floor(total / (D.targetTaps || 20)));
+    const base = D.incs || [1, 2, 3, 5];
+    const opts = base.map(v => v * unit);
+    const w = D.incWeights || [50, 28, 14, 8];
+    const seq = [];
+    let left = total;
+    const pickInc = () => {
+      let x = rng() * w.reduce((a, b) => a + b, 0), i = 0;
+      for (; i < w.length; i++) if ((x -= w[i]) < 0) break;
+      return opts[Math.min(i, opts.length - 1)];
+    };
+    while (left > 0) {
+      let inc = pickInc();
+      if (inc > left) inc = left;
+      seq.push(inc); left -= inc;
+    }
+    // 至少要有幾下
+    const minTaps = D.minTaps || 3;
+    while (seq.length < minTaps && seq.some(v => v > 1)) {
+      const i = seq.findIndex(v => v > 1);
+      seq[i] -= 1; seq.splice(i, 0, 1);
+    }
+    return seq;
   }
 
   function startDate(R, st, boss, s, rng, res, forceWin) {
@@ -342,7 +380,9 @@
 
   // 一轉的收益：礦石名稱 → 基本售價（外部再乘礦坑倍率）
   function oreName(R, cat, phase) {
-    const g = (R.map || {})[phase === "normal" ? "normal" : "vein"] || {};
+    // 三組礦石：通常／報酬・ST／BONUS（高價的現金類只在 BONUS 出現）
+    const key = phase === "normal" ? "normal" : phase === "bonus" ? "bonus" : "st";
+    const g = (R.map || {})[key] || (R.map || {}).st || {};
     const v = g[cat];
     return Array.isArray(v) ? v[0] : v;
   }
