@@ -223,3 +223,8 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 
 /* 版本編號 */
 .ver-tag { position: absolute; right: 6px; bottom: 4px; font-size: .7em; color: var(--sub); opacity: .7; pointer-events: none; }
+
+/* ===== 第二台機台：選擇按鈕 ===== */
+.tb-choice { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
+.tb-choice .px-btn { text-align: left; }
+.dig-plus { color: var(--accent); font-weight: bold; }
