@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.9.2">
+<link rel="stylesheet" href="css/style.css?v=0.10.0">
 </head>
 <body>
 <div id="app">
@@ -17,6 +17,7 @@
     <div class="hud-name" id="hudName">玩家</div>
     <div class="hud-stat"><span class="hud-ico">$</span><span id="hudCoins">0</span></div>
     <div class="hud-stat"><span class="hud-ico">⛏</span><span id="hudPlays">0</span></div>
+    <button id="mailBtn" class="hud-mail" title="信箱">✉<span id="mailDot" class="hud-dot hidden">0</span></button>
   </header>
 
   <main id="screens">
@@ -85,6 +86,7 @@
         <div class="panel-title">地圖 <span class="sub">每座礦坑每天暗中分配設定1～6</span></div>
         <div id="mapList" class="list"></div>
       </div>
+      <div class="px-box panel" id="cloudPanel" data-edit="cloudPanel" data-label="雲端存檔"></div>
     </section>
 
     <!-- ===== 圖鑑 ===== -->
@@ -118,18 +120,19 @@
     <button data-go="shop">老闆</button>
   </nav>
 
-  <button id="editFab" title="編輯模式">✎</button>
+  <button id="editFab" class="hidden" title="編輯模式">✎</button>
   <div id="toast" class="toast hidden"></div>
   <div id="modal" class="modal hidden"><div class="px-box modal-box" id="modalBox"></div></div>
 </div>
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=0.9.2"></script>
-<script src="js/config.js?v=0.9.2"></script>
-<script src="js/engine.js?v=0.9.2"></script>
-<script src="js/engine2.js?v=0.9.2"></script>
-<script src="js/game.js?v=0.9.2"></script>
-<script src="js/editor.js?v=0.9.2"></script>
+<script src="js/version.js?v=0.10.0"></script>
+<script src="js/cloud-config.js?v=0.10.0"></script>
+<script src="js/cloud.js?v=0.10.0"></script>
+<script src="js/config.js?v=0.10.0"></script>
+<script src="js/engine.js?v=0.10.0"></script>
+<script src="js/engine2.js?v=0.10.0"></script>
+<script src="js/game.js?v=0.10.0"></script>
 </body>
 </html>
