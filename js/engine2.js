@@ -63,7 +63,8 @@
       cleared: 0,               // 這一輪已通關幾關（上位抽選用）
       atLeft: 0,
       stBoss: null, stLeft: 0, stRound: 0, stPass: false,
-      upper: false, pickedBoss: null,
+      dateScene: "normal", dateAgain: false, lastRejected: null,
+      upper: false, pickedBoss: null, lastPick: null, lastStBoss: null, runMaxBonus: 0, mood: null,
       bonusLeft: 0, bonusTotal: 0, bonusShown: false, digTaps: 0, digShown: 0, digSeq: null,
       gain: 0                  // 這一輪（從約會成功到結束）的收益，UI 顯示用
     };
@@ -129,7 +130,7 @@
       st.dateStep++;
       const col = (st.dateColors || [])[st.dateStep - 1] || 0;
       const kind = col >= (R.date.hotAt || 4) ? "hot" : col >= (R.date.upAt || 3) ? "up" : "chat";
-      res.events.push({ t: "dateStep", step: st.dateStep, total: st.dateSteps, color: col, kind, odd: !!st.dateOdd, boss: st.dateBoss, win: st.dateWin });
+      res.events.push({ t: "dateStep", step: st.dateStep, total: st.dateSteps, color: col, kind, odd: !!st.dateOdd, boss: st.dateBoss, win: st.dateWin, scene: st.dateScene || "normal" });
       if (st.dateStep >= (st.dateSteps || 5)) {
         const boss = st.dateBoss;
         if (st.dateWin) {
@@ -141,10 +142,13 @@
           st.state = "at"; st.atLeft = R.at.length; st.gain = 0;
           st.stRound = 0; st.cleared = 0; st.upper = false; st.pickedBoss = null;
           st.stBoss = null; st.stLeft = 0; st.bonusLeft = 0; st.bonusTotal = 0;
+          st.runMaxBonus = 0; st.lastStBoss = null;
           st.sinceAt = 0; st.dateStep = 0;
-          res.events.push({ t: "dateWin", boss });
+          st.lastRejected = null;
+          res.events.push({ t: "dateWin", boss, scene: st.dateScene || "normal" });
         } else {
-          res.events.push({ t: "dateLose", boss });
+          res.events.push({ t: "dateLose", boss, scene: st.dateScene || "normal" });
+          st.lastRejected = boss;          // 下次又是他 → 彩蛋台詞
           st.dateStep = 0;
           if (st.dateQueue && st.dateQueue.length) {
             const next = st.dateQueue.shift();
@@ -174,28 +178,30 @@
 
     /* ===== ST 前的演出：三位前輩走出來，隨機一位（上位時由玩家選） ===== */
     if (st.state === "stIntro") {
-      st.stRound++;
       // 上位抽選：通關第 N 關「之後」才抽（所以第一關不會直接上位）
       if (!st.upper && st.cleared > 0) {
         const up = R.upper.rounds[String(st.cleared)];
         if (up !== undefined && roll(res, rng, `已通關${st.cleared}關 → 上位抽選`, up[s] !== undefined ? up[s] : up, true)) {
           st.upper = true;
-          res.events.push({ t: "upperStart", round: st.stRound, cleared: st.cleared });
+          res.events.push({ t: "upperStart", round: st.stRound + 1, cleared: st.cleared });
         }
       }
       if (st.upper && !st.pickedBoss) {
         // 需要玩家選前輩
         if (input.choice && CARD_OF[input.choice]) {
           st.pickedBoss = input.choice;
+          if (!input.auto) st.lastPick = input.choice;      // 只記住玩家自己選的
         } else {
           res.events.push({ t: "askBoss" });
           res.stateAfter = st.state;
           return res;
         }
       }
+      st.stRound++;      // v0.10.0：移到「要玩家選前輩」的提早 return 之後，避免多跳關
       st.stBoss = st.upper ? st.pickedBoss : ["a", "b", "c"][rollPick(res, rng, `第${st.stRound}關 → 哪位前輩出現`, [bossName(R, "a"), bossName(R, "b"), bossName(R, "c")], R.st.appear)];
       st.stLeft = R.st.length; st.stPass = false;
-      res.events.push({ t: "stStart", boss: st.stBoss, round: st.stRound, upper: st.upper });
+      res.events.push({ t: "stStart", boss: st.stBoss, round: st.stRound, upper: st.upper, same: st.lastStBoss === st.stBoss });
+      st.lastStBoss = st.stBoss;
       st.state = "st";
       res.stateAfter = st.state;
       return res;
@@ -235,9 +241,10 @@
       st.stLeft--;
       res.events.push({ t: "stSwing", left: st.stLeft });
       if (st.stLeft <= 0) {
-        res.events.push({ t: "stLose", boss: st.stBoss, round: st.stRound, cleared: st.cleared, gain: st.gain });
+        res.events.push({ t: "stLose", boss: st.stBoss, round: st.stRound, cleared: st.cleared, gain: st.gain, maxBonus: st.runMaxBonus || 0, upper: !!st.upper });
         st.state = "normal"; st.upper = false; st.pickedBoss = null; st.stBoss = null;
         st.stRound = 0; st.cleared = 0; st.stLeft = 0; st.bonusLeft = 0; st.bonusTotal = 0;
+        st.runMaxBonus = 0; st.lastStBoss = null;
       }
       res.stateAfter = st.state;
       return res;
@@ -255,6 +262,7 @@
       st.bonusTotal = randInt(rng, rg[0], rg[1]);
       res.rolls.push({ label: `報酬等級 ${tier === "gold" ? "金機會牌" : tier === "card" ? "機會牌" : tier === "mid" ? "銅鐘/空掘" : "無"}（${rg[0]}~${rg[1]}轉${st.upper ? "・上位" : ""}）→ ${st.bonusTotal}轉`, info: true, major: true });
       st.bonusLeft = st.bonusTotal; st.bonusShown = false; st.digTaps = 0; st.digShown = 0;
+      st.runMaxBonus = Math.max(st.runMaxBonus || 0, st.bonusTotal);
       st.digSeq = buildDigSeq(R, st.bonusTotal, rng);
       st.state = "pick";
       res.events.push({ t: "rewardRoll", tier, total: st.bonusTotal });
@@ -319,44 +327,106 @@
     return res;
   }
 
-  // 依轉數排出一串 +N（多半 +1／+2，偶爾 +3／+5），總和 = 轉數
+  /* 鏟子：排出一串 +N，總和一定 = 轉數（v0.10.0）
+     設計：大部分是 +1／+2／+3／+5，只有轉數多到小數字補不完時，
+     才夾帶幾個「大跳」（+25、+50、+100…）當驚喜，而不是把總數平均切開。 */
   function buildDigSeq(R, total, rng) {
     const D = R.dig || {};
-    // 依轉數決定「一下挖多少」：讓點按次數大致落在 targetTaps 附近
-    const unit = Math.max(1, Math.floor(total / (D.targetTaps || 20)));
-    const base = D.incs || [1, 2, 3, 5];
-    const opts = base.map(v => v * unit);
-    const w = D.incWeights || [50, 28, 14, 8];
-    const seq = [];
-    let left = total;
-    const pickInc = () => {
-      let x = rng() * w.reduce((a, b) => a + b, 0), i = 0;
-      for (; i < w.length; i++) if ((x -= w[i]) < 0) break;
-      return opts[Math.min(i, opts.length - 1)];
+    const smalls = D.incs || [1, 2, 3, 5];
+    const sw = D.incWeights || [40, 30, 20, 10];
+    const bigs = (D.bigIncs || [10, 25, 50, 100, 200]).slice().sort((a, b) => b - a);
+    const maxTaps = D.maxTaps || 30, minTaps = D.minTaps || 6;
+    const perTap = D.perTap || 7;
+    const pickSmall = () => {
+      let x = rng() * sw.reduce((a, b) => a + b, 0), i = 0;
+      for (; i < sw.length; i++) if ((x -= sw[i]) < 0) break;
+      return smalls[Math.min(i, smalls.length - 1)];
     };
-    while (left > 0) {
-      let inc = pickInc();
-      if (inc > left) inc = left;
-      seq.push(inc); left -= inc;
+    // 這次大概點幾下
+    const taps = Math.max(minTaps, Math.min(maxTaps, Math.round(total / perTap) + minTaps));
+    const avgSmall = smalls.reduce((a, v, i) => a + v * sw[i], 0) / sw.reduce((a, b) => a + b, 0);
+    // 小數字撐不起來的部分，交給大跳
+    let need = total - Math.floor(taps * avgSmall);
+    const bigList = [];
+    while (need > 0 && bigList.length < 4) {
+      const b = bigs.find(v => need >= v * 0.8 && v <= total);
+      if (!b) break;
+      bigList.push(b); need -= b;
     }
-    // 至少要有幾下
-    const minTaps = D.minTaps || 3;
+    let smallTotal = total - bigList.reduce((a, b) => a + b, 0);
+    if (smallTotal < 0) { bigList.pop(); smallTotal = total - bigList.reduce((a, b) => a + b, 0); }
+    // 用小數字把 smallTotal 補完
+    const small = [];
+    let left = smallTotal;
+    const hardMax = maxTaps - bigList.length;
+    while (left > 0) {
+      if (small.length >= hardMax - 1) { small.push(left); left = 0; break; }
+      let inc = pickSmall();
+      if (inc > left) inc = left;
+      small.push(inc); left -= inc;
+    }
+    // 把大跳插進去（前 bigAfter 下不會出現，先醞釀）
+    const seq = small;
+    const after = Math.min(D.bigAfter || 3, seq.length);
+    for (const b of bigList) {
+      const pos = after + Math.floor(rng() * Math.max(1, seq.length - after + 1));
+      seq.splice(Math.min(pos, seq.length), 0, b);
+    }
+    // 保底下數
     while (seq.length < minTaps && seq.some(v => v > 1)) {
       const i = seq.findIndex(v => v > 1);
       seq[i] -= 1; seq.splice(i, 0, 1);
     }
-    return seq;
+    return seq.filter(v => v > 0);
+  }
+
+  /* 期待度顏色：循序漸進、只升不降。回傳每一轉的顏色（0白 1藍 2黃 3綠 4紅） */
+  function buildDateColors(D, len, scene, win, rng) {
+    const tw = ((D.colorTarget || {})[win ? "win" : "lose"]) || [20, 20, 20, 20, 20];
+    const ceil = (((D.colorCeil || {})[scene] || {})[win ? "win" : "lose"]);
+    const cap = ceil === undefined ? 4 : ceil;
+    const floor = Math.min(cap, ((D.colorFloor || {})[scene]) || 0);
+    // 目標顏色
+    let x = rng() * tw.reduce((a, b) => a + b, 0), t = 0;
+    for (; t < tw.length; t++) if ((x -= tw[t]) < 0) break;
+    const target = Math.min(cap, Math.max(floor, Math.min(t, tw.length - 1)));
+    const cols = new Array(len).fill(floor);
+    const ups = target - floor;
+    if (ups > 0) {
+      const startAt = Math.min(len - 1, Math.floor(len * (D.colorStartAt || 0.35)));
+      const span = Math.max(1, len - startAt);
+      const pts = [];
+      for (let i = 0; i < ups; i++) pts.push(startAt + Math.floor(rng() * span));
+      pts.sort((a, b) => a - b);
+      let c = floor;
+      for (let i = 0; i < len; i++) {
+        while (pts.length && pts[0] <= i) { pts.shift(); c = Math.min(target, c + 1); }
+        cols[i] = c;
+      }
+    }
+    cols[len - 1] = target;            // 最後一轉一定是這場的最高點
+    return cols;
   }
 
   function startDate(R, st, boss, s, rng, res, forceWin) {
     st.state = "date"; st.dateBoss = boss; st.dateStep = 0;
+    st.sinceAt = 0;                 // 談話一開始就重置天井計數
     const D = R.date;
-    const base = need(R, boss, "date")[s];
-    const fav = st.favor[boss] || 0;
-    const p = fav >= 1 ? 1 : base;   // 好感度只決定「被找去談話」；約會本身用該前輩自己的通過率，滿 100% 才必過
-    st.dateWin = roll(res, rng, `約會（${bossName(R, boss)}・好感度${Math.round(fav * 100)}%）→ 成功`, p, true);
+    const moodUp = (st.mood && st.mood === boss) ? ((R.mood || {}).bonus || 0) : 0;
+    /* v0.10.0：通過率是該前輩的固定值，好感度只決定「會不會被找」，不再影響通過率 */
+    const p = Math.min(1, need(R, boss, "date")[s] + moodUp);
+    st.dateWin = roll(res, rng, `約會（${bossName(R, boss)}・通過率${Math.round(p * 100)}%${moodUp ? "・今日心情+" + Math.round(moodUp * 100) + "%" : ""}）→ 成功`, p, true);
     if (forceWin !== undefined) st.dateWin = !!forceWin;
-    // 長度：一般 5～15 轉；會過時有機率改用「違和感長度」（1～2 或 16～20，出現就是確定過關）
+
+    /* 劇本：結果已經定案，這裡只決定「用哪一套演出」
+       normal＝礦坑內談話、strong＝外出、hot＝激熱。失敗時也抽得到，只是機率低很多。 */
+    const sc = ((D.scene || {})[st.dateWin ? "win" : "lose"]) || {};
+    let scene = "normal";
+    if (roll(res, rng, "激熱演出", sc.hot || 0, true)) scene = "hot";
+    else if (roll(res, rng, "外出演出", sc.strong || 0, true)) scene = "strong";
+    st.dateScene = scene;
+
+    // 長度：一般 5～15 轉；會過時有機率改用「違和感長度」（1～2 或 20～30，出現就是確定過關）
     let odd = false;
     if (st.dateWin && roll(res, rng, "違和感長度（出現＝確定過關）", (D.oddChance || [0])[s] || 0, true)) {
       odd = true;
@@ -365,16 +435,12 @@
       st.dateSteps = randInt(rng, D.steps[0], D.steps[1]);
     }
     st.dateOdd = odd;
-    // 每一轉的信賴度顏色（0白 1藍 2黃 3綠 4紅）
-    const w = st.dateWin ? D.colorWin : D.colorLose;
-    st.dateColors = [];
-    for (let i = 0; i < st.dateSteps; i++) {
-      let c = 0, x = rng() * w.reduce((a, b) => a + b, 0);
-      for (; c < w.length; c++) if ((x -= w[c]) < 0) break;
-      st.dateColors.push(Math.min(w.length - 1, c));
-    }
-    res.rolls.push({ label: `談話長度 ${st.dateSteps} 轉${odd ? "（違和感）" : ""}｜紅色 ${st.dateColors.filter(c => c >= (D.hotAt || 4)).length} 次`, info: true, major: true });
-    res.events.push({ t: "dateStart", boss, win: st.dateWin, steps: st.dateSteps, odd });
+    st.dateColors = buildDateColors(D, st.dateSteps, scene, st.dateWin, rng);
+    /* 連續被同一個人拒絕 → 彩蛋台詞 */
+    st.dateAgain = st.lastRejected === boss;
+
+    res.rolls.push({ label: `談話長度 ${st.dateSteps} 轉${odd ? "（違和感）" : ""}｜劇本 ${scene === "hot" ? "激熱" : scene === "strong" ? "外出" : "礦坑內"}｜最高期待度 ${["白", "藍", "黃", "綠", "紅"][st.dateColors[st.dateColors.length - 1]]}`, info: true, major: true });
+    res.events.push({ t: "dateStart", boss, win: st.dateWin, steps: st.dateSteps, odd, scene, again: st.dateAgain });
   }
   const bossName = (R, id) => (R.bosses.find(b => b.id === id) || {}).name || id;
 

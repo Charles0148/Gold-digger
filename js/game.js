@@ -11,6 +11,7 @@
   /* ---------------- 工具函式 ---------------- */
   const clone = o => JSON.parse(JSON.stringify(o));
   const fmt = n => Math.floor(n).toLocaleString("en-US");
+  const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
   const store = {
     get(k) { try { return JSON.parse(localStorage.getItem(k)); } catch (e) { return null; } },
@@ -77,7 +78,35 @@
     clearTimeout(saveTimer);
     if (now) store.set(SAVE_KEY, save);
     else saveTimer = setTimeout(() => store.set(SAVE_KEY, save), 400);
+    cloudLater();
   }
+
+  /* ---------------- 雲端存檔（自動同步） ---------------- */
+  const CLOUD_DELAY = 5000;      // 最後一次動作之後幾毫秒才上傳（避免每一揮都打伺服器）
+  let cloudTimer = null, cloudBusy = false, cloudDirty = false;
+  const cloudOn = () => !!(window.Cloud && Cloud.enabled() && Cloud.status() !== "out");
+  function cloudLater() {
+    if (!cloudOn()) return;
+    cloudDirty = true;
+    clearTimeout(cloudTimer);
+    cloudTimer = setTimeout(cloudPush, CLOUD_DELAY);
+  }
+  async function cloudPush(opt) {
+    if (!cloudOn() || cloudBusy) return;
+    cloudBusy = true; cloudDirty = false;
+    const r = await Cloud.push(save, opt);
+    cloudBusy = false;
+    renderCloud();
+    if (!r.ok) cloudDirty = true;
+    return r;
+  }
+  function cloudFlush() {           // 關網頁／切到背景時立刻補一次
+    if (!cloudOn() || !cloudDirty) return;
+    clearTimeout(cloudTimer);
+    cloudPush({ keepalive: true });
+  }
+  window.addEventListener("pagehide", cloudFlush);
+  document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") cloudFlush(); });
 
   /* ---------------- 查詢 ---------------- */
   const toolDef = id => config.tools.find(t => t.id === id);
@@ -228,6 +257,15 @@
     return save.plays2[id];
   }
   const bossName2 = id => (M2().bosses.find(b => b.id === id) || {}).name || id;
+  function moodBoss() {
+    const ids = M2().bosses.map(b => b.id);
+    return ids[Math.floor(seeded(todayKey() + "|mood|" + curMine().id) * ids.length) % ids.length];
+  }
+  function moodLine() {
+    const M = M2().mood || {};
+    const line = pickOne(M.lines || ["{name}今天心情不錯"]);
+    return line.replace("{name}", bossName2(moodBoss()));
+  }
 
   /* ---------------- 挖礦畫面 ---------------- */
   let veinGain = 0;
@@ -343,6 +381,7 @@
       setChoices(null); stopAuto(); renderMine();
       return null;
     }
+    st.mood = moodBoss();
     const res = E2.step2(R, todaySetting(mine.id), st, Math.random, input || {});
     const ms = mineStats(mine.id);
     const lines = [];
@@ -378,18 +417,34 @@
     const ev = t => res.events.find(e => e.t === t);
     for (const e of res.events) {
       if (e.t === "tenjou") lines.push(colored("……有人在坑口喊你", config.theme.accent));
+      if (e.t === "card" && e.boss === moodBoss() && Math.random() < ((M2().mood || {}).hintRate || 0)) lines.push(colored(moodLine(), "#ffcc33"));
       if (e.t === "card" && e.gold) lines.push(colored(`【${bossName2(e.boss)}】` + (T.goldGift || "……有人幫你說了好話"), "#ffcc33"));
       if (e.t === "alsoWants") lines.push(colored(`【${bossName2(e.boss)}】` + (T.alsoWants || "也想找你聊聊"), "#ffcc33"));
       if (e.t === "dateNext") lines.push(colored(`【${bossName2(e.boss)}】` + (T.alsoWants || "也想找你聊聊") + "——", "#ffcc33"));
-      if (e.t === "dateStart") { lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "call", T.call)), config.theme.accent)); ms.dates = (ms.dates || 0) + 1; }
+      if (e.t === "dateStart") {
+        // 上次被同一個人拒絕 → 彩蛋台詞取代一般的開場
+        const open = (e.again && bl(e.boss, "again", null)) || bl(e.boss, "call", T.call);
+        lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(open), config.theme.accent));
+        const dep = e.scene && e.scene !== "normal" ? sc(e.boss, e.scene, "depart") : null;
+        if (dep) lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(dep), SCENE_COLOR[e.scene]));
+        ms.dates = (ms.dates || 0) + 1;
+      }
       if (e.t === "dateStep") {
-        const pool = bl(e.boss, e.kind, bl(e.boss, "chat", ["……"]));
+        const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "during"))
+          || bl(e.boss, e.kind, bl(e.boss, "chat", ["……"]));
         const oc = config.rules.omen.colors;
         lines.push(colored(pickOne(pool), oc[e.color] || "#e8e8e8"));
         omen = Math.max(omen, e.color);
       }
-      if (e.t === "dateWin") { lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "win", [T.dateWin])), "#ffcc33")); lines.push(colored(T.atStart, "rainbow")); ms.hits = (ms.hits || 0) + 1; }
-      if (e.t === "dateLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "lose", [T.dateLose])), sub));
+      if (e.t === "dateWin") {
+        const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "win")) || bl(e.boss, "win", [T.dateWin]);
+        lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(pool), "#ffcc33"));
+        lines.push(colored(T.atStart, "rainbow")); ms.hits = (ms.hits || 0) + 1;
+      }
+      if (e.t === "dateLose") {
+        const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "lose")) || bl(e.boss, "lose", [T.dateLose]);
+        lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(pool), sub));
+      }
       if (e.t === "atEnd") lines.push(colored(T.stIntro, config.theme.accent));
       if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
       if (e.t === "askBoss") {
@@ -398,10 +453,13 @@
       }
       if (e.t === "stStart") {
         lines.push(colored(`第${e.round}關　${T.stAppear} ` + colored(bossName2(e.boss), "#ffcc33"), "#e8e8e8"));
-        const ap = bl(e.boss, "appear", null); if (ap) lines.push(colored(pickOne(ap), sub));
+        const again = e.same ? bl(e.boss, "again", null) : null;
+        const ap = again || bl(e.boss, "appear", null);
+        if (ap) lines.push(colored(pickOne(ap), e.same ? "#ffcc33" : sub));
       }
       if (e.t === "stPass" && e.gold) lines.push(colored("金機會牌——直接認可！", "#ffcc33"));
       if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）") + `　通關 ${e.cleared} 關`, "#ffcc33"));
+      if (e.t === "stLose") setTimeout(() => showRunSummary(e, mine), 400);
       if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　通關 ${e.cleared || 0} 關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
       if (e.t === "rewardRoll") lines.push(colored(T.reward, config.theme.accent));
       if (e.t === "askPick") {
@@ -418,7 +476,11 @@
       if (e.t === "bonusEnd") lines.push(colored(T.bonusEnd + `　收穫 $${money(st.gain * (mine.mult || 1))}`, config.theme.accent));
     }
     const stt = st.state;
-    if (stt === "date") tag = (state2().dateOdd ? "≋ 談話中（怪異）≋" : "≋ 談話中 ≋");
+    if (stt === "date") {
+      // v0.10.0：違和感不再寫在標籤上（以前會洩漏答案）
+      const scn = st.dateScene || "normal";
+      tag = scn === "normal" ? "≋ 談話中 ≋" : `≋ ${scPlace(st.dateBoss, scn) || "外出"} ≋`;
+    }
     else if (stt === "at" || stt === "bonus") tag = st.upper ? "≋ 上位・報酬中 ≋" : "≋ 報酬中 ≋";
     else if (stt === "st") tag = st.upper ? `≋ 上位ST 第${st.stRound}關 ≋` : `≋ ST 第${st.stRound}關 ≋`;
     if (st.upper) omen = 6;
@@ -440,6 +502,13 @@
     const v = ((M2().bossLines || {})[boss] || {})[key];
     return (v && v.length) ? v : fallback;
   };
+  /* 外出／激熱劇本的台詞：sc(前輩, 劇本, 哪一組) */
+  const sc = (boss, scene, key) => {
+    const v = ((((M2().bossScenes || {})[boss] || {})[scene] || {})[key]);
+    return (v && v.length) ? v : null;
+  };
+  const scPlace = (boss, scene) => ((((M2().bossScenes || {})[boss] || {})[scene] || {}).place) || "";
+  const SCENE_COLOR = { strong: "#55aaff", hot: "#ffcc33" };
   /* 鏟子：+N 的數字散落在場景框裡，不重疊 */
   let digCells = [];
   function clearDigNums() { const sc = $("scene"); sc.querySelectorAll(".dig-num").forEach(n => n.remove()); digCells = []; }
@@ -459,6 +528,21 @@
     el.style.color = inc >= 5 ? "#ffcc33" : inc >= 3 ? "#4cff6a" : "#e8e8e8";
     el.style.fontSize = inc >= 5 ? "1.6em" : inc >= 3 ? "1.3em" : "1.05em";
     sc.appendChild(el);
+  }
+  // 一輪結束的結算畫面
+  function showRunSummary(e, mine) {
+    const mult = mine.mult || 1, box = $("modalBox");
+    box.innerHTML = `<div class="boss-name">結算</div>
+      <div style="margin:10px 0;line-height:1.9;text-align:left">
+        通關關數　<b>${e.cleared || 0}</b> 關<br>
+        最大一次報酬　<b>${e.maxBonus || 0}</b> 轉<br>
+        本輪總收穫　<b style="color:${config.theme.accent}">$${money((e.gain || 0) * mult)}</b><br>
+        ${e.upper ? '<span style="color:#ffcc33">※ 這一輪進過上位</span><br>' : ""}
+        <span class="sub">最後倒在 ${bossName2(e.boss)} 手上</span>
+      </div>
+      <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("sumOk").onclick = () => $("modal").classList.add("hidden");
   }
   function setChoices(list) {
     const box = $("tbChoice");
@@ -637,7 +721,7 @@
     if (!save.auto) return;
     const st = state2();
     const input = st.state === "pick" ? { choice: "drill" }
-      : (st.state === "stIntro" && st.upper && !st.pickedBoss) ? { choice: pickOne(M2().bosses).id }
+      : (st.state === "stIntro" && st.upper && !st.pickedBoss) ? { choice: st.lastPick || pickOne(M2().bosses).id, auto: true }
       : {};
     const out = doSwing2(input);
     if (!out) return;
@@ -705,6 +789,168 @@
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
         <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
+    renderCloud();
+  }
+
+  /* ---------------- 雲端存檔（介面） ---------------- */
+  const CLOUD_TXT = { off: "未設定", out: "未登入", in: "已連線", busy: "同步中…", error: "同步失敗" };
+  function renderCloud() {
+    const box = $("cloudPanel"); if (!box) return;
+    if (!window.Cloud || !Cloud.enabled()) {
+      box.innerHTML = `<div class="panel-title">雲端存檔 <span class="sub">未設定</span></div>
+        <div class="sub">還沒填入 Supabase 連線資料，目前是單機存檔（換手機會不見）。</div>`;
+      return;
+    }
+    const st = Cloud.status(), u = Cloud.user();
+    const dot = st === "in" || st === "busy" ? "#43d17a" : st === "error" ? "#ff5555" : "#888";
+    box.innerHTML = `<div class="panel-title">雲端存檔
+        <span class="sub"><span style="color:${dot}">●</span> ${CLOUD_TXT[st] || st}</span></div>
+      <div class="sub">${u ? u.email : "登入之後，存檔會自動同步，換手機也接得回來。"}</div>
+      ${st === "error" ? `<div class="sub" style="color:#ff5555">${Cloud.error()}</div>` : ""}
+      <div class="btns" style="margin-top:8px">
+        ${u ? `<button class="px-btn small" id="cldPush">立刻上傳</button>
+               <button class="px-btn small" id="cldPull">下載雲端存檔</button>
+               <button class="px-btn small" id="cldOut">登出</button>`
+            : `<button class="px-btn small" id="cldIn">登入</button>
+               <button class="px-btn small" id="cldReg">註冊新帳號</button>`}
+      </div>`;
+    const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
+    on("cldIn", () => askCloudLogin(false));
+    on("cldReg", () => askCloudLogin(true));
+    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
+    on("cldPush", async () => { const r = await cloudPush(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
+    on("cldPull", cloudPullAsk);
+  }
+
+  function askCloudLogin(isReg) {
+    const box = $("modalBox");
+    box.innerHTML = `<div>${isReg ? "註冊雲端帳號" : "登入雲端"}</div>
+      <div class="sub" style="margin-top:6px">用來把存檔存到雲端，換手機也接得回來。</div>
+      <input id="cEmail" type="email" placeholder="Email" autocomplete="email">
+      <input id="cPass" type="password" placeholder="密碼（至少 6 碼）" autocomplete="${isReg ? "new-password" : "current-password"}">
+      <div class="sub hidden" id="cErr" style="color:#ff5555"></div>
+      <div class="btns"><button class="px-btn" id="cOk">${isReg ? "註冊" : "登入"}</button><button class="px-btn" id="cNo">取消</button></div>`;
+    $("modal").classList.remove("hidden");
+    const err = m => { const e = $("cErr"); e.textContent = m; e.classList.remove("hidden"); };
+    $("cNo").onclick = () => $("modal").classList.add("hidden");
+    $("cOk").onclick = async () => {
+      const em = ($("cEmail").value || "").trim(), pw = $("cPass").value || "";
+      if (!em || !pw) return err("Email 和密碼都要填");
+      if (isReg && pw.length < 6) return err("密碼至少 6 碼");
+      $("cOk").disabled = true;
+      const r = isReg ? await Cloud.signUp(em, pw) : await Cloud.signIn(em, pw);
+      $("cOk").disabled = false;
+      if (!r.ok) return err(r.err || "失敗");
+      if (isReg && !r.signedIn) { $("modal").classList.add("hidden"); renderCloud(); return toast("已寄出驗證信，收信點確認後再登入"); }
+      $("modal").classList.add("hidden");
+      renderCloud();
+      afterLogin();
+    };
+  }
+
+  /* 登入後：雲端已經有存檔就讓玩家選一邊，沒有就直接上傳 */
+  async function afterLogin() {
+    let row = null;
+    try { row = await Cloud.pull(); } catch (e) { toast("讀取雲端失敗"); renderCloud(); return; }
+    loadMail(true);
+    if (!row) { await cloudPush(); renderCloud(); return toast("已把這台的存檔上傳雲端"); }
+    pickSave(row);
+  }
+  async function cloudPullAsk() {
+    let row = null;
+    try { row = await Cloud.pull(); } catch (e) { return toast("讀取雲端失敗"); }
+    if (!row) return toast("雲端還沒有存檔");
+    pickSave(row);
+  }
+  function pickSave(row) {
+    const when = row.updated_at ? new Date(row.updated_at).toLocaleString() : "—";
+    const box = $("modalBox");
+    box.innerHTML = `<div>要留哪一邊的存檔？</div>
+      <div class="sub" style="margin-top:8px;text-align:left">
+        <b>雲端</b>：${row.name || "（無名）"}　$${fmt(row.coins || 0)}<br>
+        <span class="sub">最後上傳 ${when}</span><br><br>
+        <b>這台手機</b>：${save.name || "（無名）"}　$${fmt(save.coins)}
+      </div>
+      <div class="sub" style="color:#ff5555;margin-top:8px">沒選到的那一邊會被覆蓋掉。</div>
+      <div class="btns"><button class="px-btn" id="useCloud">用雲端的</button><button class="px-btn" id="useLocal">用這台的</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("useCloud").onclick = () => {
+      $("modal").classList.add("hidden");
+      if (!row.data || row.data.v !== 1) return toast("雲端存檔格式不對");
+      save = row.data;
+      save.auto = false;
+      if (!save.boss) save.boss = newBoss();
+      if (!save.plays2) save.plays2 = {};
+      if (!save.pw) save.pw = {};
+      persist(true); renderAll(); toast("已接回雲端存檔");
+    };
+    $("useLocal").onclick = async () => {
+      $("modal").classList.add("hidden");
+      const r = await cloudPush(); toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
+    };
+  }
+
+  /* ---------------- 信箱（雲端發送的公告與獎勵） ---------------- */
+  let mailCache = { mail: [], claimed: {} }, mailLoaded = false;
+  function mailUnread() { return mailCache.mail.filter(m => !mailCache.claimed[m.id] && !mailExpired(m)).length; }
+  const mailExpired = m => !!(m.expires_at && new Date(m.expires_at) < new Date());
+  function renderMailBadge() {
+    const b = $("mailDot"); if (!b) return;
+    const n = mailUnread();
+    b.textContent = n > 99 ? "99+" : n;
+    b.classList.toggle("hidden", n === 0);
+  }
+  async function loadMail(force) {
+    if (!cloudOn()) { mailCache = { mail: [], claimed: {} }; renderMailBadge(); return; }
+    if (mailLoaded && !force) return;
+    try { mailCache = await Cloud.mailbox(); mailLoaded = true; } catch (e) { mailCache = { mail: [], claimed: {} }; }
+    renderMailBadge();
+  }
+  function mailReward(m) {
+    const parts = [];
+    if (m.coins) parts.push("$" + fmt(m.coins));
+    if (m.ore_name && m.ore_qty) parts.push(m.ore_name + " ×" + m.ore_qty);
+    if (m.tool_id && m.tool_qty) { const t = toolDef(m.tool_id); parts.push((t ? t.name : m.tool_id) + " ×" + m.tool_qty); }
+    return parts.join("　");
+  }
+  function openMail() {
+    const box = $("modalBox");
+    const rows = mailCache.mail.map(m => {
+      const got = !!mailCache.claimed[m.id], old = mailExpired(m), rw = mailReward(m);
+      const when = m.created_at ? new Date(m.created_at).toLocaleDateString() : "";
+      return `<div class="row" style="display:block;text-align:left">
+        <div><b>${esc(m.title)}</b> <span class="sub">${when}${m.to_user ? "｜給你的" : ""}</span></div>
+        ${m.body ? `<div class="sub" style="white-space:pre-wrap;margin:4px 0">${esc(m.body)}</div>` : ""}
+        ${rw ? `<div class="sub" style="color:#ffd34d">附件：${esc(rw)}</div>` : ""}
+        <div style="margin-top:6px">${
+          got ? '<span class="sub">已領取</span>'
+          : old ? '<span class="sub" style="color:#888">已過期</span>'
+          : rw ? `<button class="px-btn small" data-claim="${m.id}">領取</button>`
+          : `<button class="px-btn small" data-claim="${m.id}">已讀</button>`}</div>
+      </div>`;
+    }).join("");
+    box.innerHTML = `<div>信箱</div>
+      <div class="sub" style="margin-top:4px">${cloudOn() ? "" : "要先登入雲端才收得到信。"}</div>
+      <div class="list" style="max-height:52vh;overflow:auto;margin-top:8px">${rows || '<div class="sub">目前沒有信件。</div>'}</div>
+      <div class="btns"><button class="px-btn" id="mailRe">重新整理</button><button class="px-btn" id="mailNo">關閉</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("mailNo").onclick = () => $("modal").classList.add("hidden");
+    $("mailRe").onclick = async () => { await loadMail(true); openMail(); };
+    box.querySelectorAll("[data-claim]").forEach(b => { b.onclick = () => claimMail(+b.dataset.claim, b); });
+  }
+  async function claimMail(id, btn) {
+    const m = mailCache.mail.find(x => x.id === id); if (!m) return;
+    btn.disabled = true;
+    const r = await Cloud.claim(id);
+    if (!r.ok) { btn.disabled = false; return toast(r.err || "領取失敗"); }
+    mailCache.claimed[id] = true;
+    if (m.coins) save.coins += m.coins;
+    if (m.ore_name && m.ore_qty) save.ores[m.ore_name] = (save.ores[m.ore_name] || 0) + m.ore_qty;
+    if (m.tool_id && m.tool_qty) for (let i = 0; i < m.tool_qty; i++) addTool(m.tool_id, 1);
+    persist(true); renderAll(); renderMailBadge();
+    const rw = mailReward(m);
+    toast(rw ? "領取成功：" + rw : "已讀");
+    openMail();
   }
 
   /* ---------------- 圖鑑 ---------------- */
@@ -1092,6 +1338,31 @@
   /* ---------------- 啟動 ---------------- */
   applyLook();
   setTextbox([colored(pickOne(["點擊這裡揮鎬", "準備好了嗎？"]), config.theme.sub)], 0);
+  if (window.Cloud) Cloud.onChange(() => { if (currentScreen === "map") renderCloud(); });
+  $("mailBtn").addEventListener("click", async () => {
+    if (window.Editor?.isPicking()) return;
+    await loadMail(true); openMail();
+  });
+  loadMail();
+
+  /* ---------------- 開發者模式：只有我進得去 ----------------
+     1. 網址要帶 ?dev=1
+     2. 而且 → 本機開檔（自己電腦測試）或 雲端帳號在 admins 名單裡
+     玩家版根本不會下載 editor.js。 */
+  async function tryDevMode() {
+    if (!/[?&]dev=1/.test(location.search)) return;
+    const local = location.protocol === "file:" || /^(localhost|127\.|192\.168\.|10\.)/.test(location.hostname);
+    if (!local) {
+      if (!window.Cloud || !Cloud.enabled() || !Cloud.user()) return;
+      if (!(await Cloud.isAdmin())) return;
+    }
+    const sc = document.createElement("script");
+    sc.src = "js/editor.js?v=" + (window.GAME_VERSION || "");
+    sc.onload = () => { $("editFab").classList.remove("hidden"); };
+    document.body.appendChild(sc);
+  }
+  tryDevMode();
+
   renderAll();
   if (!save.name) askName(true);
 })();

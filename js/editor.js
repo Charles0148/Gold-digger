@@ -249,8 +249,10 @@
     machine2: "第二台機台", bosses: "三位前輩", favor: "好感度（＝被找去談話的機率）", purpleMin: "紫牌最少+", purpleMax: "紫牌最多+", goldMin: "金牌最少+", goldMax: "金牌最多+",
     bonusQty: "BONUS每轉幾個礦石的權重", goldA: "甲的金機會牌", goldB: "乙的金機會牌", goldC: "丙的金機會牌",
     date: "談話（約會）", steps: "長度範圍(最短,最長)", oddChance: "違和感長度出現率", shortLen: "違和感・短(最短,最長)", longLen: "違和感・長(最短,最長)",
-    colorWin: "會過時的顏色權重(白藍黃綠紅)", colorLose: "不會過時的顏色權重", upAt: "從第幾色用升溫台詞", hotAt: "從第幾色用確信台詞", hit: "ST對應牌通過率", call: "找你談話", guarantee: "保底（第幾個必定）", rate: "各累積數的機率",
-    steps: "對話步數", favorMin: "好感度保留下限", favorMax: "好感度保留上限", atTable: "報酬10轉的小役", bonusTable: "BONUS的小役", stTable: "ST的小役（依對手）", stTableUpper: "上位ST的小役",
+    upAt: "從第幾色用升溫台詞", hotAt: "從第幾色用確信台詞", hit: "ST對應牌通過率", call: "找你談話", guarantee: "保底（第幾個必定）", rate: "各累積數的機率",
+    scene: "劇本抽選（外出／激熱）", strong: "外出", colorTarget: "最後會升到哪一色的權重", colorCeil: "各劇本的顏色上限", colorFloor: "各劇本的起始色", colorStartAt: "演到幾成才開始升色",
+    bigIncs: "鏟子・大跳的數字", bigAfter: "前幾下不出現大跳", maxTaps: "鏟子最多點幾下", perTap: "每幾轉配一下點擊",
+    steps: "對話步數（一般）", atTable: "報酬10轉的小役", bonusTable: "BONUS的小役", stTable: "ST的小役（依對手）", stTableUpper: "上位ST的小役",
     appear: "哪位前輩出現的權重", otherPass: "抽到別人的牌也通過", hitRight: "上位・壓對", hitWrong: "上位・壓錯", rewardTable: "一轉定勝負的小役", reward: "報酬轉數範圍", low: "無（最低）", mid: "銅鐘/空掘", card: "機會牌",
     dig: "鏟子", taps: "至少點幾下", plusTwo: "出現+2的機率", prices: "礦石基本售價", cardA: "甲的機會牌", cardB: "乙的機會牌", cardC: "丙的機會牌", bell: "銅鐘", replay: "空掘",
     reqHours: "幾小時換委託", lineWeights: "委託1/2/3行權重", catWeights: "委託礦石稀有度權重", qty: "需求數量(最少,最多)", points: "恩惠點數",
@@ -318,13 +320,18 @@
     const M = draft.machine2, S = G.save;
     const here = G.m2 && G.m2.isHere();
     const st = here ? G.m2.state : null;
-    const KEYS = [["call", "找你談話"], ["chat", "談話・一般（白藍黃）"], ["up", "談話・升溫（綠）"], ["hot", "談話・確信（紅）"], ["win", "約會成功"], ["lose", "約會失敗"], ["appear", "ST 出場"], ["pass", "ST 通關"], ["fail", "ST 失敗"]];
+    const KEYS = [["call", "找你談話"], ["again", "又是你（上次被他拒絕）"], ["chat", "談話・一般（白藍黃）"], ["up", "談話・升溫（綠）"], ["hot", "談話・確信（紅）"], ["win", "約會成功"], ["lose", "約會失敗"], ["appear", "ST 出場"], ["pass", "ST 通關"], ["fail", "ST 失敗"]];
+    const SKEYS = [["depart", "出發"], ["during", "現場"], ["win", "成功"], ["lose", "失敗"]];
     body.innerHTML = `
       <div class="ed-note">每個欄位一行一句，遊戲會隨機挑一句。談話每一轉會抽一個信賴度顏色：白／藍／黃用「一般」、綠用「升溫」、紅用「確信」的句子。紅色出現越多次＝越容易過關。談話長度 5～15 轉，抽到 1～2 轉或 16～20 轉就是違和感（確定過關）。</div>
       ${M.bosses.map((b, i) => `
         <div class="ed-sec">${b.name}（${["甲・通關高", "乙・中", "丙・低"][i]}）</div>
         <div class="ed-row"><label>名字</label><input type="text" data-p="machine2.bosses.${i}.name" value="${esc(b.name)}"></div>
         ${KEYS.map(([k, n]) => `<div class="ed-row"><label>${n}</label><textarea rows="2" data-p="machine2.bossLines.${b.id}.${k}" data-lines>${esc((((M.bossLines || {})[b.id] || {})[k] || []).join("\n"))}</textarea></div>`).join("")}
+        ${["strong", "hot"].map(sc => `
+          <div class="ed-sub">${sc === "strong" ? "外出" : "激熱"}　<input data-p="machine2.bossScenes.${b.id}.${sc}.place" value="${esc((((M.bossScenes || {})[b.id] || {})[sc] || {}).place || "")}" style="width:120px"></div>
+          ${SKEYS.map(([k, n]) => `<div class="ed-row"><label>${n}</label><textarea rows="2" data-p="machine2.bossScenes.${b.id}.${sc}.${k}" data-lines>${esc(((((M.bossScenes || {})[b.id] || {})[sc] || {})[k] || []).join("\n"))}</textarea></div>`).join("")}
+        `).join("")}
       `).join("")}
       <div class="ed-note">個性：${M.bosses[0].name}＝容易被逗笑的女生（認真起來就是升溫）／${M.bosses[1].name}＝口語的年輕男生（把你當兄弟就是升溫）／${M.bosses[2].name}＝不苟言笑（他笑出來就是確信）。</div>
       <div class="ed-sec">共用演出文字</div>
@@ -337,8 +344,8 @@
       ${here ? `<div class="ed-note">目前狀態：<b>${st.state}</b>｜累積 ${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感度 ${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手 " + (M.bosses.find(b => b.id === st.stBoss) || {}).name : ""}${st.upper ? "｜上位中" : ""}</div>` : `<div class="ed-note" style="color:#ff9">你現在不在這座礦坑。先到地圖前往「三位前輩的考驗」。</div>`}
       <div class="ed-note" style="margin:6px 0 2px">好感度加滿</div>
       <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2fav="${b.id}">${b.name} 100%</button>`).join("")}<button class="ed-btn" data-m2fav="all">三位全滿</button></div>
-      <div class="ed-note" style="margin:6px 0 2px">累積機會牌</div>
-      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2cnt="${b.id}">${b.name} +5</button>`).join("")}</div>
+      <div class="ed-note" style="margin:6px 0 2px">好感度 +10%（＝被找去談話的機率）</div>
+      <div class="ed-flex">${M.bosses.map(b => `<button class="ed-btn" data-m2cnt="${b.id}">${b.name} +10%</button>`).join("")}</div>
       <div class="ed-note" style="margin:6px 0 2px">下一轉指定抽到</div>
       <div class="ed-flex">${[["cardA", "紫・" + M.bosses[0].name], ["cardB", "紫・" + M.bosses[1].name], ["cardC", "紫・" + M.bosses[2].name], ["goldA", "金・" + M.bosses[0].name], ["goldB", "金・" + M.bosses[1].name], ["goldC", "金・" + M.bosses[2].name], ["bell", "銅鐘"], ["replay", "空掘"], ["rubble", "碎石"]].map(([c, n]) => `<button class="ed-btn" data-m2card="${c}">${n}</button>`).join("")}</div>
       <div class="ed-note" style="margin:6px 0 2px">好感度直接設成</div>
@@ -363,7 +370,7 @@
     $m("m2pwOff").onclick = () => { G.setLock("m6", null); draft = clone(G.config); G.toast("已取消上鎖"); render(); };
     $m("m2pwForget").onclick = () => { G.clearLockMemory("m6"); G.toast("下次進入會再問密碼"); };
     dev("[data-m2fav]", b => { G.m2.favor(b.dataset.m2fav); G.toast("好感度已加滿"); });
-    dev("[data-m2cnt]", b => { G.m2.counts(b.dataset.m2cnt, 5); G.toast("累積 +5"); });
+    dev("[data-m2cnt]", b => { const id = b.dataset.m2cnt; G.m2.setFavor(id, (G.m2.state.favor[id] || 0) + 0.1); G.toast("好感度 +10%"); });
     dev("[data-m2set]", b => { const [id, v] = b.dataset.m2set.split(":"); G.m2.setFavor(id, +v / 100); G.toast("好感度設為 " + v + "%"); });
     dev("[data-m2card]", b => { G.m2.card(b.dataset.m2card); G.toast("下一轉將抽到指定的小役"); });
     dev("[data-m2date]", b => { G.m2.date(b.dataset.m2date, true); });
