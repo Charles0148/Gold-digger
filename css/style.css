@@ -232,3 +232,11 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 /* 鏟子挖出的 +N 數字 */
 .dig-num { position: absolute; font-weight: bold; text-shadow: 0 0 4px #000, 0 0 2px #000; pointer-events: none; animation: digPop .2s steps(3); }
 @keyframes digPop { from { transform: scale(.4); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+/* ===== 信箱按鈕（頂部資訊列） ===== */
+.hud-mail{position:relative;background:none;border:0;color:inherit;font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
+.hud-dot{position:absolute;top:-4px;right:-6px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;
+  background:#ff3b3b;color:#fff;font-size:9px;line-height:14px;text-align:center}
+
+/* 編輯模式：外出劇本小標題 */
+.ed-sub{margin:8px 0 4px;font-size:11px;color:#ffcc33}
