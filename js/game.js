@@ -63,7 +63,7 @@
   /* ---------------- 存檔 ---------------- */
   function newSave() {
     return {
-      v: 1, name: "", coins: 300, uid: 1,
+      v: 1, rev: 0, name: "", coins: 300, uid: 1,
       tools: [], equipped: null,
       ores: {}, dex: {},
       boss: newBoss(),
@@ -82,11 +82,13 @@
   if (!save.plays2) save.plays2 = {};
   if (!save.pw) save.pw = {};
   delete save.upgrades;
-  let saveTimer = null;
-  function persist(now) {
-    clearTimeout(saveTimer);
-    if (now) store.set(SAVE_KEY, save);
-    else saveTimer = setTimeout(() => store.set(SAVE_KEY, save), 400);
+  /* v0.10.3：存檔一律「立即寫入」。
+     舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
+     結果只要自動還在跑，存檔就永遠不會落地 → 中途關網頁／當機，整段自動揮全部回滾重抽。
+     實測 16.8KB 的存檔寫一次只要 0.34ms，佔 350ms 的 0.1%，沒有效能理由要延遲。
+     雲端上傳仍然保留 5 秒 debounce（那個是網路請求，不能每揮都打）。 */
+  function persist() {
+    store.set(SAVE_KEY, save);
     cloudLater();
   }
 
@@ -107,7 +109,52 @@
     cloudBusy = false;
     renderCloud();
     if (!r.ok) cloudDirty = true;
+    /* v0.10.3：雲端已經被別台裝置寫過 → 停下來問玩家，不默默覆蓋也不默默放棄 */
+    if (r.conflict && r.remote) { clearTimeout(cloudTimer); stopAuto(); showConflict(r.remote); }
     return r;
+  }
+  /* 兩台裝置撞在一起時的處理畫面 */
+  let conflictOpen = false;
+  function showConflict(row) {
+    if (conflictOpen) return;
+    conflictOpen = true;
+    const when = row.updated_at ? new Date(row.updated_at).toLocaleString() : "—";
+    const box = $("modalBox");
+    box.innerHTML = `<div style="color:#ff5555">存檔撞到了</div>
+      <div class="sub" style="margin-top:6px;text-align:left">
+        你在別的裝置（或另一個分頁）也玩了這個帳號，雲端的存檔比這台新。<br>
+        <b>兩邊只能留一邊</b>，沒選到的會被覆蓋掉。
+      </div>
+      <div class="sub" style="margin-top:8px;text-align:left">
+        <b>雲端</b>：${esc(row.name || "（無名）")}　$${fmt(row.coins || 0)}<br>
+        <span class="sub">最後存檔 ${when}</span><br><br>
+        <b>這台</b>：${esc(save.name || "（無名）")}　$${fmt(save.coins)}
+      </div>
+      <div class="btns"><button class="px-btn" id="cfCloud">用雲端的</button><button class="px-btn" id="cfLocal">用這台的</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("cfCloud").onclick = () => {
+      $("modal").classList.add("hidden"); conflictOpen = false;
+      if (!row.data || row.data.v !== 1) return toast("雲端存檔格式不對");
+      adoptSave(row);
+      toast("已接回雲端存檔");
+    };
+    $("cfLocal").onclick = async () => {
+      $("modal").classList.add("hidden"); conflictOpen = false;
+      const r = await Cloud.pushOver(save, row.rev);
+      renderCloud();
+      toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
+    };
+  }
+  /* 採用雲端那一份（登入時二選一、衝突時都走這裡） */
+  function adoptSave(row) {
+    save = row.data;
+    save.rev = Number(row.rev || 0);
+    save.auto = false;
+    if (!save.boss) save.boss = newBoss();
+    if (!save.plays2) save.plays2 = {};
+    if (!save.pw) save.pw = {};
+    store.set(SAVE_KEY, save);
+    renderAll();
   }
   function cloudFlush() {           // 關網頁／切到背景時立刻補一次
     if (!cloudOn() || !cloudDirty) return;
@@ -887,16 +934,13 @@
     $("useCloud").onclick = () => {
       $("modal").classList.add("hidden");
       if (!row.data || row.data.v !== 1) return toast("雲端存檔格式不對");
-      save = row.data;
-      save.auto = false;
-      if (!save.boss) save.boss = newBoss();
-      if (!save.plays2) save.plays2 = {};
-      if (!save.pw) save.pw = {};
-      persist(true); renderAll(); toast("已接回雲端存檔");
+      adoptSave(row); toast("已接回雲端存檔");
     };
     $("useLocal").onclick = async () => {
       $("modal").classList.add("hidden");
-      const r = await cloudPush(); toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
+      const r = await Cloud.pushOver(save, row.rev);   // 接手雲端的 rev 再蓋過去
+      renderCloud();
+      toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
     };
   }
 

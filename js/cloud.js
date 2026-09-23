@@ -137,27 +137,63 @@
       return (rows && rows[0]) || null;
     });
   }
+  /* 上傳（v0.10.3：加上版本號衝突偵測 optimistic concurrency）
+
+     每份存檔帶一個 rev。上傳時用「只有雲端的 rev 跟我手上的一樣才寫得進去」的條件式更新：
+       PATCH /saves?user_id=eq.<我>&rev=eq.<我手上的 rev>
+     成功 → 回傳被更新的那一列，rev 已經 +1。
+     更新到 0 列 → 代表雲端的 rev 已經被別台裝置推進了（或這列還不存在）。
+     這時候**絕對不覆蓋**，而是回報 conflict，交給遊戲端跳出「要留哪一邊」讓玩家選。
+
+     updated_at 現在由資料庫的 trigger 填，客戶端送什麼都不算數。 */
   async function push(save, opt) {
     if (!ok() || !sess) return { ok: false, err: "未登入" };
-    const row = {
-      user_id: sess.user.id,
+    const uid = sess.user.id;
+    const myRev = Number(save.rev || 0);
+    const nextRev = myRev + 1;
+    const body = (rev) => JSON.stringify({
       name: save.name || "",
       coins: Math.round(save.coins || 0),
       ver: window.GAME_VERSION || "",
-      data: save,
-      updated_at: new Date().toISOString()
-    };
-    const body = JSON.stringify([row]);
+      rev: rev,
+      data: Object.assign({}, save, { rev: rev })
+    });
+    const pref = { "Prefer": "return=representation" };
     try {
-      await withAuth(() => jfetch("/rest/v1/saves", {
-        method: "POST",
-        headers: Object.assign(head(true), { "Prefer": "resolution=merge-duplicates,return=minimal" }),
-        body: body,
-        keepalive: !!(opt && opt.keepalive)
-      }));
-      setStatus("in");
-      return { ok: true };
-    } catch (e) { setStatus("error", e.message); return { ok: false, err: e.message }; }
+      // ① 條件式更新
+      const rows = await withAuth(() => jfetch(
+        "/rest/v1/saves?user_id=eq." + encodeURIComponent(uid) + "&rev=eq." + myRev,
+        { method: "PATCH", headers: Object.assign(head(true), pref), body: body(nextRev), keepalive: !!(opt && opt.keepalive) }
+      ));
+      if (rows && rows.length) {
+        save.rev = rows[0].rev;
+        setStatus("in");
+        return { ok: true, rev: rows[0].rev };
+      }
+      // ② 沒更新到 → 先看看雲端到底有沒有那一列
+      const cur = await pull();
+      if (!cur) {
+        const ins = await withAuth(() => jfetch("/rest/v1/saves", {
+          method: "POST",
+          headers: Object.assign(head(true), pref),
+          body: JSON.stringify([Object.assign(JSON.parse(body(1)), { user_id: uid })])
+        }));
+        save.rev = (ins && ins[0] && ins[0].rev) || 1;
+        setStatus("in");
+        return { ok: true, rev: save.rev, created: true };
+      }
+      // ③ 有那一列、但 rev 不一樣 → 有別台裝置寫過，不覆蓋
+      setStatus("error", "雲端有更新的存檔（別台裝置存過）");
+      return { ok: false, conflict: true, remote: cur, err: "雲端有更新的存檔（別台裝置存過）" };
+    } catch (e) {
+      setStatus("error", e.message);
+      return { ok: false, err: e.message };
+    }
+  }
+  /* 玩家在衝突畫面選了「用這台的」→ 接手雲端目前的 rev 再寫一次 */
+  async function pushOver(save, remoteRev) {
+    save.rev = Number(remoteRev || 0);
+    return await push(save);
   }
 
   /* ---------- 信箱 ---------- */
@@ -207,6 +243,6 @@
     error: () => lastErr,
     user: () => (sess ? sess.user : null),
     onChange: f => listeners.push(f),
-    signUp, signIn, signOut, pull, push
+    signUp, signIn, signOut, pull, push, pushOver
   };
 })();
