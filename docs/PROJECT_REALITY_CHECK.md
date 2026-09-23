@@ -1,6 +1,6 @@
 # 深層礦脈｜PROJECT REALITY CHECK
 
-- 檢查日期：2026-09-22
+- 檢查日期：2026-09-22（雲端章節 2026-09-23 更新）
 - 檢查對象：`C:\Users\User\Desktop\claude\挖礦遊戲\`（= 本機 `/home/claude/mine`）全部檔案
 - 檢查方式：逐檔讀程式碼、對照 `js/config.js`、對照 `docs/*.md`、對 GitHub 線上版做差異比對、跑了 2 次 Node 實測
 - **本次沒有修改任何遊戲程式碼。**
@@ -22,7 +22,9 @@ GitHub 上的 `index.html` 仍載入 `editor.js`、**沒有** `cloud.js` / `clou
 
 也就是說 v0.9.3～v0.9.7 全部只存在你電腦裡。**任何「朋友那邊的行為」都要用 v0.9.2 去判斷。**
 
-### 0-2. 雲端存檔與信箱：程式寫完了，但系統沒有在運作
+### 0-2. 雲端存檔與信箱：~~程式寫完了，但系統沒有在運作~~ → 2026-09-23 已通電
+
+> **本節已過時**，保留作為紀錄。目前狀態見 1-3。
 
 `js/cloud-config.js` 的 `url` 和 `anonKey` 都是空字串 → `Cloud.enabled()` 回 false → 整個雲端與信箱功能**在執行時是關閉的**。
 Supabase 專案也還沒建立、SQL 還沒跑、`saves` / `admins` / `mail` / `mail_claims` 四張表都不存在。
@@ -66,19 +68,25 @@ Supabase 專案也還沒建立、SQL 還沒跑、`saves` / `admins` / `mail` / `
 | v0.9.5 機會牌機率拉近 + RTP 132%/182% | **IMPLEMENTED（僅模擬驗證）** | 150 萬揮模擬；未實玩 |
 | 密碼鎖 641014 | **IMPLEMENTED** | 客戶端雜湊，可繞過（本來就知道） |
 
-### 1-3. 雲端與帳號
+### 1-3. 雲端與帳號　→ 2026-09-23 更新：已通電
 
 | 功能 | 狀態 | 證據 |
 |---|---|---|
-| Supabase 專案 | **ACCEPTED（未建立）** | 你還沒開 |
-| 資料表 saves / admins / mail / mail_claims | **ACCEPTED（SQL 已寫好，未執行）** | `docs/05`、`docs/06` |
-| Email 註冊／登入程式 | **IMPLEMENTED（未通電）** | `cloud.js:100-121`；本機用假網址測過錯誤處理 |
-| 存檔自動同步（5 秒 debounce） | **IMPLEMENTED（未通電）** | `game.js:85-92` |
-| 登入時二選一（雲端／本機） | **IMPLEMENTED（未通電）** | `game.js:839-864` |
-| 信箱、領取去重 | **IMPLEMENTED（未通電）** | `cloud.js:185-198`；用假資料測過領取流程 |
-| 發信 SQL 指令（send_mail 等） | **ACCEPTED（SQL 未執行）** | `docs/06`；語法用 pglast 驗過，**沒有在真的 Postgres 上跑過** |
-| 開發者權限（?dev=1 + admin） | **IMPLEMENTED（半通電）** | `game.js:1327-1334`。本機判斷已生效並測過；admin 判斷需要雲端才會運作 |
+| Supabase 專案 | **VERIFIED** | 專案 `mine game`（Tokyo, Free）已建立 |
+| `saves` 表 + RLS | **VERIFIED** | 未登入讀取回 200 + 空陣列；擁有者的存檔實際出現在 Table Editor |
+| Email 註冊／登入程式 | **VERIFIED** | 擁有者實際註冊成功，Authentication → Users 看得到 |
+| 存檔自動同步（5 秒 debounce） | **VERIFIED** | 遊戲中實際運作 |
+| 登入時二選一（雲端／本機） | **IMPLEMENTED** | 程式存在；尚未遇到「兩邊都有存檔」的情境 |
+| `admins` / `mail` / `mail_claims` 三張表 | **VERIFIED** | 2026-09-23 建立成功 |
+| 發信指令 send_mail / send_to / unsend_mail / list_mail | **VERIFIED** | 建立成功；`send_to` 實測回傳 mail_id = 1 |
+| 信箱領取去重 | **IMPLEMENTED** | 程式端用假資料測過；**真的領一次還沒做** |
+| 開發者權限（?dev=1 + admin） | **IMPLEMENTED** | 本機判斷測過；線上 admin 判斷尚未實測 |
 | 排行榜 | **IDEA** | 只有討論 |
+
+**建置時發現並修掉的錯誤**：發信指令第一版的管理員檢查只看 `auth.uid()`，
+但在 SQL Editor 執行時身分是 `postgres`、`auth.uid()` 為 NULL，會把擁有者自己擋掉。
+已改成同時放行 `current_user in ('postgres','supabase_admin')`。詳見 `docs/06` §6。
+**這個錯誤語法完全正確、靜態檢查也過得了，只有實際執行才會出現。**
 
 ### 1-4. 我找不到實作的東西（文件有寫）
 
