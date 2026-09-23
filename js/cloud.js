@@ -32,9 +32,12 @@
   }
   function setStatus(s, err) { status = s; lastErr = err || ""; listeners.forEach(f => { try { f(s, lastErr); } catch (e) {} }); }
 
+  /* 標頭：apikey 一定要帶；Authorization 只在「已登入」時帶使用者的 token。
+     以前未登入時會把金鑰本身塞進 Authorization，那只有舊版 anon 金鑰（JWT）吃得下，
+     新版 sb_publishable_ 金鑰會被拒絕。改成這樣兩種金鑰都能用。 */
   function head(auth) {
     const h = { "apikey": CFG.anonKey, "Content-Type": "application/json" };
-    h["Authorization"] = "Bearer " + (auth && sess ? sess.access_token : CFG.anonKey);
+    if (auth && sess && sess.access_token) h["Authorization"] = "Bearer " + sess.access_token;
     return h;
   }
   /* 把英文錯誤換成看得懂的中文 */
