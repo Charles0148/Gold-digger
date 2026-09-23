@@ -11,6 +11,15 @@
   /* ---------------- 工具函式 ---------------- */
   const clone = o => JSON.parse(JSON.stringify(o));
   const fmt = n => Math.floor(n).toLocaleString("en-US");
+  /* ---------------- 開發者旗標 ----------------
+     save.debug 的開關（顯示設定／顯示抽選／強制設定）存在存檔裡，
+     而存檔會同步到雲端 → 以前忘記關的話，痕跡會跟著帳號跑到每一台裝置，
+     而且沒有 ?dev=1 就打不開編輯模式去關它。
+     v0.10.2：這些開關「只有在開發者模式底下才生效」。設定值照樣保留，
+     正常玩的網址一律當作它們是關的，forceSetting 也不可能汙染正式數據。 */
+  let devMode = false;
+  const dbg = k => devMode && !!save.debug[k];
+  const forcedSetting = () => (devMode ? (save.debug.forceSetting || 0) : 0);
   const esc = t => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   const pickOne = arr => arr[Math.floor(Math.random() * arr.length)];
   const store = {
@@ -163,7 +172,8 @@
   }
 
   function todaySetting(mineId) {
-    if (save.debug.forceSetting) return save.debug.forceSetting;
+    const f = forcedSetting();
+    if (f) return f;
     const r = seeded(todayKey() + "|" + mineId);
     let acc = 0; const dist = config.rules.settingDist;
     for (let i = 0; i < dist.length; i++) { acc += dist[i]; if (r < acc) return i + 1; }
@@ -277,7 +287,7 @@
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
     let stateTxt = st.state === "bonus" ? colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) : "";
-    if (save.debug.showSetting) {
+    if (dbg("showSetting")) {
       const nm = { normal: "通常", koukaku: "高確", chance: "連續演出", revive: "復活", zencho: "前兆", bonus: "AT" }[st.state];
       stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.state === "chance" ? `｜${st.chanceIdx}/${st.chanceRounds}回合 ${st.chanceWin ? "會過" + (st.chanceFake ? "(先演失敗)" : "") : "不會過"}` : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
     }
@@ -310,7 +320,7 @@
     } else {
       $("tiName").textContent = "無工具"; $("tiBar").style.width = "0"; $("tiDur").textContent = "";
     }
-    $("rollLog").classList.toggle("hidden", !save.debug.showRolls);
+    $("rollLog").classList.toggle("hidden", !dbg("showRolls"));
     $("btnAuto").textContent = save.auto ? "自動" : "手動";
     $("btnAuto").classList.toggle("on", save.auto);
     renderHud();
@@ -322,7 +332,7 @@
     const PH = { normal: "", date: "談話中", at: "報酬", stIntro: "挑戰準備", st: "ST", reward: "一轉定勝負", pick: "選擇", dig: "挖掘中", bonus: "BONUS" };
     let txt = st.upper ? colored("上位", "#ffcc33") + " " : "";
     txt += PH[st.state] ? colored(PH[st.state], config.theme.accent) : "";
-    if (save.debug.showSetting) {
+    if (dbg("showSetting")) {
       txt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${st.state}｜累${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手" + bossName2(st.stBoss) : ""}${st.bonusTotal ? "｜報酬" + st.bonusTotal + "轉" : ""}</span>`;
     }
     $("mbState").innerHTML = txt;
@@ -347,7 +357,7 @@
       $("tiBar").style.background = t.dur / t.max > .5 ? "#55ff55" : t.dur / t.max > .2 ? "#ffcc33" : "#ff5555";
       $("tiDur").textContent = t.dur + "/" + t.max;
     } else { $("tiName").textContent = "無工具"; $("tiBar").style.width = "0"; $("tiDur").textContent = ""; }
-    $("rollLog").classList.toggle("hidden", !save.debug.showRolls);
+    $("rollLog").classList.toggle("hidden", !dbg("showRolls"));
     $("btnAuto").textContent = save.auto ? "自動" : "手動";
     $("btnAuto").classList.toggle("on", save.auto);
     renderHud();
@@ -684,9 +694,9 @@
   const pctText = (p, D) => (p * 100).toFixed(Math.max(0, Math.round(Math.log10(D)) - 2)) + "%";
   function logRolls(r, swingNo) {
     const box = $("rollLog");
-    box.classList.toggle("hidden", !save.debug.showRolls);
-    if (!save.debug.showRolls) return;
-    const list = r.rolls.filter(x => save.debug.showAllRolls || x.major);
+    box.classList.toggle("hidden", !dbg("showRolls"));
+    if (!dbg("showRolls")) return;
+    const list = r.rolls.filter(x => dbg("showAllRolls") || x.major);
     if (!list.length) return;
     const html = list.map(x => x.info ? `<div class="pk">・${x.label}</div>` : x.pick
       ? `<div class="pk">・${x.label}｜1~${x.total} 抽出 ${x.n} → ${x.result}（${x.ranges.join("／")}）</div>`
@@ -787,7 +797,7 @@
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${save.debug.showSetting ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
     renderCloud();
   }
@@ -1356,9 +1366,10 @@
       if (!window.Cloud || !Cloud.enabled() || !Cloud.user()) return;
       if (!(await Cloud.isAdmin())) return;
     }
+    devMode = true;
     const sc = document.createElement("script");
     sc.src = "js/editor.js?v=" + (window.GAME_VERSION || "");
-    sc.onload = () => { $("editFab").classList.remove("hidden"); };
+    sc.onload = () => { $("editFab").classList.remove("hidden"); renderAll(); };
     document.body.appendChild(sc);
   }
   tryDevMode();
