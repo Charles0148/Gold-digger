@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.10.5">
+<link rel="stylesheet" href="css/style.css?v=0.10.7">
 </head>
 <body>
 <div id="app">
@@ -83,7 +83,7 @@
     <!-- ===== 地圖 ===== -->
     <section class="screen" id="scr-map">
       <div class="px-box panel" data-edit="mapPanel" data-label="地圖">
-        <div class="panel-title">地圖 <span class="sub">每座礦坑每天暗中分配設定1～6</span></div>
+        <div class="panel-title">地圖 <span class="sub">每座礦坑的礦氣每天都會變，用觀測鏡看徵兆</span></div>
         <div id="mapList" class="list"></div>
       </div>
       <div class="px-box panel" id="cloudPanel" data-edit="cloudPanel" data-label="雲端存檔"></div>
@@ -109,6 +109,24 @@
       </div>
       <div id="bossBody" data-edit="bossBody" data-label="老闆-選項"></div>
     </section>
+
+    <!-- ===== 礦脈觀測鏡（專屬畫面） ===== -->
+    <section class="screen" id="scr-scope">
+      <div class="px-box panel" data-edit="scopeHead" data-label="觀測-礦坑選擇">
+        <div class="panel-title">礦脈觀測鏡 <span class="sub" id="scopeSub"></span></div>
+        <div id="scopeMines" class="scope-mines"></div>
+      </div>
+      <div class="px-box scope-lens" id="scopeLens" data-edit="scopeLens" data-label="觀測-鏡片">
+        <div id="scopeRing" class="scope-ring"><div id="scopeIcon" class="scope-icon">◎</div></div>
+        <div id="scopeName" class="scope-name"></div>
+        <div id="scopeSay" class="scope-say">……</div>
+      </div>
+      <div id="scopeCtrl" class="scope-ctrl"></div>
+      <div class="px-box panel" data-edit="scopeLog" data-label="觀測-今日紀錄">
+        <div class="panel-title">今日觀測紀錄 <span class="sub" id="scopeCount"></span></div>
+        <div id="scopeList" class="list"></div>
+      </div>
+    </section>
   </main>
 
   <!-- ===== 底部導覽 ===== -->
@@ -127,12 +145,12 @@
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=0.10.5"></script>
-<script src="js/cloud-config.js?v=0.10.5"></script>
-<script src="js/cloud.js?v=0.10.5"></script>
-<script src="js/config.js?v=0.10.5"></script>
-<script src="js/engine.js?v=0.10.5"></script>
-<script src="js/engine2.js?v=0.10.5"></script>
-<script src="js/game.js?v=0.10.5"></script>
+<script src="js/version.js?v=0.10.7"></script>
+<script src="js/cloud-config.js?v=0.10.7"></script>
+<script src="js/cloud.js?v=0.10.7"></script>
+<script src="js/config.js?v=0.10.7"></script>
+<script src="js/engine.js?v=0.10.7"></script>
+<script src="js/engine2.js?v=0.10.7"></script>
+<script src="js/game.js?v=0.10.7"></script>
 </body>
 </html>
