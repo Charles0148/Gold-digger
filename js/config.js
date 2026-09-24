@@ -198,31 +198,91 @@
     // 低階工具挖高階礦坑：收益 ×（工具每揮成本 ÷ 該礦坑對應工具每揮成本）× underMul
     toolPenalty: { underMul: 0.9 },
 
-    /* ---------- 探礦眼鏡（設定示唆） ----------
-       規則一：眼鏡永遠只說真話，只是精準度不同。所以連續買兩次絕對不會互相矛盾。
-       規則二：每一句「設定N以上」在設定 N 自己身上也要有機率出現，
-               否則玩家會發現「看不太出來 = 一定不是高設定」，弱句反而變成 100% 情報。
-       hints[設定] 的每一欄權重合計必須是 100，且句子對該設定必須為真。
-       tools/sim.js 會逐項檢查這兩件事，並印出「聽到某句話時真實設定的分布」。   */
+    /* ---------- 礦脈觀測鏡（v0.10.6，原「探礦眼鏡」） ----------
+       玩家畫面**不得**出現設定1〜6、高設定、奇／偶數設定、設定N以上、確定／濃厚等字眼。
+       內部仍用 1〜6（setting）計算，只在程式、模擬器與技術文件中使用。
+
+       兩種情報的真實性不同，這是刻意的：
+         • 傾向類（孤脈／雙脈／深層微光／強烈共鳴）＝**機率傾向，可能失準**
+         • 等級下限（geD/geC/geB/geA）與完整礦紋徽章 ＝ **必定為真**
+       weights[內部值][觀測次序 0-4] 每一列合計必須是 100，
+       且 geX 只能出現在對應內部值以上。tools/sim.js 會逐項檢查。      */
     glasses: {
-      name: "探礦眼鏡",
-      priceMul: 2,      // 基礎價 = 該礦坑建議鎬子價格 × 這個倍率
-      repeatMul: 2,     // 同一天同一礦坑，第 n 次購買價格 ×repeatMul^(n-1)
-      dailyMax: 8,      // 同一天同一礦坑的購買上限（保險）
-      hints: {
-        1: { ge1: 96, odd: 3, s1: 1 },
-        2: { ge1: 88, even: 9, s2: 3 },
-        3: { ge1: 56, ge2: 22, ge3: 8, odd: 10, s3: 4 },
-        4: { ge1: 36, ge2: 24, ge3: 16, ge4: 6, even: 13, s4: 5 },
-        5: { ge1: 18, ge2: 15, ge3: 33, ge4: 10, hi56: 16, odd: 2, s5: 6 },
-        6: { ge1: 10, ge2: 12, ge3: 28, ge4: 18, hi56: 20, even: 4, s6: 8 }
+      name: "礦脈觀測鏡",
+      priceMul: 2,      // 第一次價格 = 該礦坑建議鎬子價格 × 這個倍率
+      repeatMul: 2,     // 同一天同一礦坑，第 n 次價格 ×repeatMul^(n-1)
+      dailyMax: 5,      // 每座礦坑每天最多觀測次數
+      revealMs: 1000,   // 揭曉演出長度（毫秒）
+      stages: ["初步觀測", "追加觀測", "精密觀測", "深層觀測", "最終觀測"],
+      openLines: [
+        "要看礦脈？先說好，鏡片看到的是徵兆，不是答案。",
+        "礦坑不會說話，但它留下的光，偶爾比人誠實。",
+        "把眼睛放亮。真正有用的東西，通常只閃一下。"
+      ],
+      stageLines: [
+        ["先別急著下判斷。礦脈第一眼，最會騙人。", "先看個輪廓。今天它願不願意開口，還不知道。"],
+        ["嗯……剛才那道光不像偶然。再看一次。", "有點意思。鏡片開始抓到它的脾氣了。"],
+        ["從這裡才算真正的觀測。別只看你想看的。", "霧散了一些。接下來看到的，份量會更重。"],
+        ["別眨眼。深層的回光，只會出現一瞬間。", "這次要是刻出紋路，就不是普通的徵兆了。"],
+        ["最後一次。看清楚了，今天它不會再開口。", "鏡片已經到極限。是答案還是沉默，就看這一下。"]
+      ],
+      // 一般觀測結果（傾向類可能失準；geX 必定為真）
+      results: {
+        silent: { name: "礦脈沉默", icon: "◌", color: "#8d8d8d", line: "霧還沒散。它今天不肯說話。" },
+        odd:    { name: "孤脈反應", icon: "◐", color: "#9fd0ff", line: "回光總是單獨跳動。今天偏向單脈。" },
+        even:   { name: "雙脈反應", icon: "◑", color: "#9fd0ff", line: "光總是成雙回來。雙脈的氣息比較重。" },
+        glow:   { name: "深層微光", icon: "✦", color: "#ffd76a", line: "深處有點亮。礦氣比平常活了一些。" },
+        reso:   { name: "強烈共鳴", icon: "✸", color: "#ff8a4c", line: "整條礦脈都在回應。今天值得多留一會。" },
+        geD:    { name: "D級以上", icon: "▲", color: "#a8e6a1", line: "淺層雜質退了。至少能看見D級的紋路。" },
+        geC:    { name: "C級以上", icon: "▲", color: "#7fe3ff", line: "三層脈光已經穩住。至少是C級。" },
+        geB:    { name: "B級以上", icon: "▲", color: "#ffd76a", line: "深層出現完整金紋。B級以下不會有這種光。" },
+        geA:    { name: "A級以上", icon: "▲", color: "#ff8a4c", line: "星晶正在共鳴。至少是A級礦脈。" }
       },
-      labels: {
-        ge1: "……看不太出來", ge2: "設定2以上", ge3: "設定3以上", ge4: "設定4以上",
-        odd: "奇數設定", even: "偶數設定", hi56: "設定5〜6",
-        s1: "設定1確定", s2: "設定2確定", s3: "設定3確定",
-        s4: "設定4確定", s5: "設定5確定", s6: "設定6確定"
-      }
+      // 完整礦紋徽章：index = 內部值 − 1，抽中時必定與當日真實內部值相符
+      badgeRate: [0, 0, 0, 0.5, 2],   // 第1〜5次觀測出現完整礦紋的機率（%）
+      badges: [
+        { g: "E", color: "#8d8d8d", line: "……紋路很淡，只有一道。E級。今天先別追得太深。" },
+        { g: "D", color: "#a8e6a1", line: "兩道淺紋合上了。D級，算是醒著。" },
+        { g: "C", color: "#7fe3ff", line: "三層回光穩住了。C級，今天可以期待一下。" },
+        { g: "B", color: "#ffd76a", line: "四道礦紋全亮了。B級，這座坑值得守。" },
+        { g: "A", color: "#ff8a4c", line: "五芒晶紋成形了。A級……今天的礦氣很旺。" },
+        { g: "S", color: "#ff4fd8", line: "六道虹脈同時共鳴……S級。這種景象，我也很少見。" }
+      ],
+      // weights[內部值][觀測次序-1]，每列合計 100
+      weights: {
+        1: [{ silent: 70, odd: 20, even: 4, glow: 5, reso: 1 },
+            { silent: 64, odd: 24, even: 5, glow: 6, reso: 1 },
+            { silent: 58, odd: 27, even: 6, glow: 7, reso: 2 },
+            { silent: 54, odd: 30, even: 6, glow: 8, reso: 2 },
+            { silent: 50, odd: 33, even: 7, glow: 8, reso: 2 }],
+        2: [{ silent: 66, odd: 5, even: 20, glow: 6, reso: 1, geD: 2 },
+            { silent: 60, odd: 5, even: 23, glow: 7, reso: 2, geD: 3 },
+            { silent: 53, odd: 6, even: 26, glow: 8, reso: 2, geD: 5 },
+            { silent: 47, odd: 6, even: 28, glow: 9, reso: 3, geD: 7 },
+            { silent: 42, odd: 6, even: 30, glow: 10, reso: 3, geD: 9 }],
+        3: [{ silent: 58, odd: 18, even: 5, glow: 12, reso: 3, geD: 3, geC: 1 },
+            { silent: 50, odd: 20, even: 5, glow: 14, reso: 4, geD: 5, geC: 2 },
+            { silent: 42, odd: 22, even: 5, glow: 16, reso: 5, geD: 7, geC: 3 },
+            { silent: 35, odd: 23, even: 5, glow: 18, reso: 6, geD: 9, geC: 4 },
+            { silent: 29, odd: 24, even: 5, glow: 19, reso: 7, geD: 11, geC: 5 }],
+        4: [{ silent: 46, odd: 5, even: 20, glow: 18, reso: 6, geD: 3, geC: 1.5, geB: 0.5 },
+            { silent: 38, odd: 5, even: 21, glow: 20, reso: 8, geD: 4, geC: 3, geB: 1 },
+            { silent: 30, odd: 5, even: 22, glow: 22, reso: 10, geD: 5, geC: 4, geB: 2 },
+            { silent: 23, odd: 5, even: 23, glow: 23, reso: 12, geD: 6, geC: 5, geB: 3 },
+            { silent: 18, odd: 5, even: 23, glow: 24, reso: 14, geD: 7, geC: 5, geB: 4 }],
+        5: [{ silent: 34, odd: 16, even: 4, glow: 22, reso: 16, geD: 4, geC: 2, geB: 1.5, geA: 0.5 },
+            { silent: 26, odd: 17, even: 4, glow: 23, reso: 19, geD: 5, geC: 3, geB: 2, geA: 1 },
+            { silent: 19, odd: 18, even: 4, glow: 23, reso: 22, geD: 5, geC: 4, geB: 3, geA: 2 },
+            { silent: 13, odd: 19, even: 4, glow: 23, reso: 25, geD: 5, geC: 4, geB: 4, geA: 3 },
+            { silent: 9, odd: 19, even: 4, glow: 22, reso: 28, geD: 5, geC: 4, geB: 5, geA: 4 }],
+        6: [{ silent: 28, odd: 4, even: 16, glow: 24, reso: 20, geD: 4, geC: 2, geB: 1.5, geA: 0.5 },
+            { silent: 20, odd: 4, even: 17, glow: 24, reso: 24, geD: 5, geC: 3, geB: 2, geA: 1 },
+            { silent: 13, odd: 4, even: 18, glow: 24, reso: 28, geD: 5, geC: 4, geB: 3, geA: 1 },
+            { silent: 8, odd: 4, even: 18, glow: 23, reso: 31, geD: 5, geC: 4, geB: 4, geA: 3 },
+            { silent: 4, odd: 4, even: 18, glow: 22, reso: 34, geD: 5, geC: 4, geB: 5, geA: 4 }]
+      },
+      // v0.10.7：舊版「探礦眼鏡」的紀錄一律清除，不轉換（見 game.js 的 glassWipeOld）
+      dataVersion: 2
     },
 
     /* ---------- 礦坑老闆 佐佐木 ---------- */
@@ -259,7 +319,6 @@
         allDone: "這張全部完成了。下一張晚點再來看。",
         sell: "要賣什麼？照行情收。",
         buy: "鎬子都在這。挑一把吧。",
-        glass: "眼鏡啊……戴上去看得到礦脈的氣。準不準，我不保證。",
         boons: "這些是我給你的。別弄丟了。",
         noBoon: "……還早呢。多幫我跑幾趟再說。",
         levelUp: "你幫了我不少。這個拿去吧。",

@@ -227,14 +227,36 @@
     for (let i = 0; i < dist.length; i++) { acc += dist[i]; if (r < acc) return i + 1; }
     return 1;
   }
-  /* ---------------- 探礦眼鏡（設定示唆） ----------------
-     眼鏡只會說真話，句子從 config.glasses.hints[今日設定] 依權重抽。
-     同一天同一礦坑的結果會累積存起來，重買是**再抽一句**（互相不會矛盾），價格倍增。 */
+  /* ---------------- 礦脈觀測鏡（v0.10.6） ----------------
+     玩家畫面只看得到礦脈現象、等級下限與 E〜S 完整礦紋，看不到內部數值 1〜6。
+     傾向類（孤脈／雙脈／深層微光／強烈共鳴）可能失準；
+     等級下限（geD/geC/geB/geA）與完整礦紋徽章必定為真。
+     每座礦坑每天最多 dailyMax 次，價格逐次 ×repeatMul，跨日自動重置。
+     紀錄格式：save.glass.byMine[礦坑id] = [{ k:"reso" } | { k:"badge", g:內部值-1 }, ...] */
   function glassCfg() { return config.glasses || {}; }
+  // 觀測資料的格式版本。玩家存檔裡的 v 不等於這個值，就整包清掉。
+  const GLASS_V = 2;
+  let glassWiped = false;
   function glassState() {
     const k = todayKey();
-    if (!save.glass || save.glass.date !== k) save.glass = { date: k, byMine: {} };
+    if (!save.glass || save.glass.date !== k) save.glass = { v: GLASS_V, date: k, byMine: {} };
+    glassWipeOld(save.glass);
     return save.glass;
+  }
+  /* v0.10.5「探礦眼鏡」的舊紀錄一律清除（擁有者決定：不轉換、不退錢）。
+     舊存檔沒有 v 欄位，或裡面還留著字串格式的句子，都視為舊資料。
+     線上已經有玩家用過舊功能，所以雲端下載回來的存檔也會走到這裡。 */
+  function glassWipeOld(st) {
+    const old = st.v !== GLASS_V ||
+      Object.keys(st.byMine || {}).some(id => (st.byMine[id] || []).some(e => typeof e === "string"));
+    if (!old) return;
+    const had = Object.keys(st.byMine || {}).some(id => (st.byMine[id] || []).length);
+    st.v = GLASS_V; st.byMine = {};
+    try { persist(); } catch (_) { }   // 立刻落地，免得舊資料又從雲端／重整回來
+    if (had && !glassWiped) {
+      glassWiped = true;
+      setTimeout(() => toast("觀測鏡換新了，今天的舊紀錄已清除，可以重新觀測"), 400);
+    }
   }
   function glassSeen(mineId) { return glassState().byMine[mineId] || []; }
   function glassPrice(mineId) {
@@ -242,30 +264,153 @@
     const tl = config.tools.find(t => t.tier === m.tier) || config.tools[0];
     return Math.round(tl.price * (g.priceMul ?? 2) * Math.pow(g.repeatMul ?? 2, glassSeen(mineId).length));
   }
-  function glassDraw(setting) {
-    const tbl = (glassCfg().hints || {})[setting] || {};
+  // stage 由 1 起算。先擲完整礦紋，沒中再依 weights 抽一般結果。
+  function glassDraw(setting, stage, rnd) {
+    const g = glassCfg(), R = rnd || Math.random;
+    const bRate = (g.badgeRate || [])[stage - 1] || 0;
+    if (R() * 100 < bRate) return { k: "badge", g: setting - 1 };
+    const tbl = ((g.weights || {})[setting] || [])[stage - 1] || {};
     const keys = Object.keys(tbl);
     let sum = 0; keys.forEach(k => sum += tbl[k]);
-    let x = Math.random() * sum;
-    for (const k of keys) if ((x -= tbl[k]) < 0) return k;
-    return keys[0] || "ge1";
+    let x = R() * sum;
+    for (const k of keys) if ((x -= tbl[k]) < 0) return { k };
+    return { k: keys[0] || "silent" };
   }
-  function glassText(mineId) {
-    const L = glassCfg().labels || {};
-    return glassSeen(mineId).map(k => L[k] || k);
+  function glassResult(e) { // → { name, icon, color, line, badge }
+    const g = glassCfg();
+    if (e.k === "badge") {
+      const b = (g.badges || [])[e.g] || { g: "?", color: "#fff", line: "" };
+      return { name: "完整礦紋　" + b.g + "級", icon: b.g, color: b.color, line: b.line, badge: true };
+    }
+    const r = (g.results || {})[e.k] || { name: e.k, icon: "?", color: "#fff", line: "" };
+    return { name: r.name, icon: r.icon, color: r.color, line: r.line, badge: false };
   }
-  function glassBuy(mineId) {
-    const g = glassCfg(), st = glassState();
-    const list = st.byMine[mineId] || (st.byMine[mineId] = []);
-    if (list.length >= (g.dailyMax ?? 8)) { toast("今天這副眼鏡看不出更多了"); return; }
-    const pr = glassPrice(mineId);
-    if (save.coins < pr) return;
+  /* ---- 觀測專屬畫面（v0.10.7）----
+     流程：選礦坑 → 按「開始觀測」扣款 → 轉動鏡片（點 3 下，也會自動推進）→ 揭曉 → 進今日紀錄。
+     scopeMine：目前看的礦坑；scopePhase："idle" | "focus" | "done" */
+  let scopeMine = null, scopePhase = "idle", scopeTurns = 0, scopePending = null, scopeTimer = null, scopeFrame = 0;
+  const SCOPE_FRAMES = ["◌", "◍", "◎", "◉", "◎", "◍"];
+  const SCOPE_TURNS = 3;
+
+  function scopeMines() { return config.mines.filter(m => save.unlocked.includes(m.id)); }
+  function scopeReset() {
+    // 已經付錢但還在轉鏡片的那一次，一定要先落地，否則切礦坑／離開畫面等於白花錢
+    if (scopePhase === "focus" && scopePending && scopeMine) {
+      const st = glassState();
+      (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
+      persist();
+    }
+    clearTimeout(scopeTimer); scopeTimer = null;
+    scopePhase = "idle"; scopeTurns = 0; scopePending = null; scopeFrame = 0;
+  }
+  function openScope(mineId) {
+    scopeReset();
+    const list = scopeMines();
+    scopeMine = mineId || scopeMine || (list[0] || {}).id;
+    if (!list.some(m => m.id === scopeMine)) scopeMine = (list[0] || {}).id;
+    go("scope");
+  }
+  function renderScope() {
+    const g = glassCfg(), list = scopeMines();
+    if (!list.length) { $("scopeMines").innerHTML = '<div class="sub">還沒有解鎖任何礦坑。</div>'; return; }
+    if (!scopeMine || !list.some(m => m.id === scopeMine)) scopeMine = list[0].id;
+    const m = mineDef(scopeMine), seen = glassSeen(scopeMine), n = seen.length;
+    const max = g.dailyMax ?? 5, full = n >= max, pr = glassPrice(scopeMine);
+
+    $("scopeSub").textContent = `每座礦坑每天 ${max} 次｜每再看一次 ×${g.repeatMul ?? 2} 價`;
+    $("scopeMines").innerHTML = list.map(x =>
+      `<button data-scope-mine="${x.id}" class="${x.id === scopeMine ? "on" : ""}">${x.name}
+        <span class="sub">${(glassSeen(x.id).length) || 0}/${max}</span></button>`).join("");
+
+    // 鏡片區
+    const ring = $("scopeRing"), icon = $("scopeIcon");
+    ring.className = "scope-ring" + (scopePhase === "focus" ? " focus" : "");
+    if (scopePhase === "focus") {
+      icon.textContent = SCOPE_FRAMES[scopeFrame % SCOPE_FRAMES.length];
+      icon.style.color = "#7fe3ff";
+      $("scopeName").textContent = (g.stages || [])[n] || "觀測中";
+      $("scopeName").style.color = "#7fe3ff";
+      $("scopeSay").textContent = `點擊鏡片轉動焦距……（${scopeTurns}/${SCOPE_TURNS}）`;
+    } else if (scopePhase === "done" && scopePending) {
+      const r = glassResult(scopePending.e);
+      ring.className = "scope-ring done" + (r.badge ? " badge" : "");
+      ring.style.borderColor = r.color;
+      icon.textContent = r.icon; icon.style.color = r.color;
+      icon.style.textShadow = r.badge ? "0 0 14px " + r.color : "none";
+      $("scopeName").textContent = `${r.name}`;
+      $("scopeName").style.color = r.color;
+      $("scopeSay").textContent = r.line;
+    } else {
+      ring.style.borderColor = ""; icon.style.textShadow = "none";
+      icon.textContent = "◎"; icon.style.color = "#6a6a78";
+      const last = n ? glassResult(seen[n - 1]) : null;
+      $("scopeName").textContent = m.name;
+      $("scopeName").style.color = rarityColor(m.tier);
+      $("scopeSay").textContent = full ? "鏡片已經到極限了。今天它不會再開口。"
+        : last ? last.line : pickOne(g.openLines || ["……要看礦脈？"]);
+    }
+
+    // 控制列
+    $("scopeCtrl").innerHTML = scopePhase === "focus"
+      ? `<button class="px-btn" id="scopeSkip">直接看結果</button>`
+      : `<button class="px-btn" id="scopeGo" ${full || save.coins < pr || scopePhase === "done" ? "disabled" : ""}>
+           ${full ? "已到極限" : `${(g.stages || [])[n] || "觀測"}　$${fmt(pr)}`}</button>
+         <button class="px-btn" id="scopeBack">回老闆那裡</button>`;
+
+    // 今日紀錄
+    $("scopeCount").textContent = n ? `${n}/${max} 次` : "";
+    $("scopeList").innerHTML = n ? seen.map((e, i) => {
+      const r = glassResult(e);
+      return `<div class="row scope-row"><div class="n">第${i + 1}次</div>
+        <div class="ic${r.badge ? " badge" : ""}" style="color:${r.color}">${r.icon}</div>
+        <div class="grow"><span style="color:${r.color};font-weight:bold">${r.name}</span>
+          <div class="sub">${(g.stages || [])[i] || ""}｜${r.line}</div></div></div>`;
+    }).join("") : '<div class="sub">今天還沒觀測這座礦坑。</div>';
+  }
+
+  function scopeBuy() {
+    const g = glassCfg(), max = g.dailyMax ?? 5;
+    if (scopePhase !== "idle") return;
+    if (glassSeen(scopeMine).length >= max) { toast("鏡片已經到極限了"); return; }
+    const pr = glassPrice(scopeMine);
+    if (save.coins < pr) { toast("錢不夠"); return; }
     save.coins -= pr;
-    const key = glassDraw(todaySetting(mineId));
-    list.push(key);
-    persist();
-    bossLine = `「${mineDef(mineId).name}」……${(g.labels || {})[key] || key}。`;
-    renderShop(); renderHud();
+    const st = glassState();
+    const list = st.byMine[scopeMine] || (st.byMine[scopeMine] = []);
+    const stage = list.length + 1;
+    scopePending = { e: glassDraw(todaySetting(scopeMine), stage), stage };
+    scopePhase = "focus"; scopeTurns = 0; scopeFrame = 0;
+    persist(); renderScope(); renderHud();
+    // 佐佐木的階段台詞
+    const lines = (g.stageLines || [])[stage - 1];
+    if (lines) setTimeout(() => { if (scopePhase === "focus") { $("scopeSay").textContent = pickOne(lines); } }, 260);
+    scopeSpin();
+  }
+  function scopeSpin() { // 鏡片自轉；玩家點擊可以加快
+    clearTimeout(scopeTimer);
+    scopeTimer = setTimeout(() => {
+      if (scopePhase !== "focus") return;
+      scopeFrame++;
+      $("scopeIcon").textContent = SCOPE_FRAMES[scopeFrame % SCOPE_FRAMES.length];
+      if (scopeFrame >= SCOPE_TURNS * 6) { scopeSettle(); return; }   // 沒人點也會自己揭曉
+      scopeSpin();
+    }, Math.max(60, Math.round((glassCfg().revealMs ?? 1000) / 8)));
+  }
+  function scopeTap() {
+    if (scopePhase !== "focus") return;
+    scopeTurns++;
+    $("scopeRing").classList.add("focus");
+    $("scopeSay").textContent = `點擊鏡片轉動焦距……（${Math.min(scopeTurns, SCOPE_TURNS)}/${SCOPE_TURNS}）`;
+    if (scopeTurns >= SCOPE_TURNS) scopeSettle();
+  }
+  function scopeSettle() {
+    if (scopePhase !== "focus" || !scopePending) return;
+    clearTimeout(scopeTimer); scopeTimer = null;
+    const st = glassState();
+    (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
+    scopePhase = "done";
+    persist(); renderScope(); renderHud();
+    setTimeout(() => { if (scopePhase === "done") { scopeReset(); renderScope(); } }, 2600);
   }
 
   function checkDay() {
@@ -886,7 +1031,7 @@
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${unlocked && glassText(m.id).length ? `｜<span style="color:#ffd76a">🔍 ${glassText(m.id).join("／")}</span>` : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";border-radius:5px;padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
     renderCloud();
   }
@@ -1181,7 +1326,7 @@
         <button class="px-btn wide boss-opt" data-boss="board">▶ 看委託板 <span class="sub">${left ? `剩${left}項` : "已完成"}</span></button>
         <button class="px-btn wide boss-opt" data-boss="sell">▶ 賣礦石</button>
         <button class="px-btn wide boss-opt" data-boss="buy">▶ 買鎬子</button>
-        <button class="px-btn wide boss-opt" data-boss="glass">▶ 買${(config.glasses || {}).name || "探礦眼鏡"} <span class="sub">看今天的礦脈</span></button>
+        <button class="px-btn wide boss-opt" data-boss="glass">▶ ${(config.glasses || {}).name || "礦脈觀測鏡"} <span class="sub">看今天的礦脈徵兆</span></button>
         <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 <span class="sub">${bs.boons.length}個</span></button>
         <button class="px-btn wide boss-opt" data-boss="ad" ${adLeft <= 0 ? "disabled" : ""}>▶ 領補給（看廣告） <span class="sub">今日剩${adLeft}次</span></button>
         <button class="px-btn wide boss-opt" data-boss="bye">▶ 離開</button></div>`;
@@ -1224,18 +1369,6 @@
         <button class="px-btn small" data-buy="${t.id}" ${save.coins < pr ? "disabled" : ""}>$${fmt(pr)}</button></div>`;
       }).join("") + `</div></div>` + back;
     }
-    if (view === "glass") {
-      say = say || L.glass || "戴上去看看吧。";
-      const g = glassCfg();
-      body = `<div class="board"><div class="board-head">${g.name || "探礦眼鏡"} <span class="sub">每天重置｜同一礦坑再看一次 ×${g.repeatMul ?? 2} 價</span></div><div class="list">` +
-        config.mines.filter(m => save.unlocked.includes(m.id)).map(m => {
-          const pr = glassPrice(m.id), seen = glassText(m.id), n = seen.length;
-          const full = n >= (g.dailyMax ?? 8);
-          return `<div class="row"><div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-            <div class="sub">${n ? seen.map(s => `<span style="color:#ffd76a">${s}</span>`).join("／") + `｜已看${n}次` : "今天還沒看過"}</div></div>
-            <button class="px-btn small" data-glass="${m.id}" ${full || save.coins < pr ? "disabled" : ""}>${full ? "看夠了" : "$" + fmt(pr)}</button></div>`;
-        }).join("") + `</div><div class="sub" style="margin-top:6px">眼鏡只會說真話，但不一定說得準。看越多次越接近真相，價格也越貴。</div></div>` + back;
-    }
     if (view === "boons") {
       say = say || (bs.boons.length ? L.boons : L.noBoon);
       const groups = {};
@@ -1254,6 +1387,7 @@
   function bossGo(v) {
     if (v === "bye") { bossView = "menu"; bossLine = B().lines.bye; go("mine"); return; }
     if (v === "ad") { bossLine = B().lines.ad; watchAd(); return; }
+    if (v === "glass") { openScope(); return; }
     bossView = v; renderShop();
   }
 
@@ -1350,6 +1484,7 @@
     clearM2UI();
     if (name !== "mine") stopAuto();
     if (name === "shop" && currentScreen !== "shop") bossView = "menu";
+    if (name !== "scope") scopeReset();
     currentScreen = name;
     document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === "scr-" + name));
     document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active", b.dataset.go === name));
@@ -1357,12 +1492,23 @@
   }
   function renderAll() {
     applyLook();
-    ({ mine: renderMine, bag: renderBag, map: renderMap, dex: renderDex, shop: renderShop })[currentScreen]();
+    ({ mine: renderMine, bag: renderBag, map: renderMap, dex: renderDex, shop: renderShop, scope: renderScope })[currentScreen]();
     renderHud();
   }
 
   /* ---------------- 事件綁定 ---------------- */
   $("nav").addEventListener("click", e => { const b = e.target.closest("button[data-go]"); if (b && !window.Editor?.isPicking()) go(b.dataset.go); });
+  // 礦脈觀測鏡：專屬畫面的互動
+  $("scr-scope").addEventListener("click", e => {
+    if (window.Editor?.isPicking()) return;
+    const pick = e.target.closest("[data-scope-mine]");
+    if (pick) { scopeReset(); scopeMine = pick.dataset.scopeMine; renderScope(); return; }
+    if (e.target.closest("#scopeGo")) { scopeBuy(); return; }
+    if (e.target.closest("#scopeSkip")) { scopeSettle(); return; }
+    if (e.target.closest("#scopeBack")) { go("shop"); return; }
+    if (e.target.closest("#scopeLens")) { scopeTap(); return; }
+  });
+
   $("textbox").addEventListener("click", () => {
     if (window.Editor?.isPicking()) return;
     if (save.auto) { stopAuto(); return; }
@@ -1397,7 +1543,6 @@
     }
     if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); } }
     if (d.buy) { const tl = toolDef(d.buy), pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); persist(); toast("購買 " + tl.name); renderShop(); } }
-    if (d.glass) glassBuy(d.glass);
   });
   setInterval(() => { // 委託板倒數；時間到自動換新委託
     if (currentScreen !== "shop" || bossView !== "board" || !$("modal").classList.contains("hidden")) return;
@@ -1474,6 +1619,7 @@
   }
   tryDevMode();
 
+  glassState();   // 一開遊戲就檢查／清除舊版觀測鏡的紀錄（不必等玩家打開觀測畫面）
   renderAll();
   if (!save.name) askName(true);
 })();
