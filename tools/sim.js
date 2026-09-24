@@ -142,6 +142,67 @@ console.log(`\n=== §8.6 第二台 劇本與顏色信賴度（設定1）===`);
   });
 }
 
+/* ---------- §8.8 探礦眼鏡（設定示唆） ----------
+   兩項必須成立的檢查：
+     1. 每一句話對該設定必須為真（眼鏡不說謊）
+     2. 每個設定的權重合計 = 100
+   然後反推「玩家聽到某句話時，真實設定的分布」——這才是眼鏡的實際價值。 */
+function glassReport() {
+  const G = C.glasses; if (!G) return;
+  const d = R.settingDist;
+  const TRUE = {
+    ge1: s => s >= 1, ge2: s => s >= 2, ge3: s => s >= 3, ge4: s => s >= 4,
+    odd: s => s % 2 === 1, even: s => s % 2 === 0, hi56: s => s >= 5,
+    s1: s => s === 1, s2: s => s === 2, s3: s => s === 3, s4: s => s === 4, s5: s => s === 5, s6: s => s === 6
+  };
+  console.log(`\n=== §8.8 探礦眼鏡 ===`);
+  let bad = 0;
+  for (let s = 1; s <= 6; s++) {
+    const t = G.hints[s] || {};
+    let sum = 0;
+    for (const k in t) {
+      sum += t[k];
+      if (!TRUE[k]) { console.log(`  ✗ 設定${s}：不認識的句子「${k}」`); bad++; }
+      else if (!TRUE[k](s)) { console.log(`  ✗ 設定${s} 會說謊：「${G.labels[k]}」`); bad++; }
+    }
+    if (Math.abs(sum - 100) > 1e-9) { console.log(`  ✗ 設定${s} 權重合計 ${sum}，不是 100`); bad++; }
+  }
+  console.log(bad ? `  ⚠️ 共 ${bad} 項不合格` : `  ✓ 不說謊、權重合計都正確`);
+
+  const joint = {};
+  for (let s = 1; s <= 6; s++) for (const k in G.hints[s]) {
+    (joint[k] = joint[k] || Array(7).fill(0))[s] += d[s - 1] * G.hints[s][k] / 100;
+  }
+  const rows = Object.entries(joint).map(([k, v]) => {
+    const tot = v.reduce((a, b) => a + b, 0), p = v.map(x => x / tot);
+    return { k, tot, p, ev: p.reduce((a, x, i) => a + x * i, 0) };
+  }).sort((a, b) => a.ev - b.ev);
+  console.log(`  眼鏡說 | 出現率 | 設1 | 設2 | 設3 | 設4 | 設5 | 設6 | 平均設定`);
+  for (const r of rows) {
+    console.log(`  ${G.labels[r.k]} | ${pct(r.tot)} | ` +
+      [1, 2, 3, 4, 5, 6].map(i => (r.p[i] * 100).toFixed(0) + "%").join(" | ") + ` | ${r.ev.toFixed(2)}`);
+  }
+  console.log(`  不買眼鏡（先驗）平均設定 ${d.reduce((a, v, i) => a + v * (i + 1), 0).toFixed(2)}`);
+
+  // 連買幾次就會被看穿？（重買＝再抽一句，互不矛盾）
+  const pickS = () => { let x = Math.random(), a = 0; for (let i = 0; i < 6; i++) { a += d[i]; if (x < a) return i + 1; } return 1; };
+  const pickK = s => { const t = G.hints[s]; let x = Math.random() * 100; for (const k in t) if ((x -= t[k]) < 0) return k; return "ge1"; };
+  const n = 200000;
+  console.log(`  ——連買的資訊量——`);
+  for (const times of [1, 2, 3, 5, 8]) {
+    let hit = 0, cost = 0;
+    for (let i = 0; i < n; i++) {
+      const S = pickS(), post = d.slice();
+      for (let t = 0; t < times; t++) { const k = pickK(S); for (let s = 1; s <= 6; s++) post[s - 1] *= (G.hints[s][k] || 0) / 100; }
+      const tot = post.reduce((a, b) => a + b, 0), p = post.map(v => v / tot);
+      if (p.indexOf(Math.max(...p)) + 1 === S) hit++;
+    }
+    for (let t = 0; t < times; t++) cost += Math.pow(G.repeatMul, t);
+    console.log(`  買${times}次 | 猜中設定 ${pct(hit / n)} | 花費 = 建議鎬子價 ×${(cost * G.priceMul).toFixed(0)}`);
+  }
+}
+glassReport();
+
 /* ---------- §8.7 依 settingDist 加權的玩家體感 RTP ---------- */
 console.log(`\n=== §8.7 依每日設定分配加權（玩家實際體感）===`);
 {
