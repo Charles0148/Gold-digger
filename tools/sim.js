@@ -142,64 +142,88 @@ console.log(`\n=== §8.6 第二台 劇本與顏色信賴度（設定1）===`);
   });
 }
 
-/* ---------- §8.8 探礦眼鏡（設定示唆） ----------
-   兩項必須成立的檢查：
-     1. 每一句話對該設定必須為真（眼鏡不說謊）
-     2. 每個設定的權重合計 = 100
-   然後反推「玩家聽到某句話時，真實設定的分布」——這才是眼鏡的實際價值。 */
+/* ---------- §8.8 礦脈觀測鏡（v0.10.6） ----------
+   必須成立的檢查：
+     1. 每個內部值 × 每次觀測的權重合計 = 100
+     2. 等級下限（geD/geC/geB/geA）只出現在對應內部值以上（這類情報必定為真）
+     3. 完整礦紋：第1〜3次 0%、第4次 0.5%、第5次 2%，且抽中必定等於真實內部值
+   然後反推玩家看到某個現象時的真實內部分布，以及五次觀測後的猜中率與花費。   */
 function glassReport() {
-  const G = C.glasses; if (!G) return;
-  const d = R.settingDist;
-  const TRUE = {
-    ge1: s => s >= 1, ge2: s => s >= 2, ge3: s => s >= 3, ge4: s => s >= 4,
-    odd: s => s % 2 === 1, even: s => s % 2 === 0, hi56: s => s >= 5,
-    s1: s => s === 1, s2: s => s === 2, s3: s => s === 3, s4: s => s === 4, s5: s => s === 5, s6: s => s === 6
-  };
-  console.log(`\n=== §8.8 探礦眼鏡 ===`);
+  const G = C.glasses; if (!G || !G.weights) return;
+  const d = R.settingDist, MIN = { geD: 2, geC: 3, geB: 4, geA: 5 };
+  console.log(`\n=== §8.8 礦脈觀測鏡 ===`);
   let bad = 0;
   for (let s = 1; s <= 6; s++) {
-    const t = G.hints[s] || {};
-    let sum = 0;
-    for (const k in t) {
-      sum += t[k];
-      if (!TRUE[k]) { console.log(`  ✗ 設定${s}：不認識的句子「${k}」`); bad++; }
-      else if (!TRUE[k](s)) { console.log(`  ✗ 設定${s} 會說謊：「${G.labels[k]}」`); bad++; }
-    }
-    if (Math.abs(sum - 100) > 1e-9) { console.log(`  ✗ 設定${s} 權重合計 ${sum}，不是 100`); bad++; }
+    const rows = G.weights[s] || [];
+    if (rows.length !== (G.dailyMax || 5)) { console.log(`  ✗ 內部值${s} 只有 ${rows.length} 列，應為 ${G.dailyMax}`); bad++; }
+    rows.forEach((r, i) => {
+      let sum = 0;
+      for (const k in r) {
+        sum += r[k];
+        if (!G.results[k]) { console.log(`  ✗ 內部值${s} 第${i + 1}次：不認識的結果「${k}」`); bad++; }
+        else if (MIN[k] && s < MIN[k]) { console.log(`  ✗ 內部值${s} 第${i + 1}次 會說謊：${G.results[k].name}`); bad++; }
+      }
+      if (Math.abs(sum - 100) > 1e-9) { console.log(`  ✗ 內部值${s} 第${i + 1}次 權重合計 ${sum}`); bad++; }
+    });
   }
-  console.log(bad ? `  ⚠️ 共 ${bad} 項不合格` : `  ✓ 不說謊、權重合計都正確`);
+  const want = [0, 0, 0, 0.5, 2];
+  want.forEach((v, i) => { if ((G.badgeRate || [])[i] !== v) { console.log(`  ✗ 第${i + 1}次完整礦紋機率 ${G.badgeRate[i]}%，應為 ${v}%`); bad++; } });
+  console.log(bad ? `  ⚠️ 共 ${bad} 項不合格` : `  ✓ 權重合計、等級下限不說謊、完整礦紋機率（0/0/0/0.5/2%）全部正確`);
 
+  // 各現象的反推分布（把五次觀測都算進去，按出現次數加權）
   const joint = {};
-  for (let s = 1; s <= 6; s++) for (const k in G.hints[s]) {
-    (joint[k] = joint[k] || Array(7).fill(0))[s] += d[s - 1] * G.hints[s][k] / 100;
-  }
+  for (let s = 1; s <= 6; s++) (G.weights[s] || []).forEach((r, i) => {
+    const pb = (G.badgeRate[i] || 0) / 100;
+    for (const k in r) (joint[k] = joint[k] || Array(7).fill(0))[s] += d[s - 1] * (1 - pb) * r[k] / 100;
+    (joint.badge = joint.badge || Array(7).fill(0))[s] += d[s - 1] * pb;
+  });
+  const NAME = k => k === "badge" ? "完整礦紋（E〜S）" : G.results[k].name;
   const rows = Object.entries(joint).map(([k, v]) => {
     const tot = v.reduce((a, b) => a + b, 0), p = v.map(x => x / tot);
     return { k, tot, p, ev: p.reduce((a, x, i) => a + x * i, 0) };
   }).sort((a, b) => a.ev - b.ev);
-  console.log(`  眼鏡說 | 出現率 | 設1 | 設2 | 設3 | 設4 | 設5 | 設6 | 平均設定`);
+  console.log(`  玩家看到 | 每次觀測出現率 | E | D | C | B | A | S | 平均內部值`);
   for (const r of rows) {
-    console.log(`  ${G.labels[r.k]} | ${pct(r.tot)} | ` +
+    console.log(`  ${NAME(r.k)} | ${pct(r.tot / (G.dailyMax || 5))} | ` +
       [1, 2, 3, 4, 5, 6].map(i => (r.p[i] * 100).toFixed(0) + "%").join(" | ") + ` | ${r.ev.toFixed(2)}`);
   }
-  console.log(`  不買眼鏡（先驗）平均設定 ${d.reduce((a, v, i) => a + v * (i + 1), 0).toFixed(2)}`);
+  console.log(`  不觀測（先驗）平均內部值 ${d.reduce((a, v, i) => a + v * (i + 1), 0).toFixed(2)}`);
 
-  // 連買幾次就會被看穿？（重買＝再抽一句，互不矛盾）
+  // 模擬：完整觀測 n 次之後猜得多準，以及徽章實際出現率
   const pickS = () => { let x = Math.random(), a = 0; for (let i = 0; i < 6; i++) { a += d[i]; if (x < a) return i + 1; } return 1; };
-  const pickK = s => { const t = G.hints[s]; let x = Math.random() * 100; for (const k in t) if ((x -= t[k]) < 0) return k; return "ge1"; };
-  const n = 200000;
-  console.log(`  ——連買的資訊量——`);
-  for (const times of [1, 2, 3, 5, 8]) {
-    let hit = 0, cost = 0;
-    for (let i = 0; i < n; i++) {
-      const S = pickS(), post = d.slice();
-      for (let t = 0; t < times; t++) { const k = pickK(S); for (let s = 1; s <= 6; s++) post[s - 1] *= (G.hints[s][k] || 0) / 100; }
-      const tot = post.reduce((a, b) => a + b, 0), p = post.map(v => v / tot);
-      if (p.indexOf(Math.max(...p)) + 1 === S) hit++;
+  const draw = (s, stage) => {
+    if (Math.random() * 100 < (G.badgeRate[stage - 1] || 0)) return { k: "badge", g: s - 1 };
+    const t = G.weights[s][stage - 1]; let x = Math.random() * 100;
+    for (const k in t) if ((x -= t[k]) < 0) return { k };
+    return { k: "silent" };
+  };
+  const n = 200000, maxN = G.dailyMax || 5;
+  const badgeHit = Array(maxN).fill(0), badgeWrong = [0];
+  const acc = Array(maxN).fill(0);
+  for (let i = 0; i < n; i++) {
+    const S = pickS(), post = d.slice();
+    for (let t = 1; t <= maxN; t++) {
+      const e = draw(S, t);
+      if (e.k === "badge") {
+        badgeHit[t - 1]++;
+        if (e.g + 1 !== S) badgeWrong[0]++;
+        for (let s = 1; s <= 6; s++) post[s - 1] *= (s === e.g + 1 ? 1 : 0);
+      } else {
+        for (let s = 1; s <= 6; s++) post[s - 1] *= (G.weights[s][t - 1][e.k] || 0) / 100;
+      }
+      const tot = post.reduce((a, b) => a + b, 0);
+      if (tot > 0) { const p = post.map(v => v / tot); if (p.indexOf(Math.max(...p)) + 1 === S) acc[t - 1]++; }
     }
-    for (let t = 0; t < times; t++) cost += Math.pow(G.repeatMul, t);
-    console.log(`  買${times}次 | 猜中設定 ${pct(hit / n)} | 花費 = 建議鎬子價 ×${(cost * G.priceMul).toFixed(0)}`);
   }
+  console.log(`  ——完整礦紋實際出現率（${n.toLocaleString()} 次模擬）——`);
+  badgeHit.forEach((v, i) => console.log(`  第${i + 1}次 ${(v / n * 100).toFixed(2)}%（設定值 ${G.badgeRate[i]}%）`));
+  console.log(`  徽章與真實內部值不符的次數：${badgeWrong[0]}（必須為 0）`);
+  console.log(`  ——累積觀測後猜中真實內部值的機率——`);
+  let cost = 0;
+  acc.forEach((v, i) => {
+    cost += Math.pow(G.repeatMul, i);
+    console.log(`  觀測${i + 1}次 | 猜中 ${(v / n * 100).toFixed(1)}% | 累計花費 = 建議鎬子價 ×${(cost * G.priceMul).toFixed(0)}`);
+  });
 }
 glassReport();
 
