@@ -240,3 +240,31 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 
 /* 編輯模式：外出劇本小標題 */
 .ed-sub{margin:8px 0 4px;font-size:11px;color:#ffcc33}
+
+/* ===== 礦脈觀測鏡 專屬畫面（v0.10.7） ===== */
+.scope-mines { display:flex; flex-wrap:wrap; gap:6px; }
+.scope-mines button {
+  font-family:inherit; font-size:.82em; padding:5px 9px; cursor:pointer;
+  background:#24242b; color:#ddd; border:2px solid #3a3a45; border-radius:4px;
+}
+.scope-mines button.on { border-color:#7fe3ff; color:#7fe3ff; background:#1b2a30; }
+.scope-lens { text-align:center; padding:18px 12px; }
+.scope-ring {
+  width:118px; height:118px; margin:0 auto 10px; border-radius:50%;
+  border:3px double #4a4a58; display:flex; align-items:center; justify-content:center;
+  background:radial-gradient(circle at 50% 45%, #202028 0%, #15151a 70%);
+  transition:border-color .25s, box-shadow .25s, transform .25s;
+}
+.scope-ring.focus { border-color:#7fe3ff; box-shadow:0 0 14px #7fe3ff55 inset, 0 0 10px #7fe3ff33; }
+.scope-ring.done  { transform:scale(1.06); }
+.scope-ring.badge { border-style:solid; border-width:4px; }
+.scope-icon { font-size:2.6em; line-height:1; transition:color .25s, text-shadow .25s; }
+.scope-ring.badge .scope-icon { font-size:2.2em; font-weight:bold; }
+.scope-name { font-weight:bold; min-height:1.3em; margin-bottom:4px; }
+.scope-say { font-size:.86em; opacity:.85; line-height:1.6; min-height:2.6em; }
+.scope-ctrl { display:flex; gap:8px; margin:8px 0; }
+.scope-ctrl .px-btn { flex:1; }
+.scope-row { display:flex; align-items:flex-start; gap:8px; }
+.scope-row .n { font-size:.78em; opacity:.6; min-width:3.2em; padding-top:2px; }
+.scope-row .ic { font-size:1.25em; min-width:1.5em; text-align:center; }
+.scope-row .ic.badge { border:2px double currentColor; border-radius:5px; padding:0 4px; font-size:1em; }
