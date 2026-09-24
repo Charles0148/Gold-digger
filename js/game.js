@@ -70,6 +70,7 @@
       unlocked: ["m1"], mineId: "m1",
       plays: {}, plays2: {}, today: { date: todayKey(), stats: {} },
       ads: { date: todayKey(), count: 0 }, pw: {},
+      glass: { date: todayKey(), byMine: {} },
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
   }
@@ -226,6 +227,47 @@
     for (let i = 0; i < dist.length; i++) { acc += dist[i]; if (r < acc) return i + 1; }
     return 1;
   }
+  /* ---------------- 探礦眼鏡（設定示唆） ----------------
+     眼鏡只會說真話，句子從 config.glasses.hints[今日設定] 依權重抽。
+     同一天同一礦坑的結果會累積存起來，重買是**再抽一句**（互相不會矛盾），價格倍增。 */
+  function glassCfg() { return config.glasses || {}; }
+  function glassState() {
+    const k = todayKey();
+    if (!save.glass || save.glass.date !== k) save.glass = { date: k, byMine: {} };
+    return save.glass;
+  }
+  function glassSeen(mineId) { return glassState().byMine[mineId] || []; }
+  function glassPrice(mineId) {
+    const g = glassCfg(), m = mineDef(mineId);
+    const tl = config.tools.find(t => t.tier === m.tier) || config.tools[0];
+    return Math.round(tl.price * (g.priceMul ?? 2) * Math.pow(g.repeatMul ?? 2, glassSeen(mineId).length));
+  }
+  function glassDraw(setting) {
+    const tbl = (glassCfg().hints || {})[setting] || {};
+    const keys = Object.keys(tbl);
+    let sum = 0; keys.forEach(k => sum += tbl[k]);
+    let x = Math.random() * sum;
+    for (const k of keys) if ((x -= tbl[k]) < 0) return k;
+    return keys[0] || "ge1";
+  }
+  function glassText(mineId) {
+    const L = glassCfg().labels || {};
+    return glassSeen(mineId).map(k => L[k] || k);
+  }
+  function glassBuy(mineId) {
+    const g = glassCfg(), st = glassState();
+    const list = st.byMine[mineId] || (st.byMine[mineId] = []);
+    if (list.length >= (g.dailyMax ?? 8)) { toast("今天這副眼鏡看不出更多了"); return; }
+    const pr = glassPrice(mineId);
+    if (save.coins < pr) return;
+    save.coins -= pr;
+    const key = glassDraw(todaySetting(mineId));
+    list.push(key);
+    persist();
+    bossLine = `「${mineDef(mineId).name}」……${(g.labels || {})[key] || key}。`;
+    renderShop(); renderHud();
+  }
+
   function checkDay() {
     const k = todayKey();
     if (save.today.date !== k) save.today = { date: k, stats: {} };
@@ -844,7 +886,7 @@
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${unlocked && glassText(m.id).length ? `｜<span style="color:#ffd76a">🔍 ${glassText(m.id).join("／")}</span>` : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
     renderCloud();
   }
@@ -1139,6 +1181,7 @@
         <button class="px-btn wide boss-opt" data-boss="board">▶ 看委託板 <span class="sub">${left ? `剩${left}項` : "已完成"}</span></button>
         <button class="px-btn wide boss-opt" data-boss="sell">▶ 賣礦石</button>
         <button class="px-btn wide boss-opt" data-boss="buy">▶ 買鎬子</button>
+        <button class="px-btn wide boss-opt" data-boss="glass">▶ 買${(config.glasses || {}).name || "探礦眼鏡"} <span class="sub">看今天的礦脈</span></button>
         <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 <span class="sub">${bs.boons.length}個</span></button>
         <button class="px-btn wide boss-opt" data-boss="ad" ${adLeft <= 0 ? "disabled" : ""}>▶ 領補給（看廣告） <span class="sub">今日剩${adLeft}次</span></button>
         <button class="px-btn wide boss-opt" data-boss="bye">▶ 離開</button></div>`;
@@ -1180,6 +1223,18 @@
         <div class="sub">耐久 ${toolMax(t.id)}｜每揮 $${(pr / toolMax(t.id)).toFixed(1)}｜適合 ${config.mines.filter(m => m.tier === t.tier).map(m => m.name).join("、")}</div></div>
         <button class="px-btn small" data-buy="${t.id}" ${save.coins < pr ? "disabled" : ""}>$${fmt(pr)}</button></div>`;
       }).join("") + `</div></div>` + back;
+    }
+    if (view === "glass") {
+      say = say || L.glass || "戴上去看看吧。";
+      const g = glassCfg();
+      body = `<div class="board"><div class="board-head">${g.name || "探礦眼鏡"} <span class="sub">每天重置｜同一礦坑再看一次 ×${g.repeatMul ?? 2} 價</span></div><div class="list">` +
+        config.mines.filter(m => save.unlocked.includes(m.id)).map(m => {
+          const pr = glassPrice(m.id), seen = glassText(m.id), n = seen.length;
+          const full = n >= (g.dailyMax ?? 8);
+          return `<div class="row"><div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
+            <div class="sub">${n ? seen.map(s => `<span style="color:#ffd76a">${s}</span>`).join("／") + `｜已看${n}次` : "今天還沒看過"}</div></div>
+            <button class="px-btn small" data-glass="${m.id}" ${full || save.coins < pr ? "disabled" : ""}>${full ? "看夠了" : "$" + fmt(pr)}</button></div>`;
+        }).join("") + `</div><div class="sub" style="margin-top:6px">眼鏡只會說真話，但不一定說得準。看越多次越接近真相，價格也越貴。</div></div>` + back;
     }
     if (view === "boons") {
       say = say || (bs.boons.length ? L.boons : L.noBoon);
@@ -1342,6 +1397,7 @@
     }
     if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); } }
     if (d.buy) { const tl = toolDef(d.buy), pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); persist(); toast("購買 " + tl.name); renderShop(); } }
+    if (d.glass) glassBuy(d.glass);
   });
   setInterval(() => { // 委託板倒數；時間到自動換新委託
     if (currentScreen !== "shop" || bossView !== "board" || !$("modal").classList.contains("hidden")) return;
