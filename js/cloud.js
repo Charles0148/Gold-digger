@@ -50,7 +50,9 @@
     [/invalid email/i, "Email 格式不對"],
     [/rate limit|too many/i, "太頻繁了，等一下再試"],
     [/relation .*saves.* does not exist/i, "後台還沒建 saves 資料表"],
-    [/row-level security|permission denied/i, "資料表權限規則沒設好（RLS）"]
+    [/row-level security|permission denied/i, "資料表權限規則沒設好（RLS）"],
+    [/could not find the function|function .* does not exist/i, "後台還沒執行 docs/07 的 SQL（找不到這個指令）"],
+    [/relation .*player_profiles.* does not exist/i, "後台還沒建 player_profiles 資料表（請先跑 docs/07 的 SQL）"]
   ];
   function zh(msg) {
     const m = String(msg || "");
@@ -124,7 +126,7 @@
   }
   async function signOut() {
     try { if (sess) await jfetch("/auth/v1/logout", { method: "POST", headers: head(true) }); } catch (e) {}
-    saveSess(null); adminFlag = null; setStatus("out");
+    saveSess(null); adminFlag = null; playerIdCache = null; setStatus("out");
   }
 
   /* ---------- 存檔 ---------- */
@@ -236,9 +238,76 @@
     }
   }
 
+  /* ---------- RPC（呼叫資料庫函式） ----------
+     一律帶登入者自己的 Bearer token，權限由資料庫端的 is_admin_caller() 決定。
+     前端藏不藏按鈕跟安全無關，真正的邊界在 RPC 裡。
+     錯誤訊息只轉成中文，絕不把 token 寫進訊息或 console。 */
+  async function rpc(name, args) {
+    if (!ok()) return { ok: false, err: "雲端未設定" };
+    if (!sess) return { ok: false, err: "未登入" };
+    try {
+      const d = await withAuth(() => jfetch("/rest/v1/rpc/" + name, {
+        method: "POST", headers: head(true), body: JSON.stringify(args || {})
+      }));
+      return { ok: true, data: d };
+    } catch (e) {
+      return { ok: false, err: e.message };
+    }
+  }
+
+  /* ---------- 玩家 ID ---------- */
+  let playerIdCache = null;
+  async function myPlayerId(force) {
+    if (!ok() || !sess) return null;
+    if (playerIdCache && !force) return playerIdCache;
+    const r = await rpc("my_player_id", {});
+    if (!r.ok) return null;
+    playerIdCache = typeof r.data === "string" ? r.data : String(r.data || "");
+    return playerIdCache || null;
+  }
+
+  /* ---------- 管理員操作（伺服器端會再驗一次身分） ---------- */
+  const PID = /^[1-9][0-9]{5}$/;
+
+  async function adminChangePlayerId(curId, newId, note) {
+    if (!PID.test(String(curId || ""))) return { ok: false, err: "目前的玩家 ID 必須是六碼數字" };
+    if (!PID.test(String(newId || ""))) return { ok: false, err: "新的玩家 ID 必須是六碼數字" };
+    if (String(curId) === String(newId)) return { ok: false, err: "新舊玩家 ID 相同，沒有需要修改的地方" };
+    const r = await rpc("admin_change_player_id", { cur_id: String(curId), new_id: String(newId), note: note || null });
+    return r.ok ? { ok: true, msg: r.data } : r;
+  }
+
+  /* m = { mode:"self"|"player"|"all", playerId, title, body, coins, ore, oreQty, tool, toolQty, days } */
+  async function adminSend(m) {
+    const a = {
+      p_title: String(m.title || ""), p_body: String(m.body || ""),
+      p_coins: Math.round(Number(m.coins) || 0),
+      p_ore: m.ore || null, p_ore_qty: Math.round(Number(m.oreQty) || 0),
+      p_tool: m.tool || null, p_tool_qty: Math.round(Number(m.toolQty) || 0),
+      p_days: Math.round(Number(m.days) || 30)
+    };
+    let r;
+    if (m.mode === "all") r = await rpc("admin_send_all", a);
+    else if (m.mode === "player") {
+      if (!PID.test(String(m.playerId || ""))) return { ok: false, err: "玩家 ID 必須是六碼數字" };
+      r = await rpc("admin_send_to_player", Object.assign({ p_player_id: String(m.playerId) }, a));
+    } else r = await rpc("admin_send_self", a);
+    return r.ok ? { ok: true, mailId: r.data } : r;
+  }
+
+  async function adminListMail() {
+    const r = await rpc("admin_list_mail", {});
+    return r.ok ? { ok: true, rows: r.data || [] } : r;
+  }
+  async function adminUnsend(mailId) {
+    const r = await rpc("admin_unsend_mail", { p_mail_id: Math.round(Number(mailId) || 0) });
+    return r.ok ? { ok: true, msg: r.data } : r;
+  }
+
   window.Cloud = {
     enabled: ok,
     isAdmin, mailbox, claim,
+    myPlayerId, adminChangePlayerId, adminSend, adminListMail, adminUnsend,
     status: () => (ok() ? status : "off"),
     error: () => lastErr,
     user: () => (sess ? sess.user : null),

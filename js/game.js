@@ -1010,13 +1010,51 @@
     return Object.keys(save.ores).filter(n => save.ores[n] > 0 && idx[n])
       .sort((a, b) => idx[b].cat.rarity - idx[a].cat.rarity || idx[b].mine.mult - idx[a].mine.mult);
   }
+  /* 出售礦石。
+     n 可以是 Infinity（全賣）。真正扣的數量一律以**呼叫當下的庫存**為準，
+     不相信畫面上比較早取得的數字——玩家可能在拉完滑桿之後又去挖礦或交付委託。 */
   function sell(name, n) {
-    const c = Math.min(n, save.ores[name] || 0); if (!c) return;
+    const have = save.ores[name] || 0;
+    const want = Math.floor(Number(n));
+    if (!have) { toast("背包裡沒有這個礦石了"); delete sellQty[name]; renderShop(); return; }
+    if (!isFinite(want) && n !== Infinity) { toast("數量不正確"); return; }
+    if (n !== Infinity && (!Number.isFinite(want) || want < 1)) { toast("數量要是 1 以上的整數"); return; }
+    const c = Math.min(n === Infinity ? have : want, have);
+    if (c < 1) return;
+    const short = (n !== Infinity && want > have);
     save.ores[name] -= c; if (save.ores[name] <= 0) delete save.ores[name];
     save.coins += itemPrice(name) * c;
-    toast(`賣出 ${name} ×${c}  +$${money(itemPrice(name) * c)}`);
+    sellQty[name] = 1;
+    toast(`${short ? `只剩 ${have} 個｜` : ""}賣出 ${name} ×${c}  +$${money(itemPrice(name) * c)}`);
     persist(); renderShop();
   }
+  const sellQty = {};   // 每種礦石目前選的出售數量（只是 UI 狀態，不進存檔）
+  /* 滑桿／數字框改動時即時同步，不出售任何東西 */
+  function sellSetQty(name, v) {
+    const have = save.ores[name] || 0;
+    if (!have) { renderShop(); return; }
+    const raw = Number(v);
+    let q = Math.floor(raw);
+    let fixed = !Number.isInteger(raw);          // 小數會被無條件捨去，要讓玩家看得出來
+    if (!Number.isFinite(q) || q < 1) { q = 1; fixed = true; }
+    if (q > have) { q = have; fixed = true; }
+    sellQty[name] = q;
+    const range = document.querySelector(`[data-ore-range="${cssQ(name)}"]`);
+    const num = document.querySelector(`[data-ore-num="${cssQ(name)}"]`);
+    const info = document.querySelector(`[data-ore-info="${cssQ(name)}"]`);
+    const btn = document.querySelector(`[data-ore-sell="${cssQ(name)}"]`);
+    if (range) range.value = q;
+    if (num) num.value = q;
+    const p = itemPrice(name);
+    if (info) {
+      info.textContent = `本次出售 ×${q}｜出售後剩餘 ×${have - q}｜可得 $${money(p * q)}`;
+      info.style.color = fixed ? "#ffd76a" : "";
+      if (fixed) setTimeout(() => { if (info) info.style.color = ""; }, 900);
+    }
+    if (btn) btn.textContent = `賣出 ${q} 個`;
+    return { q, fixed };
+  }
+  const cssQ = s => String(s).replace(/["\\]/g, "\\$&");
 
   /* ---------------- 地圖 ---------------- */
   function renderMap() {
@@ -1050,6 +1088,10 @@
     box.innerHTML = `<div class="panel-title">雲端存檔
         <span class="sub"><span style="color:${dot}">●</span> ${CLOUD_TXT[st] || st}</span></div>
       <div class="sub">${u ? u.email : "登入之後，存檔會自動同步，換手機也接得回來。"}</div>
+      ${u ? `<div class="pid-box"><span class="sub">玩家 ID</span>
+              <span class="pid-num" id="pidNum">${playerId ? esc(playerId) : "……"}</span>
+              <button class="px-btn small" id="pidCopy" ${playerId ? "" : "disabled"}>複製</button></div>
+             <div class="sub" style="opacity:.75">需要補發獎勵時，可以把這組 ID 提供給管理員。</div>` : ""}
       ${st === "error" ? `<div class="sub" style="color:#ff5555">${Cloud.error()}</div>` : ""}
       <div class="btns" style="margin-top:8px">
         ${u ? `<button class="px-btn small" id="cldPush">立刻上傳</button>
@@ -1061,9 +1103,40 @@
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
-    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
+    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; playerId = null; adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
     on("cldPush", async () => { const r = await cloudPush(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
     on("cldPull", cloudPullAsk);
+    on("pidCopy", () => copyText(playerId, "已複製玩家 ID " + playerId));
+    if (u && !playerId && !pidAsking) loadPlayerId();
+  }
+
+  /* ---------------- 玩家 ID ----------------
+     六碼純數字，由資料庫產生並綁定帳號。前端只是顯示，不參與配號。 */
+  let playerId = null, pidAsking = false;
+  async function loadPlayerId(force) {
+    if (!cloudOn() || !window.Cloud.myPlayerId) return null;
+    if (pidAsking) return playerId;
+    pidAsking = true;
+    try { playerId = await Cloud.myPlayerId(force); } catch (e) { playerId = null; }
+    pidAsking = false;
+    renderCloud();
+    return playerId;
+  }
+  /* 複製：優先用 clipboard API，失敗就退回選取（有些手機瀏覽器擋 clipboard） */
+  function copyText(txt, okMsg) {
+    if (!txt) return;
+    const done = () => toast(okMsg || "已複製");
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(String(txt)).then(done).catch(() => fallback());
+    } else fallback();
+    function fallback() {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = String(txt); ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select(); document.execCommand("copy"); ta.remove();
+        done();
+      } catch (e) { toast("這個瀏覽器不讓複製，請手動抄下來：" + txt); }
+    }
   }
 
   function askCloudLogin(isReg) {
@@ -1173,11 +1246,30 @@
     box.innerHTML = `<div>信箱</div>
       <div class="sub" style="margin-top:4px">${cloudOn() ? "" : "要先登入雲端才收得到信。"}</div>
       <div class="list" style="max-height:52vh;overflow:auto;margin-top:8px">${rows || '<div class="sub">目前沒有信件。</div>'}</div>
-      <div class="btns"><button class="px-btn" id="mailRe">重新整理</button><button class="px-btn" id="mailNo">關閉</button></div>`;
+      <div class="btns"><button class="px-btn" id="mailRe">重新整理</button>
+        ${adminSeen ? '<button class="px-btn" id="mailAdmin">管理信箱</button>' : ""}
+        <button class="px-btn" id="mailNo">關閉</button></div>`;
     $("modal").classList.remove("hidden");
     $("mailNo").onclick = () => $("modal").classList.add("hidden");
     $("mailRe").onclick = async () => { await loadMail(true); openMail(); };
+    const adm = $("mailAdmin"); if (adm) adm.onclick = () => openAdminMail();
     box.querySelectorAll("[data-claim]").forEach(b => { b.onclick = () => claimMail(+b.dataset.claim, b); });
+    checkAdmin();   // 查完才會顯示管理按鈕（查到是管理員會重畫一次）
+  }
+  /* 管理員判斷：等 Cloud.isAdmin() 回 true 才顯示入口。
+     這只是「不要讓一般玩家看到按鈕」，真正的安全邊界在資料庫的 RPC。 */
+  let adminSeen = false, adminChecking = false;
+  async function checkAdmin() {
+    if (adminSeen || adminChecking || !cloudOn()) return adminSeen;
+    adminChecking = true;
+    let r = false;
+    try { r = await Cloud.isAdmin(); } catch (e) { r = false; }
+    adminChecking = false;
+    if (r && !adminSeen) {
+      adminSeen = true;
+      if (!$("modal").classList.contains("hidden") && $("modalBox").textContent.indexOf("信箱") === 0) openMail();
+    }
+    return r;
   }
   async function claimMail(id, btn) {
     const m = mailCache.mail.find(x => x.id === id); if (!m) return;
@@ -1192,6 +1284,281 @@
     const rw = mailReward(m);
     toast(rw ? "領取成功：" + rw : "已讀");
     openMail();
+  }
+
+  /* ---------------- 管理信箱（v0.10.8） ----------------
+     只有 Cloud.isAdmin() 為 true 的帳號會看到入口。
+     但前端藏按鈕不是安全機制——每一個動作都是 Supabase RPC，
+     資料庫端的 is_admin_caller() 會再驗一次，一般玩家在主控台硬呼叫也會被擋。 */
+  const ADM = {                      // 表單狀態（不進存檔）
+    tab: "send", mode: "self", playerId: "", title: "", body: "", days: 30,
+    coins: 0, ore: "", oreQty: 0, tool: "", toolQty: 0,
+    sending: false, sentKey: "", lastMailId: null,
+    curPid: "", newPid: "", note: "", changing: false,
+    rows: null, listing: false, listErr: ""
+  };
+  const admFormKey = () => JSON.stringify([ADM.mode, ADM.playerId, ADM.title, ADM.body, ADM.days,
+    ADM.coins, ADM.ore, ADM.oreQty, ADM.tool, ADM.toolQty]);
+
+  function openAdminMail() {
+    const box = $("modalBox");
+    const oreOpts = oreNamesAll().map(n => `<option value="${esc(n)}" ${ADM.ore === n ? "selected" : ""}>${esc(n)}</option>`).join("");
+    const toolOpts = config.tools.map(t => `<option value="${esc(t.id)}" ${ADM.tool === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+    const modeBtn = (m, label, danger) =>
+      `<button data-adm-mode="${m}" class="${ADM.mode === m ? "on" : ""} ${danger ? "danger" : ""}">${label}</button>`;
+
+    let inner = "";
+    if (ADM.tab === "send") {
+      inner = `
+        <div class="adm-tabs">${modeBtn("self", "先寄給自己")}${modeBtn("player", "指定玩家 ID")}${modeBtn("all", "全體玩家", true)}</div>
+        ${ADM.mode === "player" ? `<div class="adm-field"><label>玩家六碼 ID</label>
+          <input id="admPid" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="例如 482739" value="${esc(ADM.playerId)}"></div>` : ""}
+        ${ADM.mode === "all" ? '<div class="sub adm-warn">全體信會寄給每一個玩家，收回也追不回已領取的獎勵。</div>' : ""}
+        <div class="adm-field"><label>標題（必填，最多 60 字）</label>
+          <input id="admTitle" type="text" maxlength="60" value="${esc(ADM.title)}"></div>
+        <div class="adm-field"><label>內文（最多 1000 字，可換行）</label>
+          <textarea id="admBody" maxlength="1000">${esc(ADM.body)}</textarea></div>
+        <div class="adm-row">
+          <div class="adm-field"><label>金幣 0～1,000,000</label>
+            <input id="admCoins" type="number" inputmode="numeric" min="0" max="1000000" step="1" value="${ADM.coins}"></div>
+          <div class="adm-field"><label>有效天數 1～365</label>
+            <input id="admDays" type="number" inputmode="numeric" min="1" max="365" step="1" value="${ADM.days}"></div>
+        </div>
+        <div class="adm-row">
+          <div class="adm-field"><label>礦石</label>
+            <select id="admOre"><option value="">（不附礦石）</option>${oreOpts}</select></div>
+          <div class="adm-field"><label>數量 0～999</label>
+            <input id="admOreQty" type="number" inputmode="numeric" min="0" max="999" step="1" value="${ADM.oreQty}"></div>
+        </div>
+        <div class="adm-row">
+          <div class="adm-field"><label>工具</label>
+            <select id="admTool"><option value="">（不附工具）</option>${toolOpts}</select></div>
+          <div class="adm-field"><label>數量 0～99</label>
+            <input id="admToolQty" type="number" inputmode="numeric" min="0" max="99" step="1" value="${ADM.toolQty}"></div>
+        </div>
+        <div class="adm-preview">${admPreview()}</div>
+        ${ADM.lastMailId ? `<div class="sub" style="color:#43d17a;margin-top:6px">上一封已寄出，mail ID = <b>${ADM.lastMailId}</b>。要再寄一封請按「再寄一封」。</div>` : ""}
+        <div class="btns" style="margin-top:10px">
+          ${ADM.sentKey === admFormKey()
+            ? '<button class="px-btn" id="admAgain">再寄一封</button>'
+            : `<button class="px-btn" id="admSend" ${ADM.sending ? "disabled" : ""}>${ADM.sending ? "寄送中…" : "寄出"}</button>`}
+        </div>`;
+    }
+    if (ADM.tab === "pid") {
+      inner = `
+        <div class="sub" style="text-align:left;line-height:1.7">朋友註冊後會拿到隨機的六碼 ID，把他目前的 ID 填進來就能改成指定號碼。
+          舊號碼會立刻釋出，之後可以再被配給別人。</div>
+        <div class="adm-field"><label>目前的六碼 ID</label>
+          <input id="admCur" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" value="${esc(ADM.curPid)}"></div>
+        <div class="adm-field"><label>要改成的六碼 ID</label>
+          <input id="admNew" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" value="${esc(ADM.newPid)}"></div>
+        <div class="adm-field"><label>備註（只有管理員看得到，可留空）</label>
+          <input id="admNote" type="text" maxlength="60" value="${esc(ADM.note)}"></div>
+        <div class="btns" style="margin-top:10px">
+          <button class="px-btn" id="admChange" ${ADM.changing ? "disabled" : ""}>${ADM.changing ? "處理中…" : "修改玩家 ID"}</button>
+        </div>`;
+    }
+    if (ADM.tab === "log") {
+      inner = ADM.listing ? '<div class="sub">讀取中…</div>'
+        : ADM.listErr ? `<div class="sub adm-warn">${esc(ADM.listErr)}</div>`
+        : !ADM.rows ? '<div class="sub">按「重新整理」載入寄件紀錄。</div>'
+        : !ADM.rows.length ? '<div class="sub">還沒寄過任何信。</div>'
+        : ADM.rows.map(r => {
+            const rw = mailReward({ coins: r.coins, ore_name: r.ore_name, ore_qty: r.ore_qty, tool_id: r.tool_id, tool_qty: r.tool_qty });
+            return `<div class="adm-mail">
+              <div><b>#${r.id}</b> ${esc(r.title)}</div>
+              <div class="sub">${esc(r.target)}${r.player_id ? "（" + esc(r.player_id) + "）" : ""}｜已領 ${r.claimed} 人</div>
+              ${rw ? `<div class="sub" style="color:#ffd34d">附件：${esc(rw)}</div>` : ""}
+              <div class="sub">寄出 ${fmtTime(r.sent_at)}｜到期 ${fmtTime(r.expires_at)}</div>
+              <button class="px-btn small" data-adm-unsend="${r.id}" style="margin-top:4px">收回</button>
+            </div>`;
+          }).join("");
+      inner += `<div class="btns" style="margin-top:10px"><button class="px-btn" id="admReload">重新整理</button></div>`;
+    }
+
+    box.innerHTML = `<div>管理信箱</div>
+      <div class="adm-tabs" style="margin-top:8px">
+        <button data-adm-tab="send" class="${ADM.tab === "send" ? "on" : ""}">寄信</button>
+        <button data-adm-tab="pid" class="${ADM.tab === "pid" ? "on" : ""}">玩家 ID 管理</button>
+        <button data-adm-tab="log" class="${ADM.tab === "log" ? "on" : ""}">寄件紀錄</button>
+      </div>
+      <div style="max-height:56vh;overflow:auto">${inner}</div>
+      <div class="btns" style="margin-top:8px"><button class="px-btn" id="admBack">回信箱</button></div>`;
+    $("modal").classList.remove("hidden");
+    admBind();
+  }
+
+  function admPreview() {
+    const who = ADM.mode === "all" ? '<span class="adm-warn">全體玩家</span>'
+      : ADM.mode === "player" ? `指定玩家 ${esc(ADM.playerId || "（還沒填）")}` : "只有你自己";
+    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0 });
+    const exp = new Date(Date.now() + (+ADM.days || 30) * 86400000);
+    return `<b>玩家會看到這樣：</b><br>
+      收件範圍：${who}<br>
+      標題：${esc(ADM.title) || "<span class='adm-warn'>（還沒填）</span>"}<br>
+      內文：${ADM.body ? esc(ADM.body).replace(/\n/g, "<br>") : "（空白）"}<br>
+      附件：${rw ? esc(rw) : "（無，純公告）"}<br>
+      到期：${exp.toLocaleDateString()}`;
+  }
+  function fmtTime(t) { return t ? new Date(t).toLocaleString() : "—"; }
+  function oreNamesAll() {
+    const out = [];
+    config.mines.forEach(m => config.categories.forEach(c => {
+      (m.items[c.id] || []).forEach(n => { if (out.indexOf(n) < 0) out.push(n); });
+      ((m.veinItems || {})[c.id] || []).forEach(n => { if (out.indexOf(n) < 0) out.push(n); });
+    }));
+    Object.keys((config.machine2 || {}).prices || {}).forEach(n => { if (out.indexOf(n) < 0) out.push(n); });
+    return out;
+  }
+
+  function admBind() {
+    const box = $("modalBox"), on = (id, ev, f) => { const e = $(id); if (e) e[ev] = f; };
+    box.querySelectorAll("[data-adm-tab]").forEach(b => { b.onclick = () => { ADM.tab = b.dataset.admTab; openAdminMail(); }; });
+    box.querySelectorAll("[data-adm-mode]").forEach(b => { b.onclick = () => { ADM.mode = b.dataset.admMode; ADM.sentKey = ""; openAdminMail(); }; });
+    $("admBack").onclick = () => openMail();
+
+    /* mode: "text"（原樣）、"num"（只留數字、存成數字）、"pid"（只留數字、最多六碼、存成字串） */
+    const live = (id, key, mode) => {
+      const e = $(id); if (!e) return;
+      e.oninput = () => {
+        if (mode === "pid") {
+          const v = e.value.replace(/[^\d]/g, "").slice(0, 6);
+          if (e.value !== v) e.value = v;      // 直接把非數字從畫面上拿掉
+          ADM[key] = v;
+        } else if (mode === "num") {
+          const v = e.value.replace(/[^\d]/g, "");
+          if (e.value !== v) e.value = v;
+          ADM[key] = v === "" ? "" : +v;
+        } else ADM[key] = e.value;
+        ADM.sentKey = "";
+        const pv = box.querySelector(".adm-preview"); if (pv) pv.innerHTML = admPreview();
+      };
+    };
+    live("admPid", "playerId", "pid"); live("admTitle", "title"); live("admBody", "body");
+    live("admCoins", "coins", "num"); live("admDays", "days", "num");
+    live("admOreQty", "oreQty", "num"); live("admToolQty", "toolQty", "num");
+    live("admCur", "curPid", "pid"); live("admNew", "newPid", "pid"); live("admNote", "note");
+    on("admOre", "onchange", e => { ADM.ore = e.target.value; ADM.sentKey = ""; openAdminMail(); });
+    on("admTool", "onchange", e => { ADM.tool = e.target.value; ADM.sentKey = ""; openAdminMail(); });
+
+    on("admAgain", "onclick", () => { ADM.sentKey = ""; ADM.lastMailId = null; openAdminMail(); });
+    on("admSend", "onclick", () => admSend());
+    on("admChange", "onclick", () => admChangeId());
+    on("admReload", "onclick", () => admLoadLog());
+    box.querySelectorAll("[data-adm-unsend]").forEach(b => { b.onclick = () => admUnsend(+b.dataset.admUnsend); });
+    if (ADM.tab === "log" && !ADM.rows && !ADM.listing && !ADM.listErr) admLoadLog();
+  }
+
+  /* 送出前的前端檢查。資料庫端會再驗一次同樣的規則，這裡只是早點告訴玩家。 */
+  function admValidate() {
+    const t = String(ADM.title || "").trim();
+    if (!t) return "標題不能空白";
+    if (t.length > 60) return "標題最多 60 字";
+    if (String(ADM.body || "").length > 1000) return "內文最多 1000 字";
+    const d = +ADM.days;
+    if (!Number.isInteger(d) || d < 1 || d > 365) return "有效天數要在 1～365 之間";
+    const c = +ADM.coins || 0;
+    if (!Number.isInteger(c) || c < 0 || c > 1000000) return "金幣要在 0～1,000,000 之間";
+    const oq = +ADM.oreQty || 0, tq = +ADM.toolQty || 0;
+    if (!Number.isInteger(oq) || oq < 0 || oq > 999) return "礦石數量要在 0～999 之間";
+    if (!Number.isInteger(tq) || tq < 0 || tq > 99) return "工具數量要在 0～99 之間";
+    if (oq > 0 && !ADM.ore) return "有填礦石數量就要選礦石";
+    if (tq > 0 && !ADM.tool) return "有填工具數量就要選工具";
+    if (ADM.mode === "player" && !/^[1-9][0-9]{5}$/.test(String(ADM.playerId || ""))) return "玩家 ID 必須是 100000～999999 的六碼數字";
+    return "";
+  }
+
+  function admSend() {
+    if (ADM.sending) return;
+    const bad = admValidate();
+    if (bad) return toast(bad);
+    const key = admFormKey();
+    if (ADM.sentKey === key) return toast("這一封已經寄過了，要再寄請按「再寄一封」");
+
+    const go = async () => {
+      ADM.sending = true; openAdminMail();
+      const r = await Cloud.adminSend({
+        mode: ADM.mode, playerId: ADM.playerId, title: String(ADM.title).trim(), body: ADM.body,
+        coins: +ADM.coins || 0, ore: ADM.ore || null, oreQty: +ADM.oreQty || 0,
+        tool: ADM.tool || null, toolQty: +ADM.toolQty || 0, days: +ADM.days || 30
+      });
+      ADM.sending = false;
+      if (!r.ok) { openAdminMail(); return toast(r.err || "寄送失敗"); }
+      ADM.sentKey = key; ADM.lastMailId = r.mailId; ADM.rows = null;
+      openAdminMail();
+      toast("寄出成功，mail ID = " + r.mailId);
+    };
+
+    // 全體信要兩層確認；其他兩種一層
+    if (ADM.mode === "all") admConfirm("⚠ 寄給全體玩家", admConfirmBody(), () => admConfirm("再確認一次", admConfirmBody() + '<br><span class="adm-warn">按下去就會寄給所有人。</span>', go));
+    else admConfirm(ADM.mode === "player" ? "寄給玩家 " + esc(ADM.playerId) : "寄給自己", admConfirmBody(), go);
+  }
+  function admConfirmBody() {
+    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0 });
+    return `標題：<b>${esc(String(ADM.title).trim())}</b><br>附件：${rw ? esc(rw) : "（無）"}<br>有效 ${+ADM.days || 30} 天`;
+  }
+  function admConfirm(head, html, yes) {
+    const box = $("modalBox");
+    box.innerHTML = `<div>${head}</div><div class="adm-preview">${html}</div>
+      <div class="btns" style="margin-top:12px">
+        <button class="px-btn" id="acYes">確定</button><button class="px-btn" id="acNo">取消</button></div>`;
+    $("acYes").onclick = () => yes();
+    $("acNo").onclick = () => openAdminMail();
+  }
+
+  async function admChangeId() {
+    if (ADM.changing) return;
+    ADM.changing = true; openAdminMail();
+    const r = await Cloud.adminChangePlayerId(ADM.curPid, ADM.newPid, ADM.note);
+    ADM.changing = false;
+    if (!r.ok) { openAdminMail(); return toast(r.err || "修改失敗"); }
+    const msg = `玩家 ID 已修改：${ADM.curPid} → ${ADM.newPid}`;
+    ADM.curPid = ""; ADM.newPid = ""; ADM.note = "";
+    openAdminMail(); toast(msg);
+  }
+
+  async function admLoadLog() {
+    ADM.listing = true; ADM.listErr = ""; openAdminMail();
+    const r = await Cloud.adminListMail();
+    ADM.listing = false;
+    if (!r.ok) { ADM.listErr = r.err || "讀取失敗"; ADM.rows = null; }
+    else { ADM.rows = r.rows; ADM.listErr = ""; }
+    openAdminMail();
+  }
+  function admUnsend(id) {
+    const row = (ADM.rows || []).find(x => x.id === id) || {};
+    admConfirm("收回第 " + id + " 號信",
+      `標題：<b>${esc(row.title || "")}</b><br>已經有 <b>${row.claimed || 0}</b> 個人領過。<br>
+       <span class="adm-warn">已領取的獎勵不會被拿回來。</span>`,
+      async () => {
+        const r = await Cloud.adminUnsend(id);
+        if (!r.ok) { openAdminMail(); return toast(r.err || "收回失敗"); }
+        ADM.rows = null; ADM.tab = "log"; openAdminMail(); admLoadLog();
+        toast(r.msg || "已收回");
+      });
+  }
+
+  /* 「全部賣出」要先確認：它會連委託板需要的礦石一起賣掉 */
+  function askSellAll(kinds, cnt, sum) {
+    const box = $("modalBox");
+    box.innerHTML = `<div>全部賣出？</div>
+      <div class="sub" style="margin-top:8px;line-height:1.7">
+        會賣掉 <b>${kinds}</b> 種礦石、共 <b>${cnt}</b> 個，可得 <b>$${money(sum)}</b>。<br>
+        <span style="color:#ff8a4c">這裡面可能包含委託板需要的礦石，賣掉就要重挖。</span>
+      </div>
+      <div class="btns" style="margin-top:12px">
+        <button class="px-btn" id="saYes">確定全部賣出</button>
+        <button class="px-btn" id="saNo">取消</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("saNo").onclick = () => $("modal").classList.add("hidden");
+    $("saYes").onclick = () => {
+      $("modal").classList.add("hidden");
+      const names = oreNames(); if (!names.length) return renderShop();
+      let s2 = 0; names.forEach(n => { s2 += itemPrice(n) * save.ores[n]; });
+      save.coins += s2; save.ores = {};
+      Object.keys(sellQty).forEach(k => delete sellQty[k]);
+      toast(`全部賣出 +$${money(s2)}`); persist(); renderShop();
+    };
   }
 
   /* ---------------- 圖鑑 ---------------- */
@@ -1352,12 +1719,28 @@
       let total = 0;
       const rows = names.map(n => {
         const p = itemPrice(n), c = save.ores[n]; total += p * c;
-        return `<div class="row"><div class="grow"><span style="color:${rarityColor(idx[n].cat.rarity)}">${n}</span> ×${c}
-          <div class="sub">單價 $${money(p)}</div></div>
-          <button class="px-btn small" data-sell1="${n}">賣1</button><button class="px-btn small" data-sellall="${n}">全賣</button></div>`;
+        const q = Math.min(Math.max(1, sellQty[n] || 1), c);   // 記住玩家選過的數量，但不能超過現有庫存
+        sellQty[n] = q;
+        return `<div class="row sell-row" data-ore-row="${esc(n)}">
+          <div class="sell-head">
+            <span style="color:${rarityColor(idx[n].cat.rarity)}">${esc(n)}</span>
+            <span class="sub">持有 ×${c}｜單價 $${money(p)}</span>
+          </div>
+          <div class="sell-pick">
+            <input type="range" class="sell-range" data-ore-range="${esc(n)}" min="1" max="${c}" step="1" value="${q}">
+            <input type="number" class="sell-num" data-ore-num="${esc(n)}" min="1" max="${c}" step="1" value="${q}"
+                   inputmode="numeric" pattern="[0-9]*">
+            <button class="px-btn small" data-ore-max="${esc(n)}">最大</button>
+          </div>
+          <div class="sell-info">
+            <span class="sub" data-ore-info="${esc(n)}">本次出售 ×${q}｜出售後剩餘 ×${c - q}｜可得 $${money(p * q)}</span>
+            <button class="px-btn small" data-ore-sell="${esc(n)}">賣出 ${q} 個</button>
+          </div>
+        </div>`;
       }).join("");
       body = `<div class="board"><div class="board-head">收購 <span class="sub">合計 $${money(total)}</span> ${names.length ? '<button class="px-btn small" id="btnSellAll">全部賣出</button>' : ""}</div>
-        <div class="list">${rows || '<div class="sub">背包是空的</div>'}</div></div>` + back;
+        <div class="list">${rows || '<div class="sub">背包是空的</div>'}</div>
+        ${names.length ? '<div class="sub" style="margin-top:6px">拉滑桿或直接打數字都可以，按「賣出」才會真的賣掉。委託板需要的礦石記得留著。</div>' : ""}</div>` + back;
     }
     if (view === "buy") {
       say = say || L.buy;
@@ -1498,6 +1881,18 @@
 
   /* ---------------- 事件綁定 ---------------- */
   $("nav").addEventListener("click", e => { const b = e.target.closest("button[data-go]"); if (b && !window.Editor?.isPicking()) go(b.dataset.go); });
+  // 賣礦石：滑桿與數字框雙向同步（只改數字，不會賣出任何東西）
+  $("bossBody").addEventListener("input", e => {
+    const r = e.target.closest("[data-ore-range]"), n = e.target.closest("[data-ore-num]");
+    if (r) sellSetQty(r.dataset.oreRange, r.value);
+    else if (n) sellSetQty(n.dataset.oreNum, n.value);
+  });
+  // 數字框離開焦點時，把空白／非數字補回合法值
+  $("bossBody").addEventListener("change", e => {
+    const n = e.target.closest("[data-ore-num]");
+    if (n) sellSetQty(n.dataset.oreNum, n.value);
+  });
+
   // 礦脈觀測鏡：專屬畫面的互動
   $("scr-scope").addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
@@ -1524,14 +1919,16 @@
     const d = t.dataset;
     if (t.id === "btnSellAll") {
       const names = oreNames(); if (!names.length) return;
-      let sum = 0; names.forEach(n => { sum += itemPrice(n) * save.ores[n]; });
-      save.coins += sum; save.ores = {}; toast(`全部賣出 +$${money(sum)}`); persist(); renderShop();
+      let sum = 0, cnt = 0; names.forEach(n => { sum += itemPrice(n) * save.ores[n]; cnt += save.ores[n]; });
+      askSellAll(names.length, cnt, sum);
     }
     if (d.m2) { doSwing2({ choice: d.m2 }); return; }
     if (d.boss) bossGo(d.boss);
     if (d.deliver !== undefined) deliver(+d.deliver);
     if (d.equip) { save.equipped = +d.equip; const tt = save.tools.find(x => x.uid === +d.equip); if (tt) { const f = toolFactor(tt, curMine()); if (f < 1) toast(`工具等級不足：這座礦坑收益剩 ${Math.round(f * 100)}%`); } persist(); renderBag(); }
-    if (d.sell1) sell(d.sell1, 1);
+    if (d.oreMax) { const have = save.ores[d.oreMax] || 0; sellSetQty(d.oreMax, have); }
+    if (d.oreSell) sell(d.oreSell, sellQty[d.oreSell] || 1);
+    if (d.sell1) sell(d.sell1, 1);                    // 舊按鈕若還在別處被用到，行為不變
     if (d.sellall) sell(d.sellall, Infinity);
     if (d.goMine) {
       if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
