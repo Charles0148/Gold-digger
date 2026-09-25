@@ -60,7 +60,8 @@ Supabase 專案也還沒建立、SQL 還沒跑、`saves` / `admins` / `mail` / `
 | 復活演出（金色） | **IMPLEMENTED** | `engine.js:287-293` |
 | 佐佐木：委託板、恩惠 | **VERIFIED** | 線上版已有 |
 | 玩家 ID（六碼，v0.10.8）｜資料庫層 | **VERIFIED** | `docs/07` SQL 已於 2026-09-25 在正式專案執行；3 個帳號全數回填、格式正確、不重複；10 個新函式建立完成 |
-| 玩家 ID｜遊戲畫面顯示與複製 | **IMPLEMENTED** | `cloud.js` `myPlayerId()`；mock 測過，**擁有者尚未實玩確認** |
+| 玩家 ID｜遊戲畫面顯示與複製 | **IMPLEMENTED** | `cloud.js` `myPlayerProfile()`；mock 測過，**擁有者尚未實玩確認** |
+| 彩色 ID＝特別帳號標記（v0.10.10） | **IMPLEMENTED** | `docs/08` SQL 已在本機 PostgreSQL 16 測過全部路徑；**擁有者尚未在 Supabase 執行 docs/08**，在那之前所有人都是白色 |
 | 管理信箱 UI（v0.10.8） | **IMPLEMENTED** | `game.js` `openAdminMail()`；mock 測過三種收件、邊界、雙重確認、防重送、寄件紀錄、收回。SQL 已就位，**擁有者尚未實際寄過一封信** |
 | 礦石指定數量出售（v0.10.8） | **IMPLEMENTED** | `game.js` 賣礦石分頁；瀏覽器實測滑桿／數字框同步、邊界、庫存變動、全部賣出確認，**擁有者尚未實玩** |
 | 礦脈觀測鏡（v0.10.7，專屬畫面） | **VERIFIED** | `index.html` `#scr-scope`、`game.js` `renderScope()`／`scopeBuy()`／`scopeSettle()`／`glassWipeOld()`；無頭瀏覽器測過互動觀測、自動揭曉、中途切換不白花錢、五次上限、餘額不足、舊資料清除與落地、禁用詞掃描，擁有者 2026-09-24 實玩確認手感 OK |
