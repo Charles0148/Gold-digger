@@ -268,3 +268,43 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .scope-row .n { font-size:.78em; opacity:.6; min-width:3.2em; padding-top:2px; }
 .scope-row .ic { font-size:1.25em; min-width:1.5em; text-align:center; }
 .scope-row .ic.badge { border:2px double currentColor; border-radius:5px; padding:0 4px; font-size:1em; }
+
+/* ===== 賣礦石：指定數量（v0.10.8） ===== */
+.sell-row { display:block; }
+.sell-head { display:flex; justify-content:space-between; align-items:baseline; gap:8px; flex-wrap:wrap; }
+.sell-pick { display:flex; align-items:center; gap:8px; margin:8px 0 6px; }
+.sell-range { flex:1; min-width:90px; height:26px; accent-color:#ffd76a; touch-action:pan-y; }
+.sell-num {
+  width:4.6em; font-family:inherit; font-size:1em; text-align:center; padding:5px 4px;
+  background:#1b1b22; color:#eee; border:2px solid #3a3a45; border-radius:4px;
+}
+.sell-num:focus { border-color:#ffd76a; outline:none; }
+.sell-info { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; }
+.sell-info .sub { flex:1; min-width:11em; transition:color .2s; }
+@media (max-width:360px) {
+  .sell-pick { flex-wrap:wrap; }
+  .sell-range { flex-basis:100%; }
+}
+
+/* ===== 管理信箱（v0.10.8） ===== */
+.adm-field { margin:10px 0; text-align:left; }
+.adm-field label { display:block; font-size:.8em; opacity:.75; margin-bottom:3px; }
+.adm-field input, .adm-field textarea, .adm-field select {
+  width:100%; box-sizing:border-box; font-family:inherit; font-size:.95em; padding:6px;
+  background:#1b1b22; color:#eee; border:2px solid #3a3a45; border-radius:4px;
+}
+.adm-field textarea { min-height:5em; resize:vertical; }
+.adm-field input:focus, .adm-field textarea:focus, .adm-field select:focus { border-color:#7fe3ff; outline:none; }
+.adm-row { display:flex; gap:8px; }
+.adm-row > * { flex:1; }
+.adm-tabs { display:flex; gap:6px; margin-bottom:8px; }
+.adm-tabs button { flex:1; font-family:inherit; font-size:.85em; padding:6px 4px; cursor:pointer;
+  background:#24242b; color:#ddd; border:2px solid #3a3a45; border-radius:4px; }
+.adm-tabs button.on { border-color:#7fe3ff; color:#7fe3ff; background:#1b2a30; }
+.adm-tabs button.danger.on { border-color:#ff5555; color:#ff5555; background:#301b1b; }
+.adm-preview { text-align:left; background:#15151a; border:2px dashed #4a4a58; border-radius:5px;
+  padding:8px; font-size:.84em; line-height:1.7; margin-top:8px; }
+.adm-warn { color:#ff5555; font-weight:bold; }
+.adm-mail { text-align:left; border-bottom:1px solid #2c2c36; padding:6px 0; font-size:.84em; }
+.pid-box { display:flex; align-items:center; gap:8px; margin-top:6px; }
+.pid-num { font-size:1.25em; letter-spacing:.18em; color:#ffd76a; font-weight:bold; }
