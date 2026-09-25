@@ -1089,7 +1089,7 @@
         <span class="sub"><span style="color:${dot}">●</span> ${CLOUD_TXT[st] || st}</span></div>
       <div class="sub">${u ? u.email : "登入之後，存檔會自動同步，換手機也接得回來。"}</div>
       ${u ? `<div class="pid-box"><span class="sub">玩家 ID</span>
-              <span class="pid-num" id="pidNum">${playerId ? esc(playerId) : "……"}</span>
+              <span class="pid-num ${pidStyle === "rainbow" ? "rainbow" : ""}" id="pidNum">${playerId ? esc(playerId) : "……"}</span>
               <button class="px-btn small" id="pidCopy" ${playerId ? "" : "disabled"}>複製</button></div>
              <div class="sub" style="opacity:.75">需要補發獎勵時，可以把這組 ID 提供給管理員。</div>` : ""}
       ${st === "error" ? `<div class="sub" style="color:#ff5555">${Cloud.error()}</div>` : ""}
@@ -1103,7 +1103,7 @@
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
-    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; playerId = null; adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
+    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; playerId = null; pidStyle = "normal"; adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
     on("cldPush", async () => { const r = await cloudPush(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
     on("cldPull", cloudPullAsk);
     on("pidCopy", () => copyText(playerId, "已複製玩家 ID " + playerId));
@@ -1112,12 +1112,16 @@
 
   /* ---------------- 玩家 ID ----------------
      六碼純數字，由資料庫產生並綁定帳號。前端只是顯示，不參與配號。 */
-  let playerId = null, pidAsking = false;
+  let playerId = null, pidStyle = "normal", pidAsking = false;
   async function loadPlayerId(force) {
-    if (!cloudOn() || !window.Cloud.myPlayerId) return null;
+    if (!cloudOn() || !window.Cloud.myPlayerProfile) return null;
     if (pidAsking) return playerId;
     pidAsking = true;
-    try { playerId = await Cloud.myPlayerId(force); } catch (e) { playerId = null; }
+    try {
+      const p = await Cloud.myPlayerProfile(force);
+      playerId = p ? p.player_id : null;
+      pidStyle = (p && p.id_style) || "normal";
+    } catch (e) { playerId = null; pidStyle = "normal"; }
     pidAsking = false;
     renderCloud();
     return playerId;
@@ -1295,6 +1299,7 @@
     coins: 0, ore: "", oreQty: 0, tool: "", toolQty: 0,
     sending: false, sentKey: "", lastMailId: null,
     curPid: "", newPid: "", note: "", changing: false,
+    styleId: "", styleInfo: null, styling: false,
     rows: null, listing: false, listErr: ""
   };
   const admFormKey = () => JSON.stringify([ADM.mode, ADM.playerId, ADM.title, ADM.body, ADM.days,
@@ -1356,6 +1361,19 @@
           <input id="admNote" type="text" maxlength="60" value="${esc(ADM.note)}"></div>
         <div class="btns" style="margin-top:10px">
           <button class="px-btn" id="admChange" ${ADM.changing ? "disabled" : ""}>${ADM.changing ? "處理中…" : "修改玩家 ID"}</button>
+        </div>
+
+        <div style="border-top:1px solid #2c2c36;margin:14px 0 8px"></div>
+        <div class="sub" style="text-align:left;line-height:1.7">
+          <b>彩色 ID（特別帳號）</b><br>一般玩家的 ID 是白色，指定為特別的帳號才會是流動的彩虹色。</div>
+        <div class="adm-field"><label>要查詢／設定的六碼 ID</label>
+          <input id="admStyleId" type="text" inputmode="numeric" pattern="[0-9]*" maxlength="6" value="${esc(ADM.styleId)}"></div>
+        ${ADM.styleInfo ? `<div class="adm-preview">目前：<b style="color:${ADM.styleInfo.id_style === "rainbow" ? "#ff5fd0" : "#f2f2f5"}">${ADM.styleInfo.id_style === "rainbow" ? "彩虹（特別帳號）" : "一般"}</b>
+            ｜號碼來源 ${esc(ADM.styleInfo.id_source || "-")}${ADM.styleInfo.admin_note ? "｜備註 " + esc(ADM.styleInfo.admin_note) : ""}</div>` : ""}
+        <div class="btns" style="margin-top:8px">
+          <button class="px-btn small" id="admStyleGet" ${ADM.styling ? "disabled" : ""}>查詢</button>
+          <button class="px-btn small" id="admStyleOn" ${ADM.styling ? "disabled" : ""}>設為彩虹</button>
+          <button class="px-btn small" id="admStyleOff" ${ADM.styling ? "disabled" : ""}>設回一般</button>
         </div>`;
     }
     if (ADM.tab === "log") {
@@ -1438,6 +1456,12 @@
     live("admCoins", "coins", "num"); live("admDays", "days", "num");
     live("admOreQty", "oreQty", "num"); live("admToolQty", "toolQty", "num");
     live("admCur", "curPid", "pid"); live("admNew", "newPid", "pid"); live("admNote", "note");
+    { const e = $("admStyleId"); if (e) e.oninput = () => {
+        const v = e.value.replace(/[^\d]/g, "").slice(0, 6);
+        if (e.value !== v) e.value = v;
+        if (v !== ADM.styleId) ADM.styleInfo = null;   // 換了號碼就別再顯示上一個人的狀態
+        ADM.styleId = v;
+      }; }
     on("admOre", "onchange", e => { ADM.ore = e.target.value; ADM.sentKey = ""; openAdminMail(); });
     on("admTool", "onchange", e => { ADM.tool = e.target.value; ADM.sentKey = ""; openAdminMail(); });
 
@@ -1445,6 +1469,9 @@
     on("admSend", "onclick", () => admSend());
     on("admChange", "onclick", () => admChangeId());
     on("admReload", "onclick", () => admLoadLog());
+    on("admStyleGet", "onclick", () => admStyle("get"));
+    on("admStyleOn", "onclick", () => admStyle("rainbow"));
+    on("admStyleOff", "onclick", () => admStyle("normal"));
     box.querySelectorAll("[data-adm-unsend]").forEach(b => { b.onclick = () => admUnsend(+b.dataset.admUnsend); });
     if (ADM.tab === "log" && !ADM.rows && !ADM.listing && !ADM.listErr) admLoadLog();
   }
@@ -1515,6 +1542,24 @@
     const msg = `玩家 ID 已修改：${ADM.curPid} → ${ADM.newPid}`;
     ADM.curPid = ""; ADM.newPid = ""; ADM.note = "";
     openAdminMail(); toast(msg);
+  }
+
+  /* 查詢／切換某個玩家的 ID 樣式 */
+  async function admStyle(mode) {
+    if (ADM.styling) return;
+    if (!/^[1-9][0-9]{5}$/.test(String(ADM.styleId || ""))) return toast("玩家 ID 必須是 100000～999999 的六碼數字");
+    ADM.styling = true; openAdminMail();
+    let r;
+    if (mode === "get") r = await Cloud.adminGetPlayer(ADM.styleId);
+    else r = await Cloud.adminSetIdStyle(ADM.styleId, mode);
+    ADM.styling = false;
+    if (!r.ok) { ADM.styleInfo = null; openAdminMail(); return toast(r.err || "操作失敗"); }
+    if (mode === "get") { ADM.styleInfo = r.player; openAdminMail(); return; }
+    // 設定成功後重查一次，畫面上顯示的就是資料庫的真實狀態
+    const g = await Cloud.adminGetPlayer(ADM.styleId);
+    ADM.styleInfo = g.ok ? g.player : null;
+    if (String(ADM.styleId) === String(playerId)) loadPlayerId(true);   // 改到自己就即時更新
+    openAdminMail(); toast(r.msg || "已更新");
   }
 
   async function admLoadLog() {

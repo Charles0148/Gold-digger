@@ -126,7 +126,7 @@
   }
   async function signOut() {
     try { if (sess) await jfetch("/auth/v1/logout", { method: "POST", headers: head(true) }); } catch (e) {}
-    saveSess(null); adminFlag = null; playerIdCache = null; setStatus("out");
+    saveSess(null); adminFlag = null; playerIdCache = null; playerProfileCache = null; setStatus("out");
   }
 
   /* ---------- 存檔 ---------- */
@@ -256,14 +256,30 @@
   }
 
   /* ---------- 玩家 ID ---------- */
-  let playerIdCache = null;
+  let playerIdCache = null, playerProfileCache = null;
   async function myPlayerId(force) {
+    const p = await myPlayerProfile(force);
+    return p ? p.player_id : null;
+  }
+  /* 回傳 { player_id, id_style }。id_style: "normal" 一般白字 / "rainbow" 特別帳號。
+     舊後台（只跑過 docs/07、沒跑 docs/08）會找不到 my_player_profile，
+     這時候退回只問號碼的 my_player_id，樣式當成 normal。 */
+  async function myPlayerProfile(force) {
     if (!ok() || !sess) return null;
-    if (playerIdCache && !force) return playerIdCache;
-    const r = await rpc("my_player_id", {});
-    if (!r.ok) return null;
-    playerIdCache = typeof r.data === "string" ? r.data : String(r.data || "");
-    return playerIdCache || null;
+    if (playerProfileCache && !force) return playerProfileCache;
+    const r = await rpc("my_player_profile", {});
+    if (r.ok && r.data && r.data.player_id) {
+      playerProfileCache = { player_id: String(r.data.player_id), id_style: r.data.id_style || "normal" };
+      playerIdCache = playerProfileCache.player_id;
+      return playerProfileCache;
+    }
+    const r2 = await rpc("my_player_id", {});
+    if (!r2.ok) return null;
+    const pid = typeof r2.data === "string" ? r2.data : String(r2.data || "");
+    if (!pid) return null;
+    playerProfileCache = { player_id: pid, id_style: "normal" };
+    playerIdCache = pid;
+    return playerProfileCache;
   }
 
   /* ---------- 管理員操作（伺服器端會再驗一次身分） ---------- */
@@ -295,6 +311,18 @@
     return r.ok ? { ok: true, mailId: r.data } : r;
   }
 
+  async function adminGetPlayer(pid) {
+    if (!PID.test(String(pid || ""))) return { ok: false, err: "玩家 ID 必須是六碼數字" };
+    const r = await rpc("admin_get_player", { p_player_id: String(pid) });
+    return r.ok ? { ok: true, player: r.data } : r;
+  }
+  async function adminSetIdStyle(pid, style) {
+    if (!PID.test(String(pid || ""))) return { ok: false, err: "玩家 ID 必須是六碼數字" };
+    if (style !== "normal" && style !== "rainbow") return { ok: false, err: "樣式只能是 normal 或 rainbow" };
+    const r = await rpc("admin_set_id_style", { p_player_id: String(pid), p_style: style });
+    return r.ok ? { ok: true, msg: r.data } : r;
+  }
+
   async function adminListMail() {
     const r = await rpc("admin_list_mail", {});
     return r.ok ? { ok: true, rows: r.data || [] } : r;
@@ -307,7 +335,8 @@
   window.Cloud = {
     enabled: ok,
     isAdmin, mailbox, claim,
-    myPlayerId, adminChangePlayerId, adminSend, adminListMail, adminUnsend,
+    myPlayerId, myPlayerProfile, adminChangePlayerId, adminGetPlayer, adminSetIdStyle,
+    adminSend, adminListMail, adminUnsend,
     status: () => (ok() ? status : "off"),
     error: () => lastErr,
     user: () => (sess ? sess.user : null),
