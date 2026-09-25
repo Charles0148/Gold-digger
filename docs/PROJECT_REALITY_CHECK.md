@@ -59,6 +59,10 @@ Supabase 專案也還沒建立、SQL 還沒跑、`saves` / `admins` / `mail` / `
 | 700 揮上限（有利區間） | **IMPLEMENTED** | `config.js:94` |
 | 復活演出（金色） | **IMPLEMENTED** | `engine.js:287-293` |
 | 佐佐木：委託板、恩惠 | **VERIFIED** | 線上版已有 |
+| 玩家 ID（六碼，v0.10.8）｜資料庫層 | **VERIFIED** | `docs/07` SQL 已於 2026-09-25 在正式專案執行；3 個帳號全數回填、格式正確、不重複；10 個新函式建立完成 |
+| 玩家 ID｜遊戲畫面顯示與複製 | **IMPLEMENTED** | `cloud.js` `myPlayerId()`；mock 測過，**擁有者尚未實玩確認** |
+| 管理信箱 UI（v0.10.8） | **IMPLEMENTED** | `game.js` `openAdminMail()`；mock 測過三種收件、邊界、雙重確認、防重送、寄件紀錄、收回。SQL 已就位，**擁有者尚未實際寄過一封信** |
+| 礦石指定數量出售（v0.10.8） | **IMPLEMENTED** | `game.js` 賣礦石分頁；瀏覽器實測滑桿／數字框同步、邊界、庫存變動、全部賣出確認，**擁有者尚未實玩** |
 | 礦脈觀測鏡（v0.10.7，專屬畫面） | **VERIFIED** | `index.html` `#scr-scope`、`game.js` `renderScope()`／`scopeBuy()`／`scopeSettle()`／`glassWipeOld()`；無頭瀏覽器測過互動觀測、自動揭曉、中途切換不白花錢、五次上限、餘額不足、舊資料清除與落地、禁用詞掃描，擁有者 2026-09-24 實玩確認手感 OK |
 
 ### 1-2. 第二台機台（m6「三位前輩的考驗」）
@@ -154,6 +158,26 @@ Supabase 專案也還沒建立、SQL 還沒跑、`saves` / `admins` / `mail` / `
 ---
 
 ## 3. 確認存在的 BUG
+
+### ~~BUG-0｜`send_to` / `unsend_mail` 的管理員檢查可被任何玩家繞過~~ → **2026-09-25 已修復**
+
+**狀態**：`docs/07_管理員信箱UI升級.sql` 已於 2026-09-25 在正式 Supabase 專案執行完成。
+查核確認 `send_to`、`unsend_mail`、`send_mail` 三個函式都已改用 `is_admin_caller()`。**漏洞已封住。**
+以下保留原始記錄，供日後檢討這類錯誤怎麼產生。
+
+`send_to` 與 `unsend_mail` 是 `security definer`，裡面卻用
+`current_user in ('postgres','supabase_admin')` 當作「我在 SQL Editor」的判斷。
+`security definer` 會把執行身分換成函式擁有者（postgres），所以該條件對**任何呼叫者**都成立。
+
+後果：任何登入玩家可呼叫 `send_to` 給自己寄 $1,000,000，或用 `unsend_mail` 刪信。
+`send_mail`（`security invoker`）不受影響。
+
+在本機 PostgreSQL 16 以非管理員身分實測：舊寫法回傳「通過了管理員檢查」，
+改用 `session_user` 的新寫法則回傳「你不是管理員，不能發信」。
+
+**修法**：所有管理判斷集中到 `public.is_admin_caller()`，用 `session_user` 並加 `auth.uid() is null` 保險。
+
+
 
 ### BUG-1｜上位 ST 的關卡數會多跳一關（已實測確認）
 
