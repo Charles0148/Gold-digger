@@ -307,4 +307,28 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .adm-warn { color:#ff5555; font-weight:bold; }
 .adm-mail { text-align:left; border-bottom:1px solid #2c2c36; padding:6px 0; font-size:.84em; }
 .pid-box { display:flex; align-items:center; gap:8px; margin-top:6px; }
-.pid-num { font-size:1.25em; letter-spacing:.18em; color:#ffd76a; font-weight:bold; }
+/* 玩家 ID
+   一般玩家：白色素面。
+   特別帳號（管理員在管理介面指定 id_style = rainbow）：彩虹漸層 + 緩慢流動。
+   彩虹在 200% 的背景寬度裡跑**完整兩輪**，所以不管流到哪個位置，
+   看得到的那 100% 永遠是一條完整彩虹 —— 六個數字才會各自不同顏色。 */
+.pid-num { font-size:1.25em; letter-spacing:.18em; font-weight:bold; color:#f2f2f5; }
+
+.pid-num.rainbow {
+  color:#ffd76a;                     /* 備援：不支援漸層裁切時就是金色 */
+  background-image:linear-gradient(90deg,
+    #ff4d5a 0%,  #ff9f1a 7%,  #ffe14d 14%, #3ee07a 21%,
+    #22d3ee 28%, #7c8bff 35%, #ff5fd0 43%, #ff4d5a 50%,
+    #ff9f1a 57%, #ffe14d 64%, #3ee07a 71%, #22d3ee 78%,
+    #7c8bff 85%, #ff5fd0 93%, #ff4d5a 100%);
+  background-size:200% 100%;
+  -webkit-background-clip:text; background-clip:text;
+  animation:pidFlow 4s linear infinite;
+  text-shadow:0 0 8px rgba(255,255,255,.18);
+}
+@supports ((-webkit-background-clip:text) or (background-clip:text)) {
+  .pid-num.rainbow { -webkit-text-fill-color:transparent; color:transparent; }
+}
+@keyframes pidFlow { from { background-position:0% 50%; } to { background-position:200% 50%; } }
+/* 系統設定「減少動態效果」時不要動 */
+@media (prefers-reduced-motion: reduce) { .pid-num.rainbow { animation:none; } }
