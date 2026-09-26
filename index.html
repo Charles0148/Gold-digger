@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.10.10">
+<link rel="stylesheet" href="css/style.css?v=0.10.12">
 </head>
 <body>
 <div id="app">
@@ -97,6 +97,22 @@
       </div>
     </section>
 
+    <!-- ===== 成就（v0.10.12） ===== -->
+    <section class="screen" id="scr-ach">
+      <div class="px-box panel" data-edit="achSenpai" data-label="成就-前輩信賴">
+        <div class="panel-title">前輩信賴 <span class="sub" id="bagSenpaiSince"></span></div>
+        <div id="bagSenpai" class="list"></div>
+      </div>
+      <div class="px-box panel" data-edit="achMemory" data-label="成就-珍貴回憶">
+        <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
+        <div id="bagMemory" class="list"></div>
+      </div>
+      <div class="px-box panel" data-edit="achRecord" data-label="成就-挖礦紀錄">
+        <div class="panel-title">挖礦紀錄 <span class="sub">準備中</span></div>
+        <div class="sub">之後會在這裡加入挖礦、圖鑑、礦坑與老闆相關的成就。</div>
+      </div>
+    </section>
+
     <!-- ===== 礦坑老闆 佐佐木（委託板 / 收購 / 鎬子 / 恩惠 / 補給） ===== -->
     <section class="screen" id="scr-shop">
       <div class="px-box panel boss-head" data-edit="bossHead" data-label="老闆-恩惠等級">
@@ -136,6 +152,7 @@
     <button data-go="map">地圖</button>
     <button data-go="dex">圖鑑</button>
     <button data-go="shop">老闆</button>
+    <button data-go="ach">成就</button>
   </nav>
 
   <button id="editFab" class="hidden" title="編輯模式">✎</button>
@@ -145,12 +162,12 @@
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=0.10.10"></script>
-<script src="js/cloud-config.js?v=0.10.10"></script>
-<script src="js/cloud.js?v=0.10.10"></script>
-<script src="js/config.js?v=0.10.10"></script>
-<script src="js/engine.js?v=0.10.10"></script>
-<script src="js/engine2.js?v=0.10.10"></script>
-<script src="js/game.js?v=0.10.10"></script>
+<script src="js/version.js?v=0.10.12"></script>
+<script src="js/cloud-config.js?v=0.10.12"></script>
+<script src="js/cloud.js?v=0.10.12"></script>
+<script src="js/config.js?v=0.10.12"></script>
+<script src="js/engine.js?v=0.10.12"></script>
+<script src="js/engine2.js?v=0.10.12"></script>
+<script src="js/game.js?v=0.10.12"></script>
 </body>
 </html>
