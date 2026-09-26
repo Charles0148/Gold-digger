@@ -145,7 +145,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 
 /* ===== 導覽 ===== */
 #nav { display: flex; background: var(--panel-dark); border-top: 3px solid #000; padding-bottom: env(safe-area-inset-bottom); }
-#nav button { flex: 1; background: none; border: none; padding: 12px 0; color: var(--sub); cursor: pointer; }
+#nav button { flex: 1; min-width: 0; background: none; border: none; padding: 12px 0; color: var(--sub); cursor: pointer; white-space: nowrap; }
 #nav button.active { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
 
 /* ===== 提示 / 對話框 ===== */
@@ -332,3 +332,23 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 @keyframes pidFlow { from { background-position:0% 50%; } to { background-position:200% 50%; } }
 /* 系統設定「減少動態效果」時不要動 */
 @media (prefers-reduced-motion: reduce) { .pid-num.rainbow { animation:none; } }
+
+/* ===== 前輩百次回憶（v0.10.11） ===== */
+.story-log { display: none; }
+#scene.story-on { justify-content: flex-start; align-items: stretch; }
+#scene.story-on > .scene-big, #scene.story-on > .scene-sub, #scene.story-on > .vein-banner,
+#scene.story-on > .ver-tag, #scene.story-on > .dig-num { display: none !important; }
+#scene.story-on .story-log {
+  display: block; position: absolute; inset: 8px; overflow-y: auto; -webkit-overflow-scrolling: touch;
+  text-align: left; padding: 8px 10px; background: rgba(0,0,0,.55); border: 2px solid #ffcc33;
+  font-size: .92em; line-height: 1.6;
+}
+.story-head { color: #ffcc33; margin-bottom: 6px; }
+.story-line { padding: 3px 0; color: var(--sub); }
+.story-line.new { color: var(--text); animation: storyIn .25s steps(3); }
+.story-end { margin-top: 8px; text-align: center; color: #ffcc33; }
+@keyframes storyIn { 0% { opacity: 0; } 100% { opacity: 1; } }
+.textbox.story-final .tb-tap { color: #ffcc33; font-size: 1em; }
+.senpai-note { font-size: .8em; margin-top: 3px; }
+.memory-row.locked { opacity: .55; }
+@media (prefers-reduced-motion: reduce) { .story-line.new { animation: none; } }
