@@ -71,10 +71,26 @@
       plays: {}, plays2: {}, today: { date: todayKey(), stats: {} },
       ads: { date: todayKey(), count: 0 }, pw: {},
       glass: { date: todayKey(), byMine: {} },
+      senpai: newSenpai(),
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
   }
   function newBoss() { return { favor: 0, level: 1, boons: [], req: null, total: 0 }; }
+  /* v0.10.11：三位前輩的永久信賴進度。
+     跟 plays2（離開礦坑就刪）分開放，才不會一離開就歸零。
+     wins＝談話成功次數、memories＝已取得的珍貴回憶（{date}）、story＝還沒看完的回憶 {boss, step}。
+     舊存檔沒有個別紀錄，since 記下「從哪一版開始算」，不回推。 */
+  function newSenpai() { return { since: window.GAME_VERSION || "", wins: { a: 0, b: 0, c: 0 }, memories: {}, story: null }; }
+  function fixSenpai(sv) {
+    const S = sv.senpai && typeof sv.senpai === "object" ? sv.senpai : (sv.senpai = newSenpai());
+    if (!S.wins || typeof S.wins !== "object") S.wins = {};
+    ["a", "b", "c"].forEach(k => { S.wins[k] = Math.max(0, Math.floor(Number(S.wins[k]) || 0)); });
+    if (!S.memories || typeof S.memories !== "object") S.memories = {};
+    if (S.story && !(S.story.boss && Number.isFinite(S.story.step))) S.story = null;
+    if (S.story && S.memories[S.story.boss]) S.story = null;   // 已經拿過就不再演
+    if (S.since === undefined) S.since = window.GAME_VERSION || "";
+    return S;
+  }
   let save = store.get(SAVE_KEY);
   let needStarter = false;
   if (!save || save.v !== 1) { save = newSave(); needStarter = true; }
@@ -82,6 +98,7 @@
   if (!save.boss) save.boss = newBoss();
   if (!save.plays2) save.plays2 = {};
   if (!save.pw) save.pw = {};
+  fixSenpai(save);
   delete save.upgrades;
   /* v0.10.3：存檔一律「立即寫入」。
      舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
@@ -154,6 +171,8 @@
     if (!save.boss) save.boss = newBoss();
     if (!save.plays2) save.plays2 = {};
     if (!save.pw) save.pw = {};
+    fixSenpai(save);
+    storyFresh = false;
     store.set(SAVE_KEY, save);
     renderAll();
   }
@@ -515,7 +534,8 @@
   let veinGain = 0;
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
-  function renderMine() {
+  function renderMine() { renderMineBase(); storySync(); }
+  function renderMineBase() {
     checkDay();
     if (isM2()) return renderMine2();
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
@@ -615,6 +635,7 @@
 
   /* ---------------- 第二台機台：一次點擊 ---------------- */
   function doSwing2(input) {
+    if (save.senpai.story) { stopAuto(); return null; }     // 回憶演出中：不抽、不耗工具
     checkDay();
     const mine = curMine(), R = M2(), st = state2(), T = R.lines, sub = config.theme.sub;
     const free = FREE2.includes(st.state);
@@ -684,6 +705,7 @@
         const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "win")) || bl(e.boss, "win", [T.dateWin]);
         lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(pool), "#ffcc33"));
         lines.push(colored(T.atStart, "rainbow")); ms.hits = (ms.hits || 0) + 1;
+        if (senpaiWin(e.boss)) lines.push(colored(`【${bossName2(e.boss)}】好像有話要跟你說……`, "#ffcc33"));
       }
       if (e.t === "dateLose") {
         const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "lose")) || bl(e.boss, "lose", [T.dateLose]);
@@ -730,8 +752,10 @@
     if (st.upper) omen = 6;
     else if (stt === "st") omen = 2;
 
-    setTextbox(lines.slice(0, 5), omen, { tag, tap: stt === "dig" ? T.digTap : null });
-    setChoices(choices);
+    const storyNow = !!save.senpai.story;
+    setTextbox(storyNow ? lines.slice(-6) : lines.slice(0, 5), omen, { tag, tap: stt === "dig" ? T.digTap : null });
+    setChoices(storyNow ? null : choices);
+    if (storyNow) { storyFresh = true; save.auto = false; clearTimeout(autoTimer); }
     if (bigHtml && !skipBig) {
       const big = $("sceneBig");
       big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
@@ -800,6 +824,7 @@
   }
 
   function doSwing() {
+    if (save.senpai.story) { renderMine(); return null; }   // 回憶演出中：不抽、不耗工具
     if (isM2()) return doSwing2();
     checkDay();
     const mine = curMine(), T = config.texts, rules = config.rules, sub = config.theme.sub;
@@ -977,7 +1002,93 @@
   function stopAuto() { save.auto = false; clearTimeout(autoTimer); renderMine(); }
   function toggleAuto() {
     if (save.auto) { stopAuto(); return; }
+    if (save.senpai.story) { toast("先把回憶看完"); return; }
     save.auto = true; renderMine(); autoStep();
+  }
+
+  /* ---------------- 前輩百次回憶（v0.10.11） ---------------- */
+  const MEM = () => (M2().memories || {});
+  const memDef = b => { const d = MEM()[b]; return d && Array.isArray(d.lines) && d.lines.length ? d : null; };
+  const memNeed = () => Math.max(1, Number(MEM().need) || 100);
+  /* 給之後的「深度信賴台詞」判斷用：這位前輩的回憶拿到了沒 */
+  const hasMemory = b => !!save.senpai.memories[b];
+  let storyFresh = false;     // true＝剛觸發，敘述框還在顯示那一揮的成功結果，先不要蓋掉
+  let storyAt = 0;            // 上一次推進的時間，避免連點直接按掉最後確認
+  let storyDoneAt = 0;        // 收下回憶的時間
+  /* 只在 dateWin 時呼叫。回傳 true＝這一次剛好觸發回憶 */
+  function senpaiWin(boss) {
+    const S = save.senpai;
+    S.wins[boss] = (S.wins[boss] || 0) + 1;
+    if (S.wins[boss] >= memNeed() && !S.memories[boss] && !S.story && memDef(boss)) {
+      S.story = { boss, step: 0 };
+      storyAt = Date.now();
+      return true;
+    }
+    return false;
+  }
+  function storyLogEl() {
+    let el = $("storyLog");
+    if (!el) { el = document.createElement("div"); el.id = "storyLog"; el.className = "story-log"; $("scene").appendChild(el); }
+    return el;
+  }
+  /* 每次 renderMine 都會呼叫：有回憶就把上方畫成對話紀錄、下方改成「點擊繼續」；沒有就收掉 */
+  function storySync() {
+    const S = save.senpai.story, sceneEl = $("scene");
+    if (!S) {
+      if (sceneEl.classList.contains("story-on")) { sceneEl.classList.remove("story-on"); storyLogEl().innerHTML = ""; }
+      return;
+    }
+    const d = memDef(S.boss);
+    if (!d) { save.senpai.story = null; persist(); sceneEl.classList.remove("story-on"); return; }
+    const N = d.lines.length, step = Math.min(S.step, N), name = bossName2(S.boss);
+    sceneEl.classList.add("story-on");
+    sceneEl.classList.remove("vein-on");
+    const log = storyLogEl();
+    log.innerHTML = `<div class="story-head">【${esc(name)}】的回憶〈${esc(d.title || "")}〉</div>`
+      + d.lines.slice(0, step).map((l, i) => `<div class="story-line${i === step - 1 ? " new" : ""}">${esc(l)}</div>`).join("")
+      + (step >= N ? `<div class="story-end">── 取得「${esc(d.item || "")}」 ──</div>` : "");
+    log.scrollTop = log.scrollHeight;
+    const tap = step >= N ? "▼ 收下回憶並繼續" : "▼ 點擊繼續";
+    if (storyFresh) { $("tbTap").textContent = tap; }
+    else {
+      setTextbox([colored(`【${esc(name)}】的回憶〈${esc(d.title || "")}〉`, "#ffcc33"),
+        colored(step >= N ? "回憶到這裡結束了。" : step ? `${step}／${N}` : `${name}好像有話要跟你說……`, config.theme.sub)],
+        0, { tag: "≋ 珍貴回憶 ≋", tap });
+    }
+    $("textbox").classList.toggle("story-final", step >= N);
+    setChoices(null);
+  }
+  window.addEventListener("resize", () => { const el = $("storyLog"); if (el && save.senpai.story) el.scrollTop = el.scrollHeight; });
+  function storyTap() {
+    const S = save.senpai.story; if (!S) return;
+    const d = memDef(S.boss);
+    if (!d) { save.senpai.story = null; persist(); renderMine(); return; }
+    const now = Date.now();
+    if (S.step < d.lines.length) {
+      if (now - storyAt < 150) return;          // 同一下點擊被重複觸發
+      S.step++; storyAt = now; storyFresh = false;
+      persist(); renderMine(); return;
+    }
+    if (now - storyAt < 600) return;            // 最後一句剛出來，不讓連點直接按掉
+    storyFinish();
+  }
+  function storyFinish() {
+    const S = save.senpai.story; if (!S) return;
+    const b = S.boss, d = memDef(b) || {};
+    if (!save.senpai.memories[b]) save.senpai.memories[b] = { date: todayKey(), wins: save.senpai.wins[b] || 0 };
+    save.senpai.story = null;
+    storyFresh = false;
+    storyDoneAt = Date.now();
+    persist();
+    $("textbox").classList.remove("story-final");
+    renderMine();
+    setTextbox([colored(`獲得了「${esc(d.item || "")}」`, "#ffcc33"),
+      colored("收在「成就」頁的「珍貴回憶」裡", config.theme.sub),
+      colored("回到剛才的報酬——點擊繼續挖礦", config.theme.accent)], 0);
+    const big = $("sceneBig");
+    $("sceneSub").textContent = "收藏品・不能出售";
+    big.innerHTML = colored(esc(d.item || ""), "#ffcc33"); big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
+    toast(`獲得「${d.item || ""}」`);
   }
 
   /* ---------------- 背包（只看，不賣） ---------------- */
@@ -1004,6 +1115,32 @@
     }).join("") : '<div class="sub">背包是空的</div>';
     $("bagOreTotal").textContent = names.length ? `總價值 $${money(total)}｜要賣礦石請找${config.boss.name}` : "";
     renderHud();
+  }
+  /* 前輩信賴＋珍貴回憶（收藏品，不是礦石：不進 save.ores、不能賣、不算圖鑑） */
+  /* 成就頁（v0.10.12）：目前放前輩信賴與珍貴回憶；挖礦紀錄類成就先保留位置，見 BACKLOG */
+  function renderAch() { renderSenpaiBag(); }
+  function renderSenpaiBag() {
+    const S = save.senpai, need = memNeed(), gold = "#ffcc33";
+    const bosses = (M2().bosses || []).filter(b => memDef(b.id));
+    $("bagSenpaiSince").textContent = S.since ? `自 v${S.since} 開始記錄` : "自此版本開始記錄";
+    $("bagSenpai").innerHTML = bosses.map(b => {
+      const w = S.wins[b.id] || 0, got = S.memories[b.id], d = memDef(b.id);
+      const pct = Math.min(100, w / need * 100);
+      const note = got ? colored(`已獲得：${esc(d.item)}`, gold)
+        : (S.story && S.story.boss === b.id) ? colored("回憶還沒看完——回到礦坑點擊繼續", gold)
+        : `<span class="sub">獎勵：${esc(b.name)}好像有話要跟你說……</span>`;
+      return `<div class="row senpai-row"><div class="grow"><span>${esc(b.name)}</span> <span class="sub">談話成功 ${fmt(Math.min(w, need))}／${need}${w > need ? `（共 ${fmt(w)}）` : ""}</span>
+        <div class="bar"><div class="bar-fill" style="width:${pct}%;background:${got ? gold : ""}"></div></div>
+        <div class="senpai-note">${note}</div></div></div>`;
+    }).join("");
+    const owned = bosses.filter(b => S.memories[b.id]);
+    $("bagMemCount").textContent = `${owned.length}／${bosses.length}`;
+    $("bagMemory").innerHTML = bosses.map(b => {
+      const m = S.memories[b.id], d = memDef(b.id);
+      return m
+        ? `<div class="row memory-row"><div class="grow">${colored(esc(d.item), gold)}<div class="sub">〈${esc(d.title || "")}〉　取得於 ${esc(m.date || "")}｜收藏品・不能出售</div></div></div>`
+        : `<div class="row memory-row locked"><div class="grow"><span class="sub">？？？？？</span><div class="sub">與某位前輩談話成功 ${need} 次</div></div></div>`;
+    }).join("");
   }
   function oreNames() {
     const idx = itemIndex();
@@ -1888,6 +2025,7 @@
   }
 
   function leaveMine() {
+    if (save.senpai.story) { toast("先把回憶看完"); return; }
     const mine = curMine();
     const box = $("modalBox");
     box.innerHTML = `<div style="line-height:1.7">真的要離開嗎<br><span class="sub">離開了礦坑之後，坑洞將會坍塌，搜尋的結果也將重置喔…</span></div>
@@ -1920,7 +2058,7 @@
   }
   function renderAll() {
     applyLook();
-    ({ mine: renderMine, bag: renderBag, map: renderMap, dex: renderDex, shop: renderShop, scope: renderScope })[currentScreen]();
+    ({ mine: renderMine, bag: renderBag, map: renderMap, dex: renderDex, shop: renderShop, scope: renderScope, ach: renderAch })[currentScreen]();
     renderHud();
   }
 
@@ -1951,6 +2089,8 @@
 
   $("textbox").addEventListener("click", () => {
     if (window.Editor?.isPicking()) return;
+    if (save.senpai.story) { storyTap(); return; }
+    if (Date.now() - storyDoneAt < 600) return;     // 剛收下回憶：連點的後幾下不要直接揮出去
     if (save.auto) { stopAuto(); return; }
     doSwing();
   });
@@ -1976,6 +2116,7 @@
     if (d.sell1) sell(d.sell1, 1);                    // 舊按鈕若還在別處被用到，行為不變
     if (d.sellall) sell(d.sellall, Infinity);
     if (d.goMine) {
+      if (save.senpai.story) { toast("先把回憶看完再出發"); go("mine"); return; }
       if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
       const from = curMine();
       if (from.engine === 2 && from.id !== d.goMine) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
@@ -2000,7 +2141,7 @@
     defaults: () => clone(window.DEFAULT_CONFIG),
     setConfig(c, keep) { config = c; if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
     resetConfig() { store.del(CFG_KEY); config = clone(window.DEFAULT_CONFIG); renderAll(); },
-    setSave(s) { save = s; persist(true); renderAll(); },
+    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); storyFresh = false; persist(true); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
     setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
@@ -2010,6 +2151,7 @@
       isHere: () => isM2(),
       favor(boss) { const st = state2(); if (boss === "all") { st.favor.a = st.favor.b = st.favor.c = 1; } else st.favor[boss] = 1; persist(true); renderAll(); },
       setFavor(boss, v) { const st = state2(); st.favor[boss] = Math.max(0, Math.min(1, v)); persist(true); renderAll(); },
+      senpai(boss, n) { fixSenpai(save); save.senpai.wins[boss] = Math.max(0, n | 0); persist(true); renderAll(); },   // 開發者：直接設定某位前輩的成功次數
       counts(boss, n) { const st = state2(); st.counts[boss] = Math.max(0, (st.counts[boss] || 0) + n); persist(true); renderAll(); },
       card(cat) { state2().forceCat = cat; renderAll(); },
       date(boss, win) {
