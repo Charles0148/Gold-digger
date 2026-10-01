@@ -322,7 +322,7 @@
     return r.ok ? { ok: true, msg: r.data } : r;
   }
 
-  /* m = { mode:"self"|"player"|"all", playerId, title, body, coins, ore, oreQty, tool, toolQty, days } */
+  /* m = { mode:"self"|"player"|"all", playerId, title, body, coins, ore, oreQty, tool, toolQty, days, boardResets } */
   async function adminSend(m) {
     const a = {
       p_title: String(m.title || ""), p_body: String(m.body || ""),
@@ -331,12 +331,16 @@
       p_tool: m.tool || null, p_tool_qty: Math.round(Number(m.toolQty) || 0),
       p_days: Math.round(Number(m.days) || 30)
     };
+    /* 免費委託板重置（docs/14 SQL）：只有 >0 才帶參數，資料庫還沒套用 docs/14 時一般信照常能寄 */
+    const br = Math.round(Number(m.boardResets) || 0);
+    if (br > 0) a.p_board_resets = br;
     let r;
     if (m.mode === "all") r = await rpc("admin_send_all", a);
     else if (m.mode === "player") {
       if (!PID.test(String(m.playerId || ""))) return { ok: false, err: "玩家 ID 必須是六碼數字" };
       r = await rpc("admin_send_to_player", Object.assign({ p_player_id: String(m.playerId) }, a));
     } else r = await rpc("admin_send_self", a);
+    if (!r.ok && br > 0 && /p_board_resets|function|schema cache/i.test(String(r.err || ""))) return { ok: false, err: "資料庫還沒套用 docs/14 的 SQL，不能寄免費委託板重置" };
     return r.ok ? { ok: true, mailId: r.data } : r;
   }
 

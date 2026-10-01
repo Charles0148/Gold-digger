@@ -162,7 +162,7 @@
       plays: {}, plays2: {}, today: { date: todayKey() || "", stats: {} },
       ads: { date: todayKey() || "", count: 0 }, pw: {},
       glass: { date: todayKey() || "", byMine: {} },
-      adPending: null, adDone: [],
+      adPending: null, adDone: [], boardCredits: 0,
       senpai: newSenpai(),
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
@@ -1616,6 +1616,16 @@
 
   /* ---------------- 信箱（雲端發送的公告與獎勵） ---------------- */
   let mailCache = { mail: [], claimed: {} }, mailLoaded = false;
+  /* 本機驗收用測試信（只限 localhost＋?sandbox=…&mailtest=1）：一封「免費委託板重置 ×10」，領取紀錄存在 sandbox 的 localStorage，不連雲端 */
+  const MAIL_TEST = SANDBOX && /[?&]mailtest=1/.test(location.search), MAIL_TEST_KEY = "mine_mailtest_claims_v1" + SB;
+  const mailTestBox = () => ({ mail: [{ id: 900001, title: "（本機測試）免費委託板重置", body: "只在本機測試網址出現，不會寄給任何玩家。", coins: 0, ore_qty: 0, tool_qty: 0, board_resets: 10,
+    created_at: new Date().toISOString(), expires_at: new Date(Date.now() + 7 * 86400000).toISOString() }], claimed: store.get(MAIL_TEST_KEY) || {} });
+  function mailTestClaim(id) {
+    const c = store.get(MAIL_TEST_KEY) || {};
+    if (c[id]) return { ok: false, err: "這封信已經領過了" };
+    c[id] = true; store.set(MAIL_TEST_KEY, c);
+    return { ok: true };
+  }
   function mailUnread() { return mailCache.mail.filter(m => !mailCache.claimed[m.id] && !mailExpired(m)).length; }
   const mailExpired = m => !!(m.expires_at && new Date(m.expires_at) < new Date());
   function renderMailBadge() {
@@ -1625,7 +1635,7 @@
     b.classList.toggle("hidden", n === 0);
   }
   async function loadMail(force) {
-    if (!cloudOn()) { mailCache = { mail: [], claimed: {} }; renderMailBadge(); return; }
+    if (!cloudOn()) { mailCache = MAIL_TEST ? mailTestBox() : { mail: [], claimed: {} }; renderMailBadge(); return; }
     if (mailLoaded && !force) return;
     try { mailCache = await Cloud.mailbox(); mailLoaded = true; } catch (e) { mailCache = { mail: [], claimed: {} }; }
     renderMailBadge();
@@ -1635,6 +1645,7 @@
     if (m.coins) parts.push("$" + fmt(m.coins));
     if (m.ore_name && m.ore_qty) parts.push(m.ore_name + " ×" + m.ore_qty);
     if (m.tool_id && m.tool_qty) { const t = toolDef(m.tool_id); parts.push((t ? t.name : m.tool_id) + " ×" + m.tool_qty); }
+    const br = mailCredits(m); if (br) parts.push("免費委託板重置 ×" + br);
     return parts.join("　");
   }
   function mailRow(m) {
@@ -1696,12 +1707,13 @@
     const m = mailCache.mail.find(x => x.id === id); if (!m) return;
     if (mailExpired(m)) { toast("這封信已過期"); openMail(); return; }
     btn.disabled = true;
-    const r = await Cloud.claim(id);
+    const r = MAIL_TEST ? mailTestClaim(id) : await Cloud.claim(id);
     if (!r.ok) { btn.disabled = false; return toast(r.err || "領取失敗"); }
     mailCache.claimed[id] = true;
     if (m.coins) save.coins += m.coins;
     if (m.ore_name && m.ore_qty) save.ores[m.ore_name] = (save.ores[m.ore_name] || 0) + m.ore_qty;
     if (m.tool_id && m.tool_qty && isStd(m.tool_id)) for (let i = 0; i < m.tool_qty; i++) addTool(m.tool_id, 1);   // 信箱只發標準鎬子（試用／付費品不能從這裡取得）
+    if (mailCredits(m)) save.boardCredits = normCredits(normCredits(save.boardCredits) + mailCredits(m));
     persist(true); renderAll(); renderMailBadge();
     const rw = mailReward(m);
     toast(rw ? "領取成功：" + rw : "已讀");
@@ -1714,14 +1726,14 @@
      資料庫端的 is_admin_caller() 會再驗一次，一般玩家在主控台硬呼叫也會被擋。 */
   const ADM = {                      // 表單狀態（不進存檔）
     tab: "send", mode: "self", playerId: "", title: "", body: "", days: 30,
-    coins: 0, ore: "", oreQty: 0, tool: "", toolQty: 0,
+    coins: 0, ore: "", oreQty: 0, tool: "", toolQty: 0, boardResets: 0,
     sending: false, sentKey: "", lastMailId: null,
     curPid: "", newPid: "", note: "", changing: false,
     styleId: "", styleInfo: null, styling: false,
     rows: null, listing: false, listErr: ""
   };
   const admFormKey = () => JSON.stringify([ADM.mode, ADM.playerId, ADM.title, ADM.body, ADM.days,
-    ADM.coins, ADM.ore, ADM.oreQty, ADM.tool, ADM.toolQty]);
+    ADM.coins, ADM.ore, ADM.oreQty, ADM.tool, ADM.toolQty, ADM.boardResets]);
 
   function openAdminMail() {
     const box = $("modalBox");
@@ -1758,6 +1770,10 @@
             <select id="admTool"><option value="">（不附工具）</option>${toolOpts}</select></div>
           <div class="adm-field"><label>數量 0～99</label>
             <input id="admToolQty" type="number" inputmode="numeric" min="0" max="99" step="1" value="${ADM.toolQty}"></div>
+        </div>
+        <div class="adm-row">
+          <div class="adm-field"><label>免費委託板重置 0～99 次</label>
+            <input id="admBoardResets" type="number" inputmode="numeric" min="0" max="99" step="1" value="${ADM.boardResets}"></div>
         </div>
         <div class="adm-preview">${admPreview()}</div>
         ${ADM.lastMailId ? `<div class="sub" style="color:#43d17a;margin-top:6px">上一封已寄出，mail ID = <b>${ADM.lastMailId}</b>。要再寄一封請按「再寄一封」。</div>` : ""}
@@ -1800,7 +1816,7 @@
         : !ADM.rows ? '<div class="sub">按「重新整理」載入寄件紀錄。</div>'
         : !ADM.rows.length ? '<div class="sub">還沒寄過任何信。</div>'
         : ADM.rows.map(r => {
-            const rw = mailReward({ coins: r.coins, ore_name: r.ore_name, ore_qty: r.ore_qty, tool_id: r.tool_id, tool_qty: r.tool_qty });
+            const rw = mailReward({ coins: r.coins, ore_name: r.ore_name, ore_qty: r.ore_qty, tool_id: r.tool_id, tool_qty: r.tool_qty, board_resets: r.board_resets });
             return `<div class="adm-mail">
               <div><b>#${r.id}</b> ${esc(r.title)}</div>
               <div class="sub">${esc(r.target)}${r.player_id ? "（" + esc(r.player_id) + "）" : ""}｜已領 ${r.claimed} 人</div>
@@ -1827,14 +1843,14 @@
   function admPreview() {
     const who = ADM.mode === "all" ? '<span class="adm-warn">全體玩家</span>'
       : ADM.mode === "player" ? `指定玩家 ${esc(ADM.playerId || "（還沒填）")}` : "只有你自己";
-    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0 });
+    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0, board_resets: +ADM.boardResets || 0 });
     const exp = new Date(Date.now() + (+ADM.days || 30) * 86400000);
     return `<b>玩家會看到這樣：</b><br>
       收件範圍：${who}<br>
       標題：${esc(ADM.title) || "<span class='adm-warn'>（還沒填）</span>"}<br>
       內文：${ADM.body ? esc(ADM.body).replace(/\n/g, "<br>") : "（空白）"}<br>
       附件：${rw ? esc(rw) : "（無，純公告）"}<br>
-      到期：${exp.toLocaleDateString()}`;
+      到期：${exp.toLocaleDateString()}${+ADM.boardResets > 0 ? '<br><span class="adm-warn">免費委託板重置需要先套用 docs/14 的 SQL；新版遊戲上傳前不要寄給玩家（舊版領了會拿不到）。</span>' : ""}`;
   }
   function fmtTime(t) { return t ? new Date(t).toLocaleString() : "—"; }
   function oreNamesAll() {
@@ -1872,7 +1888,7 @@
     };
     live("admPid", "playerId", "pid"); live("admTitle", "title"); live("admBody", "body");
     live("admCoins", "coins", "num"); live("admDays", "days", "num");
-    live("admOreQty", "oreQty", "num"); live("admToolQty", "toolQty", "num");
+    live("admOreQty", "oreQty", "num"); live("admToolQty", "toolQty", "num"); live("admBoardResets", "boardResets", "num");
     live("admCur", "curPid", "pid"); live("admNew", "newPid", "pid"); live("admNote", "note");
     { const e = $("admStyleId"); if (e) e.oninput = () => {
         const v = e.value.replace(/[^\d]/g, "").slice(0, 6);
@@ -1907,6 +1923,8 @@
     const oq = +ADM.oreQty || 0, tq = +ADM.toolQty || 0;
     if (!Number.isInteger(oq) || oq < 0 || oq > 999) return "礦石數量要在 0～999 之間";
     if (!Number.isInteger(tq) || tq < 0 || tq > 99) return "工具數量要在 0～99 之間";
+    const br = +ADM.boardResets || 0;
+    if (!Number.isInteger(br) || br < 0 || br > 99) return "免費委託板重置次數要在 0～99 之間";
     if (oq > 0 && !ADM.ore) return "有填礦石數量就要選礦石";
     if (tq > 0 && !ADM.tool) return "有填工具數量就要選工具";
     if (ADM.mode === "player" && !/^[1-9][0-9]{5}$/.test(String(ADM.playerId || ""))) return "玩家 ID 必須是 100000～999999 的六碼數字";
@@ -1925,7 +1943,7 @@
       const r = await Cloud.adminSend({
         mode: ADM.mode, playerId: ADM.playerId, title: String(ADM.title).trim(), body: ADM.body,
         coins: +ADM.coins || 0, ore: ADM.ore || null, oreQty: +ADM.oreQty || 0,
-        tool: ADM.tool || null, toolQty: +ADM.toolQty || 0, days: +ADM.days || 30
+        tool: ADM.tool || null, toolQty: +ADM.toolQty || 0, days: +ADM.days || 30, boardResets: +ADM.boardResets || 0
       });
       ADM.sending = false;
       if (!r.ok) { openAdminMail(); return toast(r.err || "寄送失敗"); }
@@ -1939,7 +1957,7 @@
     else admConfirm(ADM.mode === "player" ? "寄給玩家 " + esc(ADM.playerId) : "寄給自己", admConfirmBody(), go);
   }
   function admConfirmBody() {
-    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0 });
+    const rw = mailReward({ coins: +ADM.coins || 0, ore_name: ADM.ore, ore_qty: +ADM.oreQty || 0, tool_id: ADM.tool, tool_qty: +ADM.toolQty || 0, board_resets: +ADM.boardResets || 0 });
     return `標題：<b>${esc(String(ADM.title).trim())}</b><br>附件：${rw ? esc(rw) : "（無）"}<br>有效 ${+ADM.days || 30} 天`;
   }
   function admConfirm(head, html, yes) {
@@ -2167,6 +2185,37 @@
     return bs.reqAds;
   }
   const boardResetLeft = () => Math.max(0, (B().boardResets ?? 2) - boardAds().count);
+  /* 永久免費委託板重置（2026-10-01 擁有者決定）：save.boardCredits＝剩餘次數，信箱 board_resets 領取增加，永不過期、不隨換日歸零。
+     有次數時重置委託板先扣 1 次，不看廣告、不動 boss.reqAds／ads；用完才回到每日廣告重置。仍需可信台灣遊戲日。 */
+  function normCredits(v) { const n = Number(v); return Number.isFinite(n) && n > 0 ? Math.min(9999, Math.floor(n)) : 0; }   // 上限 9999；載入存檔時（檔頭）就會呼叫，不能依賴後面才宣告的 const
+  function mailCredits(m) { const n = Number(m && m.board_resets); return Number.isInteger(n) && n > 0 ? Math.min(99, n) : 0; }   // 只認正整數（資料庫限制 0～99）
+  const boardCredits = () => normCredits(save.boardCredits);
+  let freeBusy = false;
+  async function useFreeReset() {
+    if (freeBusy || adActive) return;
+    freeBusy = true;
+    try {
+      $("modal").classList.add("hidden");
+      if (!(await clockFresh())) { toast("確認日期後可使用"); return; }
+      const day = todayKey();
+      if (!day || clock.hold) { toast("確認日期後可使用"); return; }
+      if (save.adPending) { toast("還有一個廣告沒看完"); return; }
+      const have = boardCredits();
+      if (have <= 0) return;
+      const bs = save.boss, cur = checkRequest();
+      const next = makeRequest(((cur && cur.day === day && cur.no) || 1) + 1, day);
+      if (!next.lines.length) { toast("換板失敗，免費次數沒有扣除"); return; }
+      const old = bs.req;
+      save.boardCredits = have - 1; bs.req = next;
+      if (!store.set(SAVE_KEY, save)) { save.boardCredits = have; bs.req = old; toast("存檔失敗，免費次數沒有扣除"); return; }   // 扣次＋換板＋存檔同一次完成
+      cloudLater();
+      bossView = "board"; talkView = null;
+      toast(`換了一張新委託｜免費重置剩 ${save.boardCredits} 次`);
+    } finally {
+      freeBusy = false;
+      renderShop();
+    }
+  }
   function checkRequest() {
     const bs = save.boss, k = todayKey();
     if (!k) return bs.req && Array.isArray(bs.req.lines) ? bs.req : { day: "", no: 0, lines: [] };   // 日期未知：不建立新板（畫面也不給交付）
@@ -2178,16 +2227,17 @@
   /* 看廣告重置委託板：有未交付的先確認；廣告看完才換板。次數在「開始看」時就先扣開始那天的（擁有者 Q5＝B），取消／失敗會退回 */
   function askBoardReset() {
     if (!dailyOK()) { toast("確認日期後可使用"); return; }
-    if (boardResetLeft() <= 0) return;
+    const free = boardCredits() > 0, go = free ? useFreeReset : watchBoardAd;
+    if (!free && boardResetLeft() <= 0) return;
     const req = checkRequest(), left = req.lines.filter(l => !l.done).length;
-    if (!left) { watchBoardAd(); return; }
+    if (!left) { go(); return; }
     const box = $("modalBox");
     box.innerHTML = `<div class="boss-name">換一張委託</div>
       <div style="margin:10px 0;line-height:1.7">這張還有 <b>${left}</b> 項沒交付。<br><span style="color:#ff8a4c">換板後，未完成的委託會消失。</span></div>
-      <div class="btns"><button class="px-btn" id="brYes">看廣告換板</button><button class="px-btn" id="brNo">取消</button></div>`;
+      <div class="btns"><button class="px-btn" id="brYes">${free ? `免費換板（剩 ${boardCredits()} 次）` : "看廣告換板"}</button><button class="px-btn" id="brNo">取消</button></div>`;
     $("modal").classList.remove("hidden");
     $("brNo").onclick = () => $("modal").classList.add("hidden");
-    $("brYes").onclick = () => watchBoardAd();
+    $("brYes").onclick = () => go();
   }
   async function watchBoardAd() {
     if (adActive) return;
@@ -2225,6 +2275,7 @@
   function fixAds(sv) {   // 三個載入入口共用：舊存檔補欄位（頂層 v 不動）
     if (!sv.adPending || typeof sv.adPending !== "object" || !sv.adPending.id) sv.adPending = null;
     if (!Array.isArray(sv.adDone)) sv.adDone = [];
+    sv.boardCredits = normCredits(sv.boardCredits);
   }
   function adLeftover() {   // 載入時有殘留的待完成廣告（上次關頁／當機／雲端那份）＝取消（Q2＝A）；另一個分頁正在播的，等它的鎖過期再處理
     const p = save.adPending; if (!p) return;
@@ -2477,8 +2528,8 @@
     if (view === "board" && !todayKey()) body = `<div class="board"><div class="board-head">委託板</div><div class="sub">需要連上網路確認今天的日期（台灣時間）。確認日期後可使用。</div></div>` + back;
     else if (view === "board") {
       const req = checkRequest(), idx = itemIndex();
-      const rl = boardResetLeft();
-      body = `<div class="board"><div class="board-head">委託板 <span class="sub">今日第 ${req.no || 1} 張｜今日可重置剩 ${rl} 次</span></div>` +
+      const rl = boardResetLeft(), fc = boardCredits();
+      body = `<div class="board"><div class="board-head">委託板 <span class="sub">今日第 ${req.no || 1} 張｜${fc > 0 ? `免費重置剩 ${fc} 次` : `今日可重置剩 ${rl} 次`}</span></div>` +
         req.lines.map((l, i) => {
           const known = !!save.dex[l.name], it = idx[l.name], color = rarityColor(it ? it.cat.rarity : 0);
           const need = lineQty(l), have = save.ores[l.name] || 0;
@@ -2489,7 +2540,7 @@
             <div class="sub">酬勞 $${money(pay)}＋恩惠${B().points[l.cat]}點</div></div>
             ${l.done ? '<span class="sub">✔ 已交付</span>' : `<button class="px-btn small" data-deliver="${i}" ${have >= need ? "" : "disabled"}>交付<br><span class="sub">包包 ${have}/${need}</span></button>`}</div>`;
         }).join("") + `<div class="sub" style="margin-top:6px">全部完成再加 ${B().completeBonus} 點｜點礦石名稱可查產地</div>
-        <button class="px-btn wide" id="btnBoardReset" style="margin-top:8px;min-height:48px" ${rl > 0 && dayOK ? "" : "disabled"}>${!dayOK ? "確認日期後可使用" : rl > 0 ? `▶ 看廣告換一張新委託（今日剩 ${rl} 次）` : "今日的委託板重置次數已用完"}</button></div>` + back;
+        <button class="px-btn wide" id="btnBoardReset" style="margin-top:8px;min-height:48px" ${(fc > 0 || rl > 0) && dayOK ? "" : "disabled"}>${!dayOK ? "確認日期後可使用" : fc > 0 ? `▶ 免費重置委託板（剩 ${fc} 次）` : rl > 0 ? `▶ 看廣告換一張新委託（今日剩 ${rl} 次）` : "今日的委託板重置次數已用完"}</button></div>` + back;
     }
     if (view === "sell") {
       const idx = itemIndex(), names = oreNames();
