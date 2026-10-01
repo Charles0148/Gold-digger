@@ -4,8 +4,19 @@
 (function () {
   const E = window.MineEngine;
   const E2 = window.MineEngine2;
-  const CFG_KEY = "mine_config_v4";
-  const SAVE_KEY = "mine_save_v1";
+  /* 本機隔離測試：只有 localhost／127.0.0.1 且網址帶 ?sandbox=名稱 才生效。
+     存檔、設定、備份全部換成另一組 key，雲端模組同時關閉（見 cloud.js），不會碰到正常存檔或正式帳號。 */
+  const SANDBOX = (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && (location.search.match(/[?&]sandbox=([\w-]{1,32})/) || [])[1]) || "";
+  const SB = SANDBOX ? "__sandbox_" + SANDBOX : "";
+  const CFG_KEY = "mine_config_v4" + SB;
+  const SAVE_KEY = "mine_save_v1" + SB;
+  /* 恩惠 v2 第一次遷移前的整份存檔。集合：{ entries: { 備份id: { at, src, save } } }。
+     備份id＝帳號雜湊（沒登入＝anon）＋存檔內容雜湊 → 不同玩家／不同存檔各自一份、互不覆蓋；同一份不重寫。
+     帳號只存不可逆的雜湊，不寫 email 或原始 id，也不印到 console／畫面。 */
+  const BOON_BACKUP_KEY = "mine_boon_backups_v1" + SB;
+  /* 恩惠 v2 開關：只看程式內建的 DEFAULT_CONFIG（編輯器存的設定改不動），
+     或「localhost／127.0.0.1＋?sandbox=名稱＋&boonsv2=1」的隔離預覽。正式網址加任何參數都打不開。 */
+  const V2_ON = ((((window.DEFAULT_CONFIG || {}).boss || {}).boonsV2 || {}).enabled === true) || (!!SANDBOX && /[?&]boonsv2=1(&|$)/.test(location.search));
   const $ = id => document.getElementById(id);
 
   /* ---------------- 工具函式 ---------------- */
@@ -27,9 +38,82 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } },
     del(k) { try { localStorage.removeItem(k); } catch (e) {} }
   };
+  /* ---------------- 可信台灣遊戲日（階段3B，2026-09-30） ----------------
+     所有每日規則（設定、補給次數、委託板、觀測鏡）只看這裡，不再看裝置日期。
+     同步：伺服器 game_clock() 給 server_now／game_day／next_reset_at；之後用 performance.now()（單調時鐘，改手機時間也不會動）往前推算。
+     todayKey() 取不到可信日期時回傳 null——正式網址絕不退回裝置日期（擁有者 Q1＝A）。
+     頁面開著、還沒到下一個台灣午夜時的短暫斷線照常可玩；過了午夜要重新同步成功才算有效。
+     sandbox（只限 localhost）：用裝置時間當測試替身；測試可用 window.__MONO_SKEW__ 模擬時間經過。 */
+  const TW_MS = 8 * 3600000, DAY_MS = 86400000;
+  const LAST_DAY_KEY = "mine_last_day_v1" + SB;      // 上次確認過的台灣日期：只用來做「日期只能前進」與圖鑑／回憶的展示日期
+  const mono = () => performance.now() + (SANDBOX ? (Number(window.__MONO_SKEW__) || 0) : 0);
+  const twDay = ms => new Date(ms + TW_MS).toISOString().slice(0, 10);
+  const twNextReset = ms => (Math.floor((ms + TW_MS) / DAY_MS) + 1) * DAY_MS - TW_MS;
+  const clock = { base: null, syncing: null, lastOk: -Infinity, failKind: "", lastFail: null, hold: false, sandbox: false, resetTimer: null, retryTimer: null, lastTry: -Infinity };
+  let lastTrustedDay = (typeof store.get(LAST_DAY_KEY) === "string" && store.get(LAST_DAY_KEY)) || "";
+  const RESET_GRACE = 60000;   // 過了午夜 60 秒內還沒同步成功 → 視為日期未知
+  function trustedNow() { return clock.base ? clock.base.server + (mono() - clock.base.mono) : null; }
+  function clockValid() {
+    if (!clock.base) return false;
+    const now = trustedNow();
+    if (now < clock.base.reset) return true;
+    return now < clock.base.reset + RESET_GRACE && !(clock.lastFail !== null && clock.lastFail >= clock.base.reset);   // 午夜後的重新同步失敗了 → 未知
+  }
   function todayKey() {
-    const d = new Date();
-    return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0");
+    if (!clockValid()) return null;
+    const d = twDay(trustedNow());
+    if (d > lastTrustedDay) { lastTrustedDay = d; store.set(LAST_DAY_KEY, d); }
+    return d;
+  }
+  const dayOrLast = () => todayKey() || lastTrustedDay || "";   // 純展示（圖鑑首次發現、回憶取得日）：不擋收集
+  const dailyOK = () => !!todayKey() && !clock.hold;             // 每日功能（補給、換板、觀測鏡）可用
+  function clockUse(r, t0, t1) {   // 檢查一次同步結果 → 可用就回傳 base，否則回傳錯誤種類字串
+    if (r && r.ok && r.sandbox) {
+      if (!SANDBOX) return "bad";
+      const now = Date.now();
+      return { server: now, mono: t1, day: twDay(now), reset: twNextReset(now), sandbox: true };
+    }
+    if (!r || !r.ok) return (r && r.kind) || "server";
+    if (t1 - t0 > 10000) return "slow";                    // 往返超過 10 秒：時間不可靠，丟棄
+    const d = r.data || {}, s = Date.parse(d.server_now), rs = Date.parse(d.next_reset_at);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(d.game_day || "") || !isFinite(s) || !isFinite(rs) || rs <= s || twDay(s) !== d.game_day) return "bad";
+    const known = clockValid() ? twDay(trustedNow()) : "";
+    if (d.game_day < lastTrustedDay || (known && d.game_day < known)) return "bad";   // 日期只能前進
+    return { server: s + (t1 - t0) / 2, mono: t1, day: d.game_day, reset: rs };
+  }
+  function clockSync() {
+    if (clock.syncing) return clock.syncing;
+    clock.failKind = "";   // 重試開始時，畫面恢復「正在確認」；失敗結果稍後會覆寫
+    clock.syncing = (async () => {
+      const t0 = mono();
+      clock.lastTry = t0;
+      let r;
+      try { r = window.Cloud && Cloud.gameClock ? await Cloud.gameClock() : (SANDBOX ? { ok: true, sandbox: true } : { ok: false, kind: "server" }); }
+      catch (e) { r = { ok: false, kind: "offline" }; }
+      const wasDay = todayKey(), res = clockUse(r, t0, mono());
+      clearTimeout(clock.retryTimer);
+      if (typeof res === "object") {
+        clock.base = res; clock.sandbox = !!res.sandbox; clock.lastOk = mono(); clock.failKind = ""; clock.lastFail = null;
+        clearTimeout(clock.resetTimer);   // 台灣午夜後 1～20 秒隨機重新同步（分散請求）
+        clock.resetTimer = setTimeout(clockSync, Math.max(1000, res.reset - trustedNow() + 1000 + Math.random() * 19000));
+      } else {
+        clock.failKind = res;
+        clock.lastFail = trustedNow() ?? 0;
+        if (!clockValid()) clock.retryTimer = setTimeout(clockSync, 15000);   // 日期未知：15 秒後自動再試（玩家也可按重試）
+      }
+      if (wasDay !== todayKey() || !wasDay) clockChanged();   // 變成有效／無效、換日、或仍在未知（更新確認中→失敗的提示）
+      return typeof res === "object";
+    })().finally(() => { clock.syncing = null; });
+    return clock.syncing;
+  }
+  /* 每日動作（補給廣告、換板廣告、觀測鏡）之前：上次同步超過 10 分鐘就先同步，失敗就不開始 */
+  async function clockFresh() {
+    if (!clock.base || clock.hold || mono() - clock.lastOk > 600000) { if (!(await clockSync())) return false; }
+    return dailyOK();
+  }
+  if (SANDBOX && typeof window.__GAME_CLOCK_STUB__ !== "function") {   // 測試替身：同步完成，第一次畫面就能玩
+    const now = Date.now(), t = mono();
+    clock.base = { server: now, mono: t, day: twDay(now), reset: twNextReset(now), sandbox: true }; clock.sandbox = true; clock.lastOk = t;
   }
   function pwHash(str) { // 密碼雜湊（不把密碼本身寫在程式裡）
     let h = 1779033703 ^ str.length;
@@ -58,7 +142,14 @@
     const old = store.get("mine_config_v3");
     if (old) { stored = {}; ["layout", "theme", "images", "texts", "gameTitle"].forEach(k => { if (old[k]) stored[k] = old[k]; }); }
   }
-  let config = deepMerge(clone(window.DEFAULT_CONFIG), stored || {});
+  /* 2026-09-30：非標準鎬子（紅岩鑽頭等，category 不是 pick）一律用程式內建定義。
+     編輯器存的設定檔會整個蓋掉 tools 陣列 → 舊設定檔裡沒有這幾把、或被改過數值，都在這裡補回／還原。 */
+  function normTools(c) {
+    const fixed = (window.DEFAULT_CONFIG.tools || []).filter(t => t.category && t.category !== "pick");
+    c.tools = (c.tools || []).filter(t => !fixed.some(f => f.id === t.id)).concat(clone(fixed));
+    return c;
+  }
+  let config = normTools(deepMerge(clone(window.DEFAULT_CONFIG), stored || {}));
 
   /* ---------------- 存檔 ---------------- */
   function newSave() {
@@ -68,14 +159,62 @@
       ores: {}, dex: {},
       boss: newBoss(),
       unlocked: ["m1"], mineId: "m1",
-      plays: {}, plays2: {}, today: { date: todayKey(), stats: {} },
-      ads: { date: todayKey(), count: 0 }, pw: {},
-      glass: { date: todayKey(), byMine: {} },
+      plays: {}, plays2: {}, today: { date: todayKey() || "", stats: {} },
+      ads: { date: todayKey() || "", count: 0 }, pw: {},
+      glass: { date: todayKey() || "", byMine: {} },
+      adPending: null, adDone: [],
       senpai: newSenpai(),
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
   }
-  function newBoss() { return { favor: 0, level: 1, boons: [], req: null, total: 0 }; }
+  const BV = window.BoonsV2;
+  /* 2026-09-30 擁有者決定 Q1＝A：v2 沒開（正式 enabled:false）時，新存檔用舊版 boss 結構，
+     不預寫 schema／epoch／tiers／rewardLv／pending；只有 V2_ON 才用 v2 結構。 */
+  const newBoss = () => (V2_ON ? BV.newBoss() : { favor: 0, level: 1, boons: [], req: null, total: 0 });
+  /* 恩惠 v2 遷移：三個入口（本機載入、雲端接回、編輯器匯入）都走這裡。
+     第一次遷移前把「整份原始存檔」加進 BOON_BACKUP_KEY 的備份集合（每位玩家／每份存檔各一筆，不覆蓋）。
+     失敗不清檔：保留原資料、v2 效果全部當 0 階、提示玩家。 */
+  let boonFail = false;
+  const acctTag = () => { try { const u = window.Cloud && Cloud.user && Cloud.user(); return u && u.id ? "u" + pwHash("acct|" + u.id) : "anon"; } catch (e) { return "anon"; } };
+  function boonBackup(raw, src) {
+    const all = store.get(BOON_BACKUP_KEY);
+    const box = all && all.entries && typeof all.entries === "object" ? all : { entries: {} };
+    const id = `${acctTag()}-${pwHash(JSON.stringify(raw))}`;   // 帳號雜湊＋內容雜湊（來源另存在 src）：同一份內容不論從哪裡載入都只備份一次
+    if (box.entries[id]) return id;                     // 同一份存檔已備份過：不覆蓋
+    box.entries[id] = { at: new Date().toISOString(), src, save: raw };
+    if (!store.set(BOON_BACKUP_KEY, box)) throw new Error("備份寫入失敗（瀏覽器空間不足）");   // 備份失敗就不遷移
+    return id;
+  }
+  /* 里程碑的本機領取紀錄（存檔以外）：{ 帳號雜湊: { redrockTrial: [已領的 epoch...] } }。
+     用來擋「同一台裝置」的另一個分頁、或接回還沒領過的舊雲端檔再領一次。只有 v2 開啟才讀寫。
+     跨裝置／清除瀏覽器資料擋不住 → 發布前需要伺服器 claim 紀錄（階段4，見 RELEASE_GATE）。 */
+  const MS_LEDGER_KEY = "mine_milestone_ledger_v1" + SB;
+  function msKnown(id, epoch) {   // 目前帳號的紀錄＋「未登入時」的紀錄（未登入領完再登入上傳的是同一份存檔）
+    const all = store.get(MS_LEDGER_KEY) || {};
+    return [acctTag(), "anon"].some(tag => { const m = all[tag] || {}; return Array.isArray(m[id]) && m[id].includes(epoch); });
+  }
+  function msGuard(id, epoch) {   // 領取前最後檢查（讀最新的 localStorage，另一個分頁剛領也看得到），通過就先寫紀錄
+    if (msKnown(id, epoch)) return false;
+    const all = store.get(MS_LEDGER_KEY) || {}, tag = acctTag(), mine = all[tag] = all[tag] || {};
+    mine[id] = (Array.isArray(mine[id]) ? mine[id] : []).concat([epoch]);
+    if (!store.set(MS_LEDGER_KEY, all)) throw new Error("領取紀錄寫入失敗（瀏覽器空間不足）");
+    return true;
+  }
+  function fixBoss(sv, src) {
+    /* v2 關閉：零遷移、零備份。只做舊版原本就有的「沒有 boss 就補一個」，其他欄位一個都不碰。 */
+    if (!V2_ON) { if (!sv.boss) sv.boss = newBoss(); boonFail = false; return; }
+    try {
+      if (SANDBOX && /[?&]failmig=1/.test(location.search)) throw new Error("測試：強制遷移失敗");
+      const raw = JSON.parse(JSON.stringify(sv));
+      if (sv.boss && sv.boss.schema !== 2) boonBackup(raw, src || "local");   // 先備份成功，才動資料
+      BV.fix(sv, config, null, msKnown);
+      boonFail = false;
+    } catch (e) {
+      boonFail = true;
+      console.error("恩惠資料轉換失敗：" + (e && e.message));
+      setTimeout(() => toast("恩惠資料轉換失敗：進度已保留，恩惠效果暫停"), 300);
+    }
+  }
   /* v0.10.11：三位前輩的永久信賴進度。
      跟 plays2（離開礦坑就刪）分開放，才不會一離開就歸零。
      wins＝談話成功次數、memories＝已取得的珍貴回憶（{date}）、story＝還沒看完的回憶 {boss, step}。
@@ -95,10 +234,11 @@
   let needStarter = false;
   if (!save || save.v !== 1) { save = newSave(); needStarter = true; }
   save.auto = false;
-  if (!save.boss) save.boss = newBoss();
   if (!save.plays2) save.plays2 = {};
   if (!save.pw) save.pw = {};
   fixSenpai(save);
+  fixBoss(save, "local");
+  fixAds(save);
   delete save.upgrades;
   /* v0.10.3：存檔一律「立即寫入」。
      舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
@@ -112,21 +252,26 @@
 
   /* ---------------- 雲端存檔（自動同步） ---------------- */
   const CLOUD_DELAY = 5000;      // 最後一次動作之後幾毫秒才上傳（避免每一揮都打伺服器）
-  let cloudTimer = null, cloudBusy = false, cloudDirty = false;
+  /* 2026-09-29：最長等待。自動挖掘每 ~300ms 存一次，單純 debounce 會讓 5 秒計時器永遠被往後推，
+     持續自動時雲端一直不上傳。現在「變髒」後最晚 30 秒一定嘗試上傳一次；本機 localStorage 照舊每次立即寫入。 */
+  const CLOUD_MAX_WAIT = 30000;
+  let cloudTimer = null, cloudBusy = false, cloudDirty = false, cloudDirtySince = 0;
   const cloudOn = () => !!(window.Cloud && Cloud.enabled() && Cloud.status() !== "out");
   function cloudLater() {
     if (!cloudOn()) return;
+    if (!cloudDirty || !cloudDirtySince) cloudDirtySince = Date.now();
     cloudDirty = true;
     clearTimeout(cloudTimer);
-    cloudTimer = setTimeout(cloudPush, CLOUD_DELAY);
+    cloudTimer = setTimeout(cloudPush, Math.max(0, Math.min(CLOUD_DELAY, cloudDirtySince + CLOUD_MAX_WAIT - Date.now())));
   }
   async function cloudPush(opt) {
-    if (!cloudOn() || cloudBusy) return;
-    cloudBusy = true; cloudDirty = false;
+    if (!cloudOn()) return;
+    if (cloudBusy) { clearTimeout(cloudTimer); cloudTimer = setTimeout(cloudPush, 1000); return; }   // 上一次還沒回來：稍後再試，不丟掉這次
+    cloudBusy = true; cloudDirty = false; cloudDirtySince = 0;
     const r = await Cloud.push(save, opt);
     cloudBusy = false;
     renderCloud();
-    if (!r.ok) cloudDirty = true;
+    if (!r.ok) { cloudDirty = true; cloudDirtySince = Date.now(); }
     /* v0.10.3：雲端已經被別台裝置寫過 → 停下來問玩家，不默默覆蓋也不默默放棄 */
     if (r.conflict && r.remote) { clearTimeout(cloudTimer); stopAuto(); showConflict(r.remote); }
     return r;
@@ -168,12 +313,14 @@
     save = row.data;
     save.rev = Number(row.rev || 0);
     save.auto = false;
-    if (!save.boss) save.boss = newBoss();
     if (!save.plays2) save.plays2 = {};
     if (!save.pw) save.pw = {};
     fixSenpai(save);
+    fixBoss(save, "cloud");
+    fixAds(save);
     storyFresh = false;
     store.set(SAVE_KEY, save);
+    adLeftover();   // 雲端那份帶著待完成廣告 → 視同關頁重開：取消、同日退回
     renderAll();
   }
   function cloudFlush() {           // 關網頁／切到背景時立刻補一次
@@ -186,6 +333,10 @@
 
   /* ---------------- 查詢 ---------------- */
   const toolDef = id => config.tools.find(t => t.id === id);
+  /* 標準鎬子（category:"pick"）：商店、掉落、地圖建議、效率基準、觀測鏡價、信箱、編輯器只看這五把 */
+  const isStd = id => BV.toolCat(config, id) === "pick";
+  const stdTools = () => config.tools.filter(t => isStd(t.id));
+  const stdOfTier = tier => stdTools().find(t => t.tier === tier);
   const mineDef = id => config.mines.find(m => m.id === id);
   const curMine = () => mineDef(save.mineId) || config.mines[0];
   const catDef = id => config.categories.find(c => c.id === id);
@@ -196,23 +347,37 @@
   const RARITY_NAME = ["普通", "藍", "紫", "金"];
   const BOON_COLOR = r => rarityColor([1, 3, 4, 5][r]);
   function boonCount(id, target) {
+    if (v2()) return 0;   // v2 開啟：舊恩惠全部不生效（資料照樣保留）
     return save.boss.boons.filter(b => b.id === id && (target === undefined || b.target === target)).length;
   }
   const boonVal = id => ((config.boss.boons[id] || {}).v || 0);
-  const boonSum = (id, target) => boonCount(id, target) * boonVal(id);
-  function toolMax(id) { const d = toolDef(id); return Math.round(d.durability * (1 + boonSum("toolDur"))); }
+  /* v2 開啟時，舊恩惠（陣列疊加）一律視為 0：favorUp／toolDrop／reqQty／adWood／adStone／各種售價加成都停用 */
+  const boonSum = (id, target) => (v2() ? 0 : boonCount(id, target) * boonVal(id));
+  /* 恩惠 v2：四種各 0～5 階。v2Rate("sell") → 0.06 之類的比例；遷移失敗時全部當 0 */
+  const v2 = () => V2_ON;
+  const v2Rate = k => (v2() && !boonFail ? BV.rate(config, k, BV.tier(save.boss, config, k)) : 0);
+  /* v2：只有工具標了 boonDurability／boonDiscount 才套恩惠（未來付費／特殊工具預設不套，見 config.tools 註解） */
+  function toolMax(id) { const d = toolDef(id), ok = BV.toolFlag(config, id, "boonDurability"); return v2() ? BV.toolMax(d.durability, ok ? v2Rate("toolDur") : 0) : Math.round(d.durability * (1 + (ok ? boonSum("toolDur") : 0))); }   // 紅岩鑽頭等旗標 false：新舊耐久恩惠都不套
   function sellBonus(name, rarity) {
-    return 1 + boonSum("allSell") + boonSum("oreSell", name) + boonSum("raritySell", rarity);
+    return v2() ? 1 + v2Rate("sell") : 1 + boonSum("allSell") + boonSum("oreSell", name) + boonSum("raritySell", rarity);
   }
-  const toolPrice = t => Math.max(1, Math.round(t.price * Math.max(0.1, 1 - boonSum("shopCut"))));
+  const toolPrice = t => (v2() ? BV.toolPrice(t.price, BV.toolFlag(config, t.id, "boonDiscount") ? v2Rate("toolCut") : 0) : Math.max(1, Math.round(t.price * Math.max(0.1, 1 - boonSum("shopCut")))));
+  const autoWait = () => { const base = (config.play && config.play.autoInterval) || 350; return v2() ? BV.autoInterval(base, v2Rate("autoSpeed")) : base / (1 + boonSum("autoSpeed")); };
+  /* 出售金額：v2 是「整筆基本總價 × 加成」最後一次取整到 0.1（低價礦石每階都有感）；舊版維持每顆先取整。
+     list = [[礦石名, 數量], ...] */
+  function sellTotal(list) {
+    if (!v2()) return Math.round(list.reduce((a, [n, c]) => a + itemPrice(n) * c, 0) * 10) / 10;
+    return BV.sellTotal(list.reduce((a, [n, c]) => a + basePrice(n) * c, 0), v2Rate("sell"));
+  }
   // 工具效率：低階工具挖高階礦坑 → 收益打折（公式 A）
   function toolFactor(tool, mine) {
-    const d = toolDef(tool.id); if (!d || d.tier >= mine.tier) return 1;
-    const need = config.tools.find(t => t.tier === mine.tier); if (!need) return 1;
+    const d = toolDef(tool.id); if (!d || !isStd(d.id) || d.tier >= mine.tier) return 1;   // 非標準工具（紅岩鑽頭）：每座礦坑都是正常效率，不打折也不加成
+    const need = stdOfTier(mine.tier); if (!need) return 1;
     const f = (d.price / d.durability) / (need.price / need.durability) * ((config.toolPenalty || {}).underMul ?? 0.9);
     return Math.min(1, f);
   }
   const money = n => { const v = Math.round(n * 10) / 10; return v % 1 ? v.toLocaleString("en-US", { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : v.toLocaleString("en-US"); };
+  const money2 = n => (Math.round(n * 100 + 1e-7) / 100).toLocaleString("en-US", { maximumFractionDigits: 2 });   // 單價顯示到 0.01（v2 加價後）
 
   // 物品名稱 → 屬於哪座礦坑、哪個小役
   function itemIndex() {
@@ -233,15 +398,17 @@
     const base = it.vein ? (it.cat.veinValue ?? it.cat.value) : it.cat.value;
     return Math.round(base * it.mine.mult * 10) / 10;
   }
-  function itemPrice(name) { // 含恩惠加成
+  function itemPrice(name) { // 含恩惠加成（v2：只給畫面顯示單價用，實際出售金額以 sellTotal 整筆計算）
     const it = itemIndex()[name]; if (!it) return 0;
+    if (v2()) return Math.round(basePrice(name) * sellBonus(name, it.cat.rarity) * 100 + 1e-7) / 100;
     return Math.round(basePrice(name) * sellBonus(name, it.cat.rarity) * 10) / 10;
   }
 
   function todaySetting(mineId) {
     const f = forcedSetting();
     if (f) return f;
-    const r = seeded(todayKey() + "|" + mineId);
+    const k = todayKey(); if (!k) return null;   // 日期未知：沒有設定（揮擊入口已先擋下，這裡只會是除錯顯示）
+    const r = seeded(k + "|" + mineId);
     let acc = 0; const dist = config.rules.settingDist;
     for (let i = 0; i < dist.length; i++) { acc += dist[i]; if (r < acc) return i + 1; }
     return 1;
@@ -258,6 +425,7 @@
   let glassWiped = false;
   function glassState() {
     const k = todayKey();
+    if (!k) { if (!save.glass) save.glass = { v: GLASS_V, date: "", byMine: {} }; return save.glass; }   // 日期未知：不換日、不清紀錄
     if (!save.glass || save.glass.date !== k) save.glass = { v: GLASS_V, date: k, byMine: {} };
     glassWipeOld(save.glass);
     return save.glass;
@@ -280,7 +448,7 @@
   function glassSeen(mineId) { return glassState().byMine[mineId] || []; }
   function glassPrice(mineId) {
     const g = glassCfg(), m = mineDef(mineId);
-    const tl = config.tools.find(t => t.tier === m.tier) || config.tools[0];
+    const tl = stdOfTier(m.tier) || stdTools()[0];
     return Math.round(tl.price * (g.priceMul ?? 2) * Math.pow(g.repeatMul ?? 2, glassSeen(mineId).length));
   }
   // stage 由 1 起算。先擲完整礦紋，沒中再依 weights 抽一般結果。
@@ -314,16 +482,14 @@
   function scopeMines() { return config.mines.filter(m => save.unlocked.includes(m.id)); }
   function scopeReset() {
     // 已經付錢但還在轉鏡片的那一次，一定要先落地，否則切礦坑／離開畫面等於白花錢
-    if (scopePhase === "focus" && scopePending && scopeMine) {
-      const st = glassState();
-      (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
-      persist();
-    }
+    if (scopePhase === "focus" && scopePending && scopeMine) { scopeRecord(); persist(); }
     clearTimeout(scopeTimer); scopeTimer = null;
     scopePhase = "idle"; scopeTurns = 0; scopePending = null; scopeFrame = 0;
   }
+  let scopeTalk = "";   // 打開觀測鏡時佐佐木說的一句（固定，不因重繪重抽）
   function openScope(mineId) {
     scopeReset();
+    scopeTalk = tline("glass");
     const list = scopeMines();
     scopeMine = mineId || scopeMine || (list[0] || {}).id;
     if (!list.some(m => m.id === scopeMine)) scopeMine = (list[0] || {}).id;
@@ -366,14 +532,14 @@
       $("scopeName").textContent = m.name;
       $("scopeName").style.color = rarityColor(m.tier);
       $("scopeSay").textContent = full ? "鏡片已經到極限了。今天它不會再開口。"
-        : last ? last.line : pickOne(g.openLines || ["……要看礦脈？"]);
+        : last ? last.line : scopeTalk ? `${B().name}：「${scopeTalk}」` : pickOne(g.openLines || ["……要看礦脈？"]);
     }
 
     // 控制列
     $("scopeCtrl").innerHTML = scopePhase === "focus"
       ? `<button class="px-btn" id="scopeSkip">直接看結果</button>`
-      : `<button class="px-btn" id="scopeGo" ${full || save.coins < pr || scopePhase === "done" ? "disabled" : ""}>
-           ${full ? "已到極限" : `${(g.stages || [])[n] || "觀測"}　$${fmt(pr)}`}</button>
+      : `<button class="px-btn" id="scopeGo" ${full || save.coins < pr || scopePhase === "done" || !dailyOK() ? "disabled" : ""}>
+           ${!dailyOK() ? "確認日期後可使用" : full ? "已到極限" : `${(g.stages || [])[n] || "觀測"}　$${fmt(pr)}`}</button>
          <button class="px-btn" id="scopeBack">回老闆那裡</button>`;
 
     // 今日紀錄
@@ -387,8 +553,17 @@
     }).join("") : '<div class="sub">今天還沒觀測這座礦坑。</div>';
   }
 
-  function scopeBuy() {
+  /* 把這次觀測結果寫進「購買那天」的紀錄（擁有者 Q5＝B 同理）。轉鏡中跨過台灣午夜 → 舊的一天已結束，不寫進新一天 */
+  function scopeRecord() {
+    const st = glassState();
+    if (st.date !== scopePending.day) { toast("觀測中跨過午夜：這次結果算在昨天，不計入今天的紀錄", 4000); return false; }
+    (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
+    return true;
+  }
+  async function scopeBuy() {
     const g = glassCfg(), max = g.dailyMax ?? 5;
+    if (scopePhase !== "idle") return;
+    if (!(await clockFresh())) { toast("確認日期後可使用"); renderScope(); return; }
     if (scopePhase !== "idle") return;
     if (glassSeen(scopeMine).length >= max) { toast("鏡片已經到極限了"); return; }
     const pr = glassPrice(scopeMine);
@@ -397,7 +572,7 @@
     const st = glassState();
     const list = st.byMine[scopeMine] || (st.byMine[scopeMine] = []);
     const stage = list.length + 1;
-    scopePending = { e: glassDraw(todaySetting(scopeMine), stage), stage };
+    scopePending = { e: glassDraw(todaySetting(scopeMine), stage), stage, day: st.date };
     scopePhase = "focus"; scopeTurns = 0; scopeFrame = 0;
     persist(); renderScope(); renderHud();
     // 佐佐木的階段台詞
@@ -425,8 +600,7 @@
   function scopeSettle() {
     if (scopePhase !== "focus" || !scopePending) return;
     clearTimeout(scopeTimer); scopeTimer = null;
-    const st = glassState();
-    (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
+    scopeRecord();
     scopePhase = "done";
     persist(); renderScope(); renderHud();
     setTimeout(() => { if (scopePhase === "done") { scopeReset(); renderScope(); } }, 2600);
@@ -434,6 +608,7 @@
 
   function checkDay() {
     const k = todayKey();
+    if (!k) return;   // 日期未知：不換日、不重置次數
     if (save.today.date !== k) save.today = { date: k, stats: {} };
     if (save.ads.date !== k) save.ads = { date: k, count: 0 };
   }
@@ -453,12 +628,13 @@
     const ok = t => t.dur > 0 && toolDef(t.id);
     let t = save.tools.find(x => x.uid === save.equipped);
     if (t && ok(t)) return t;
-    // 自動裝備：優先「剛好夠格」的最低階，其次用手上最高階的低階工具；同階先用耐久少的
+    // 自動裝備：①「剛好夠格」的標準鎬子（最低階優先）②非標準工具（紅岩鑽頭，任何礦坑都正常效率；不看 tier）③手上最高階的低階標準鎬子；同組先用耐久少的
     const tierOf = x => toolDef(x.id).tier;
+    const grp = x => (!isStd(x.id) ? 1 : tierOf(x) >= mine.tier ? 0 : 2);
     const list = save.tools.filter(ok).sort((a, b) => {
-      const fa = tierOf(a) >= mine.tier, fb = tierOf(b) >= mine.tier;
-      if (fa !== fb) return fa ? -1 : 1;
-      return (fa ? tierOf(a) - tierOf(b) : tierOf(b) - tierOf(a)) || a.dur - b.dur;
+      const ga = grp(a), gb = grp(b);
+      if (ga !== gb) return ga - gb;
+      return (ga === 0 ? tierOf(a) - tierOf(b) : ga === 2 ? tierOf(b) - tierOf(a) : 0) || a.dur - b.dur;
     });
     t = list[0] || null;
     save.equipped = t ? t.uid : null;
@@ -535,6 +711,8 @@
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() { renderMineBase(); storySync(); }
+  /* 資訊列中間的「礦脈」「紫」：第一台顯示，第二台不顯示 */
+  function mbExtra(show) { ["mbHits", "mbEpic"].forEach(id => $(id).parentElement.classList.toggle("hidden", !show)); }
   function renderMineBase() {
     checkDay();
     if (isM2()) return renderMine2();
@@ -546,13 +724,16 @@
       stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.state === "chance" ? `｜${st.chanceIdx}/${st.chanceRounds}回合 ${st.chanceWin ? "會過" + (st.chanceFake ? "(先演失敗)" : "") : "不會過"}` : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
     }
     $("mbState").innerHTML = stateTxt;
-    $("mbSwings").textContent = fmt(ms.swings);
+    $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits;
     $("mbEpic").textContent = ms.epic;
-    $("mbSince").textContent = st.state === "bonus" ? "—" : st.sinceHit;
+    $("mbSinceL").textContent = "距上次礦脈";       // sinceHit：上次礦脈結束（或進坑）後的揮數，礦脈中顯示 —
+    $("mbSince").textContent = st.state === "bonus" ? "—" : fmt(st.sinceHit) + " 揮";
+    mbExtra(true); $("mbSince").parentElement.classList.remove("hidden");
 
     const inBonus = st.state === "bonus";
     $("veinBanner").classList.toggle("hidden", !inBonus);
+    $("vbUp").classList.add("hidden");
     $("scene").classList.toggle("vein-on", inBonus && st.bonusType === "SBB");
     if (inBonus) {
       const shownStock = st.stock.filter(x => x.announced).length;
@@ -583,23 +764,26 @@
   function renderMine2() {
     const mine = curMine(), st = state2(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
-    const PH = { normal: "", date: "談話中", at: "報酬", stIntro: "挑戰準備", st: "ST", reward: "一轉定勝負", pick: "選擇", dig: "挖掘中", bonus: "BONUS" };
-    let txt = st.upper ? colored("上位", "#ffcc33") + " " : "";
-    txt += PH[st.state] ? colored(PH[st.state], config.theme.accent) : "";
+    // 擁有者 2026-09-28：畫面上不出現「上位」「報酬」「BONUS」等術語，改成人話
+    const PH = { normal: "", date: "談話中", at: "前輩帶路中", stIntro: "獲得前輩的認可吧！", st: "獲得前輩的認可吧！", reward: "自己的紅包 自己爭取", pick: "選擇", dig: "挖掘中", bonus: "前輩的心意" };
+    let txt = PH[st.state] ? colored(PH[st.state], config.theme.accent) : "";
     if (dbg("showSetting")) {
       txt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${st.state}｜累${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手" + bossName2(st.stBoss) : ""}${st.bonusTotal ? "｜報酬" + st.bonusTotal + "轉" : ""}</span>`;
     }
     $("mbState").innerHTML = txt;
-    $("mbSwings").textContent = fmt(ms.swings);
+    $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits || 0;
     $("mbEpic").textContent = ms.dates || 0;
-    $("mbSince").textContent = st.sinceAt;
-    $("mbHits").textContent = ms.hits || 0;
+    $("mbSinceL").textContent = "距上次談話";       // sinceAt：上次前輩找你談話（或進坑）後的揮數
+    $("mbSince").textContent = fmt(st.sinceAt) + " 揮";
+    mbExtra(false);                  // 第二台只留「本日」「累計」，礦脈／紫不顯示
     const inRun = ["at", "st", "reward", "pick", "dig", "bonus", "stIntro"].includes(st.state);
+    $("mbSince").parentElement.classList.toggle("hidden", inRun);   // 談話成功後的各階段不顯示「距上次談話」（原本的「累計」隱藏規則）
     $("veinBanner").classList.toggle("hidden", !inRun);
+    $("vbUp").classList.toggle("hidden", !st.upper);     // 「已獲得最終認可」獨立一行
     $("scene").classList.toggle("vein-on", !!st.upper);
     if (inRun) {
-      $("vbChain").innerHTML = (st.upper ? colored("上位", "#ffcc33") + " " : "") + (st.state === "bonus" ? `BONUS(${st.bonusTotal}轉)` : st.state === "st" ? `ST 第${st.stRound}關` : st.state === "at" ? "報酬" : "挑戰") + (st.cleared ? ` <span class="sub">通關${st.cleared}</span>` : "");
+      $("vbChain").innerHTML = (st.state === "bonus" ? `前輩的心意 ${st.bonusTotal}` : st.state === "st" ? `第${st.stRound}關` : st.state === "stIntro" ? `第${st.stRound + 1}關` : st.state === "at" ? "前輩帶路中" : "自己的紅包");
       $("vbLeft").textContent = st.state === "bonus" ? st.bonusLeft : st.state === "st" ? st.stLeft : st.state === "at" ? st.atLeft : "—";
       $("vbGain").textContent = money(st.gain * (mine.mult || 1));
     }
@@ -620,6 +804,7 @@
   function setTextbox(lines, omen, opts) {
     opts = opts || {};
     const box = $("textbox");
+    clockMsgOn = false;
     box.classList.remove("omen-rainbow", "hint-blink");
     const oc = config.rules.omen.colors;
     const layoutBorder = ((config.layout || {}).textbox || {}).border || "";
@@ -633,15 +818,48 @@
   }
   function colored(txt, color) { return color === "rainbow" ? `<span class="rainbow-text">${txt}</span>` : `<span style="color:${color}">${txt}</span>`; }
 
+  /* ---------------- 日期未知時的挖礦畫面（階段3B，擁有者 Q1＝A） ----------------
+     取不到台灣日期：第一台、第二台、自動挖掘都不揮；敘述框顯示確認中／失敗＋重試。背包、紀錄、設定照常可看。 */
+  let clockMsgOn = false;
+  const clockChecking = () => !clock.failKind && (!!clock.syncing || !clock.base);
+  function showClockMsg() {
+    setTextbox(clockChecking()
+      ? [colored("正在確認今天的日期…", "#7fe3ff"), colored("需要連上網路（台灣時間）", config.theme.sub)]
+      : [colored("需要連上網路確認今天的日期（台灣時間）。", "#ffcc33"), `<button class="px-btn small" id="clockRetry">重試</button>`], 0, { tap: "確認日期後可以挖礦" });
+    clockMsgOn = true;
+  }
+  function dayBlocked() {   // 揮擊入口：日期未知 → 不抽、不耗工具、停自動
+    if (todayKey()) return false;
+    if (save.auto) { save.auto = false; clearTimeout(autoTimer); }
+    renderMineBase(); showClockMsg();
+    if (!clock.syncing) clockSync();
+    return true;
+  }
+  function clockChanged() {   // 時鐘變成有效／無效時，重畫受影響的畫面
+    if (currentScreen === "mine" && !save.senpai.story) {
+      if (!todayKey()) dayBlocked();
+      else if (clockMsgOn) { clockMsgOn = false; setTextbox([colored("日期確認完成，可以挖礦了", config.theme.sub)], 0); renderMine(); }
+    }
+    if (currentScreen === "shop" && $("modal").classList.contains("hidden")) renderShop();
+    if (currentScreen === "scope") renderScope();
+    renderClockTag();
+  }
+  function renderClockTag() {   // 測試替身（只限 localhost）：資訊列角落標示
+    const el = $("clockTag"); if (!el) return;
+    el.textContent = clock.sandbox ? "測試：裝置日期" : "";
+    el.classList.toggle("hidden", !clock.sandbox);
+  }
+
   /* ---------------- 第二台機台：一次點擊 ---------------- */
   function doSwing2(input) {
     if (save.senpai.story) { stopAuto(); return null; }     // 回憶演出中：不抽、不耗工具
+    if (dayBlocked()) return null;                          // 台灣日期未知：不揮（Q1＝A）
     checkDay();
     const mine = curMine(), R = M2(), st = state2(), T = R.lines, sub = config.theme.sub;
     const free = FREE2.includes(st.state);
     const tool = activeTool();
     if (!free && !tool) {
-      const need = config.tools.find(t => t.tier === mine.tier);
+      const need = stdOfTier(mine.tier);
       setTextbox([colored(config.texts.noTool, "#ff5555"), colored(`建議使用「${need ? need.name : ""}」以上`, sub), `到${config.boss.name}那裡買，或看廣告領取`], 0);
       setChoices(null); stopAuto(); renderMine();
       return null;
@@ -668,14 +886,14 @@
       } else {
         const qty = Math.max(1, res.qty || 1);
         save.ores[name] = (save.ores[name] || 0) + qty;
-        if (!save.dex[name]) { save.dex[name] = { count: 0, first: todayKey() }; newFind = true; }
+        if (!save.dex[name]) { save.dex[name] = { count: 0, first: dayOrLast() }; newFind = true; }
         save.dex[name].count += qty;
         const price = itemPrice(name);
         lines.push(sfx + " " + colored(name, oreColor(name)) + (qty > 1 ? colored(` ×${qty}`, config.theme.accent) : "") + ` <span style="color:${sub}">$${money(price * qty)}</span>` + (newFind ? colored(" NEW", config.theme.accent) : ""));
         bigHtml = colored(name, oreColor(name)) + (qty > 1 ? colored(` ×${qty}`, config.theme.accent) : "");
       }
       tool.dur--;
-      if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
+      if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); talk().broke = true; lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
     }
 
     let tag = "", omen = 0, choices = null, skipBig = false;
@@ -707,6 +925,7 @@
         lines.push(colored(T.atStart, "rainbow")); ms.hits = (ms.hits || 0) + 1;
         if (senpaiWin(e.boss)) lines.push(colored(`【${bossName2(e.boss)}】好像有話要跟你說……`, "#ffcc33"));
       }
+      if (e.t === "dateWin" || e.t === "dateLose") { const t = talk(); if (!t.trip) t.trip = { boss: null }; t.trip.boss = e.boss; }   // 這一趟最後談過話的前輩   // 談話結束（成功或失敗）→ 佐佐木下次有機會提起這位前輩
       if (e.t === "dateLose") {
         const pool = (e.scene && e.scene !== "normal" && sc(e.boss, e.scene, "lose")) || bl(e.boss, "lose", [T.dateLose]);
         lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(pool), sub));
@@ -715,10 +934,12 @@
       if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
       if (e.t === "askBoss") {
         lines.push(colored(T.askBoss, config.theme.accent));
-        choices = M2().bosses.map(b => ({ v: b.id, label: `▶ 「${b.name}前輩，這次我要得到你的信任」` }));
+        choices = M2().bosses.map(b => ({ v: b.id, label: `▶ 「${b.name}前輩，這回讓我試試。」` }));
       }
       if (e.t === "stStart") {
-        lines.push(colored(`第${e.round}關　${T.stAppear} ` + colored(bossName2(e.boss), "#ffcc33"), "#e8e8e8"));
+        // stAppear 用 {name} 放前輩名字（例：這回由{name}前輩出題。）；舊設定沒有 {name} 時沿用「文字＋名字」
+        const nm = colored(bossName2(e.boss), "#ffcc33");
+        lines.push(colored(`第${e.round}關　` + (String(T.stAppear || "").includes("{name}") ? T.stAppear.replace("{name}", nm) : `${T.stAppear} ` + nm), "#e8e8e8"));
         const again = e.same ? bl(e.boss, "again", null) : null;
         const ap = again || bl(e.boss, "appear", null);
         if (ap) lines.push(colored(pickOne(ap), e.same ? "#ffcc33" : sub));
@@ -747,8 +968,10 @@
       const scn = st.dateScene || "normal";
       tag = scn === "normal" ? "≋ 談話中 ≋" : `≋ ${scPlace(st.dateBoss, scn) || "外出"} ≋`;
     }
-    else if (stt === "at" || stt === "bonus") tag = st.upper ? "≋ 上位・報酬中 ≋" : "≋ 報酬中 ≋";
-    else if (stt === "st") tag = st.upper ? `≋ 上位ST 第${st.stRound}關 ≋` : `≋ ST 第${st.stRound}關 ≋`;
+    // 擁有者 2026-09-28：標籤寫「第 N 次認可」（N＝通關次數），不寫「上位」「報酬」
+    else if (stt === "at") tag = "≋ 前輩帶路中 ≋";
+    else if (stt === "bonus") tag = st.cleared ? `≋ 第 ${st.cleared} 次認可 ≋` : "≋ 前輩的心意 ≋";
+    else if (stt === "st") tag = `≋ 獲得前輩的認可吧！ 第${st.stRound}關 ≋`;
     if (st.upper) omen = 6;
     else if (stt === "st") omen = 2;
 
@@ -779,9 +1002,9 @@
   const SCENE_COLOR = { strong: "#55aaff", hot: "#ffcc33" };
   /* 鏟子：+N 的數字散落在場景框裡，不重疊 */
   let digCells = [];
-  function clearDigNums() { const sc = $("scene"); sc.querySelectorAll(".dig-num").forEach(n => n.remove()); digCells = []; }
+  function clearDigNums() { const sc = $("sceneStage"); sc.querySelectorAll(".dig-num").forEach(n => n.remove()); digCells = []; }
   function addDigNum(inc) {
-    const sc = $("scene"), cols = 4, rows = 6;
+    const sc = $("sceneStage"), cols = 4, rows = 6;
     if (digCells.length >= cols * rows) clearDigNums();
     let cell;
     for (let i = 0; i < 60; i++) { const c = Math.floor(Math.random() * cols * rows); if (!digCells.includes(c)) { cell = c; break; } }
@@ -803,9 +1026,9 @@
     box.innerHTML = `<div class="boss-name">結算</div>
       <div style="margin:10px 0;line-height:1.9;text-align:left">
         通關關數　<b>${e.cleared || 0}</b> 關<br>
-        最大一次報酬　<b>${e.maxBonus || 0}</b> 轉<br>
+        單次最多可挖　<b>${e.maxBonus || 0}</b> 次<br>
         本輪總收穫　<b style="color:${config.theme.accent}">$${money((e.gain || 0) * mult)}</b><br>
-        ${e.upper ? '<span style="color:#ffcc33">※ 這一輪進過上位</span><br>' : ""}
+        ${e.upper ? '<span style="color:#ffcc33">※ 這一輪獲得過最終認可</span><br>' : ""}
         <span class="sub">最後倒在 ${bossName2(e.boss)} 手上</span>
       </div>
       <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
@@ -826,11 +1049,12 @@
   function doSwing() {
     if (save.senpai.story) { renderMine(); return null; }   // 回憶演出中：不抽、不耗工具
     if (isM2()) return doSwing2();
+    if (dayBlocked()) return null;                          // 台灣日期未知：不揮（Q1＝A）
     checkDay();
     const mine = curMine(), T = config.texts, rules = config.rules, sub = config.theme.sub;
     const tool = activeTool();
     if (!tool) {
-      const need = config.tools.find(t => t.tier === mine.tier);
+      const need = stdOfTier(mine.tier);
       setTextbox([colored(T.noTool, "#ff5555"), colored(`建議使用「${need ? need.name : ""}」以上`, sub), `到${config.boss.name}那裡買，或看廣告領取`], 0);
       stopAuto(); renderMine();
       return null;
@@ -866,7 +1090,7 @@
       const inVein = r.stateBefore === "bonus";
       const name = pickOne((inVein && mine.veinItems && mine.veinItems[r.cat]) || mine.items[r.cat]);
       save.ores[name] = (save.ores[name] || 0) + 1;
-      if (!save.dex[name]) { save.dex[name] = { count: 0, first: todayKey() }; newFind = true; }
+      if (!save.dex[name]) { save.dex[name] = { count: 0, first: dayOrLast() }; newFind = true; }
       save.dex[name].count++;
       const price = itemPrice(name);
       if (r.stateBefore === "bonus") veinGain += price;
@@ -920,7 +1144,7 @@
       const td = rules.toolDrop;
       let tier = mine.tier;
       if (mine.tier > 1 && Math.random() >= td.sameTier) tier = 1 + Math.floor(Math.random() * (mine.tier - 1));
-      const def = config.tools.find(t => t.tier === tier) || config.tools[0];
+      const def = stdOfTier(tier) || stdTools()[0];
       addTool(def.id, td.minDur + Math.random() * (td.maxDur - td.minDur));
       lines.push(T.toolDrop + colored(def.name, rarityColor(def.rarity)));
     }
@@ -930,6 +1154,7 @@
     if (tool.dur <= 0) {
       save.tools = save.tools.filter(t => t.uid !== tool.uid);
       lines.push(colored(T.toolBreak + toolDef(tool.id).name, "#ff5555"));
+      talk().broke = true;          // 佐佐木之後才知道「上一把用壞了」
       broke = true;
     }
 
@@ -981,7 +1206,7 @@
       (r.omen >= stopAt && r.stateBefore !== "bonus") || res.st.state === "zencho" || res.st.state === "chance" || res.st.state === "revive" ||
       (res.broke && !activeTool());
     if (stop) { stopAuto(); return; }
-    autoTimer = setTimeout(autoStep, ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
+    autoTimer = setTimeout(autoStep, autoWait());
   }
   // 第二台機台：自動時直接跳過所有對話演出
   // 演出開始就停自動：玩家可以自己點，或再按一次自動＝快速跳過
@@ -997,7 +1222,7 @@
     const free = FREE2.includes(out.res.stateBefore);
     if (out.res.events.some(e => AUTO_STOP2.includes(e.t))) { stopAuto(); return; }
     if (!activeTool() && !FREE2.includes(state2().state)) { stopAuto(); return; }
-    autoTimer = setTimeout(autoStep2, free ? 90 : ((config.play && config.play.autoInterval) || 350) / (1 + boonSum("autoSpeed")));
+    autoTimer = setTimeout(autoStep2, free ? 90 : autoWait());
   }
   function stopAuto() { save.auto = false; clearTimeout(autoTimer); renderMine(); }
   function toggleAuto() {
@@ -1028,12 +1253,14 @@
   }
   function storyLogEl() {
     let el = $("storyLog");
-    if (!el) { el = document.createElement("div"); el.id = "storyLog"; el.className = "story-log"; $("scene").appendChild(el); }
+    if (!el) { el = document.createElement("div"); el.id = "storyLog"; el.className = "story-log"; $("sceneStage").appendChild(el); }
     return el;
   }
   /* 每次 renderMine 都會呼叫：有回憶就把上方畫成對話紀錄、下方改成「點擊繼續」；沒有就收掉 */
   function storySync() {
     const S = save.senpai.story, sceneEl = $("scene");
+    // 回憶播放中收起「工具耐久／手動／離開」整列，讓出閱讀空間；結束就恢復
+    $("scr-mine").classList.toggle("story-mode", !!(S && memDef(S.boss)));
     if (!S) {
       if (sceneEl.classList.contains("story-on")) { sceneEl.classList.remove("story-on"); storyLogEl().innerHTML = ""; }
       return;
@@ -1044,10 +1271,9 @@
     sceneEl.classList.add("story-on");
     sceneEl.classList.remove("vein-on");
     const log = storyLogEl();
-    log.innerHTML = `<div class="story-head">【${esc(name)}】的回憶〈${esc(d.title || "")}〉</div>`
-      + d.lines.slice(0, step).map((l, i) => `<div class="story-line${i === step - 1 ? " new" : ""}">${esc(l)}</div>`).join("")
-      + (step >= N ? `<div class="story-end">── 取得「${esc(d.item || "")}」 ──</div>` : "");
-    log.scrollTop = log.scrollHeight;
+    // 展示框只放對話（標題與進度在下方敘述框）；取得的收藏品在收下時才揭曉
+    log.innerHTML = d.lines.slice(0, step).map((l, i) => `<div class="story-line${i === step - 1 ? " new" : ""}">${esc(l)}</div>`).join("");
+    storyFit(log);
     const tap = step >= N ? "▼ 收下回憶並繼續" : "▼ 點擊繼續";
     if (storyFresh) { $("tbTap").textContent = tap; }
     else {
@@ -1058,7 +1284,12 @@
     $("textbox").classList.toggle("story-final", step >= N);
     setChoices(null);
   }
-  window.addEventListener("resize", () => { const el = $("storyLog"); if (el && save.senpai.story) el.scrollTop = el.scrollHeight; });
+  /* 對話往下疊；超出展示框時貼齊最新一句，最舊的從上方淡出（.over 才加淡出遮罩） */
+  function storyFit(log) {
+    log.scrollTop = log.scrollHeight;
+    log.classList.toggle("over", log.scrollHeight > log.clientHeight + 1);
+  }
+  window.addEventListener("resize", () => { const el = $("storyLog"); if (el && save.senpai.story) storyFit(el); });
   function storyTap() {
     const S = save.senpai.story; if (!S) return;
     const d = memDef(S.boss);
@@ -1075,7 +1306,7 @@
   function storyFinish() {
     const S = save.senpai.story; if (!S) return;
     const b = S.boss, d = memDef(b) || {};
-    if (!save.senpai.memories[b]) save.senpai.memories[b] = { date: todayKey(), wins: save.senpai.wins[b] || 0 };
+    if (!save.senpai.memories[b]) save.senpai.memories[b] = { date: dayOrLast(), wins: save.senpai.wins[b] || 0 };
     save.senpai.story = null;
     storyFresh = false;
     storyDoneAt = Date.now();
@@ -1083,8 +1314,8 @@
     $("textbox").classList.remove("story-final");
     renderMine();
     setTextbox([colored(`獲得了「${esc(d.item || "")}」`, "#ffcc33"),
-      colored("收在「成就」頁的「珍貴回憶」裡", config.theme.sub),
-      colored("回到剛才的報酬——點擊繼續挖礦", config.theme.accent)], 0);
+      colored("收在「紀錄」頁〈成就〉的「珍貴回憶」裡", config.theme.sub),
+      colored("前輩的心意還在——點擊繼續挖礦", config.theme.accent)], 0);
     const big = $("sceneBig");
     $("sceneSub").textContent = "收藏品・不能出售";
     big.innerHTML = colored(esc(d.item || ""), "#ffcc33"); big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
@@ -1107,11 +1338,11 @@
 
     const idx = itemIndex();
     const names = oreNames();
-    let total = 0;
+    const total = sellTotal(names.map(n => [n, save.ores[n]]));
     $("bagOres").innerHTML = names.length ? names.map(n => {
-      const p = itemPrice(n), c = save.ores[n]; total += p * c;
+      const p = itemPrice(n), c = save.ores[n];
       return `<div class="row"><div class="grow"><span style="color:${rarityColor(idx[n].cat.rarity)}">${n}</span> ×${c}
-        <div class="sub">單價 $${money(p)}</div></div></div>`;
+        <div class="sub">單價 $${money2(p)}</div></div></div>`;
     }).join("") : '<div class="sub">背包是空的</div>';
     $("bagOreTotal").textContent = names.length ? `總價值 $${money(total)}｜要賣礦石請找${config.boss.name}` : "";
     renderHud();
@@ -1159,10 +1390,12 @@
     const c = Math.min(n === Infinity ? have : want, have);
     if (c < 1) return;
     const short = (n !== Infinity && want > have);
+    const gain = sellTotal([[name, c]]);
     save.ores[name] -= c; if (save.ores[name] <= 0) delete save.ores[name];
-    save.coins += itemPrice(name) * c;
+    save.coins = Math.round((save.coins + gain) * 10) / 10;
     sellQty[name] = 1;
-    toast(`${short ? `只剩 ${have} 個｜` : ""}賣出 ${name} ×${c}  +$${money(itemPrice(name) * c)}`);
+    if (((itemIndex()[name] || {}).cat || {}).rarity >= 4) bossLine = TK().rareSell;   // 紫／金礦
+    toast(`${short ? `只剩 ${have} 個｜` : ""}賣出 ${name} ×${c}  +$${money(gain)}`);
     persist(); renderShop();
   }
   const sellQty = {};   // 每種礦石目前選的出售數量（只是 UI 狀態，不進存檔）
@@ -1182,9 +1415,8 @@
     const btn = document.querySelector(`[data-ore-sell="${cssQ(name)}"]`);
     if (range) range.value = q;
     if (num) num.value = q;
-    const p = itemPrice(name);
     if (info) {
-      info.textContent = `本次出售 ×${q}｜出售後剩餘 ×${have - q}｜可得 $${money(p * q)}`;
+      info.textContent = `本次出售 ×${q}｜出售後剩餘 ×${have - q}｜可得 $${money(sellTotal([[name, q]]))}`;
       info.style.color = fixed ? "#ffd76a" : "";
       if (fixed) setTimeout(() => { if (info) info.style.color = ""; }, 900);
     }
@@ -1198,7 +1430,7 @@
     checkDay();
     $("mapList").innerHTML = config.mines.map(m => {
       const unlocked = save.unlocked.includes(m.id), ms = mineStats(m.id);
-      const need = config.tools.find(t => t.tier === m.tier);
+      const need = stdOfTier(m.tier);
       const here = m.id === save.mineId;
       const epicRate = ms.epic ? `1/${Math.round(ms.normalSwings / ms.epic)}` : "—";
       const btn = here ? '<span class="sub">所在地</span>'
@@ -1206,9 +1438,18 @@
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}天井 ${m.tenjou}｜建議 ${need ? need.name : "?"}${unlocked ? `｜本日 ${ms.swings}揮 礦脈${ms.hits} 紫${epicRate}` : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";border-radius:5px;padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub map-guard">${guardText(m)}</div>
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}建議 ${need ? need.name : "?"}${unlocked ? `｜<span class="nowrap">今日此坑 ${fmt(ms.swings)} 揮</span>` + (m.engine === 2 ? "" : ` <span class="nowrap">礦脈${ms.hits} 紫${epicRate}</span>`) : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";border-radius:5px;padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
     }).join("");
     renderCloud();
+  }
+
+  /* 探索保障（內部叫天井）：顯示的揮數必須跟引擎真正用的門檻一致
+     第一種：engine.js 用 mine.tenjou 比 sinceHit → 到達後進入「礦脈前兆」，前兆結束才開礦脈
+     前輩礦坑：engine2.js 用 machine2.tenjou 比 sinceAt → 到達後好感度最高的前輩找你談話（成不成功照常抽） */
+  function guardText(m) {
+    if (m.engine === 2) return `探索保障 ${fmt(M2().tenjou || 0)} 揮：一直沒有前輩找你，就會有前輩主動來談話（不保證成功）`;
+    return `探索保障 ${fmt(m.tenjou || 800)} 揮：一直沒碰到礦脈，就會先出現礦脈前兆`;
   }
 
   /* ---------------- 雲端存檔（介面） ---------------- */
@@ -1221,13 +1462,15 @@
       return;
     }
     const st = Cloud.status(), u = Cloud.user();
+    pidAccount(u);
     const dot = st === "in" || st === "busy" ? "#43d17a" : st === "error" ? "#ff5555" : "#888";
     box.innerHTML = `<div class="panel-title">雲端存檔
         <span class="sub"><span style="color:${dot}">●</span> ${CLOUD_TXT[st] || st}</span></div>
       <div class="sub">${u ? u.email : "登入之後，存檔會自動同步，換手機也接得回來。"}</div>
       ${u ? `<div class="pid-box"><span class="sub">玩家 ID</span>
-              <span class="pid-num ${pidStyle === "rainbow" ? "rainbow" : ""}" id="pidNum">${playerId ? esc(playerId) : "……"}</span>
-              <button class="px-btn small" id="pidCopy" ${playerId ? "" : "disabled"}>複製</button></div>
+              <span class="pid-num ${pidStyle === "rainbow" ? "rainbow" : ""}" id="pidNum">${playerId ? esc(playerId) : pid.st === "fail" ? "—" : "……"}</span>
+              ${pid.st === "fail" && !playerId ? `<button class="px-btn small" id="pidRetry" ${pid.busy ? "disabled" : ""}>重試</button>` : `<button class="px-btn small" id="pidCopy" ${playerId ? "" : "disabled"}>複製</button>`}</div>
+             ${pid.st === "fail" && !playerId ? `<div class="sub" id="pidMsg" style="color:#ffcc33">暫時無法取得玩家 ID${pid.timer ? "，稍後會自動再試一次" : "，可以按「重試」"}。</div>` : ""}
              <div class="sub" style="opacity:.75">需要補發獎勵時，可以把這組 ID 提供給管理員。</div>` : ""}
       ${st === "error" ? `<div class="sub" style="color:#ff5555">${Cloud.error()}</div>` : ""}
       <div class="btns" style="margin-top:8px">
@@ -1240,26 +1483,52 @@
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
-    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; playerId = null; pidStyle = "normal"; adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
+    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; pidReset(null); adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
     on("cldPush", async () => { const r = await cloudPush(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
     on("cldPull", cloudPullAsk);
     on("pidCopy", () => copyText(playerId, "已複製玩家 ID " + playerId));
-    if (u && !playerId && !pidAsking) loadPlayerId();
+    on("pidRetry", () => loadPlayerId(true, true));
+    if (u && pid.st === "idle") loadPlayerId();   // 只有「這個帳號還沒問過」才自動問；失敗後不會因為重畫而再打
   }
 
   /* ---------------- 玩家 ID ----------------
      六碼純數字，由資料庫產生並綁定帳號。前端只是顯示，不參與配號。 */
-  let playerId = null, pidStyle = "normal", pidAsking = false;
-  async function loadPlayerId(force) {
+  /* 2026-09-30：查不到（空結果或請求錯誤）不再「重畫→再查→重畫」無限循環。
+     每個帳號在這次頁面生命週期有一份狀態 pid：idle（還沒問）／ok／fail。
+     失敗後只照 PID_RETRY 的間隔自動再試有限次，用完就停，只能按「重試」。
+     登出、換帳號（user.id 不同）時整份狀態清掉，舊帳號還在路上的回應也會被丟掉（gen）。 */
+  const PID_RETRY = [5000, 20000];   // 失敗後自動重試的等待時間（毫秒）；總共最多 1＋2 次自動請求
+  let playerId = null, pidStyle = "normal";
+  let pid = { acct: null, st: "idle", busy: false, auto: 0, timer: null, gen: 0 };
+  function pidReset(acct) {
+    clearTimeout(pid.timer);
+    pid = { acct, st: "idle", busy: false, auto: 0, timer: null, gen: pid.gen + 1 };
+    playerId = null; pidStyle = "normal";
+  }
+  function pidAccount(u) {
+    const acct = u ? String(u.id || u.email || "?") : null;
+    if (acct !== pid.acct) pidReset(acct);
+  }
+  async function loadPlayerId(force, manual) {
     if (!cloudOn() || !window.Cloud.myPlayerProfile) return null;
-    if (pidAsking) return playerId;
-    pidAsking = true;
-    try {
-      const p = await Cloud.myPlayerProfile(force);
-      playerId = p ? p.player_id : null;
-      pidStyle = (p && p.id_style) || "normal";
-    } catch (e) { playerId = null; pidStyle = "normal"; }
-    pidAsking = false;
+    pidAccount(Cloud.user());
+    if (!pid.acct || pid.busy) return playerId;
+    clearTimeout(pid.timer); pid.timer = null;
+    if (manual) pid.auto = PID_RETRY.length;   // 手動重試失敗就停在失敗畫面，不再自動排程
+    const gen = pid.gen;
+    pid.busy = true;
+    if (pid.st === "idle") pid.st = "loading";
+    if (manual) renderCloud();                 // 重試按鈕先變灰，避免連點
+    let p = null;
+    try { p = await Cloud.myPlayerProfile(force || pid.st === "fail"); } catch (e) { p = null; }
+    if (gen !== pid.gen) return null;          // 等待期間已登出或換帳號：丟掉這個回應
+    pid.busy = false;
+    if (p && p.player_id) {
+      playerId = String(p.player_id); pidStyle = p.id_style || "normal"; pid.st = "ok";
+    } else {
+      playerId = null; pidStyle = "normal"; pid.st = "fail";
+      if (pid.auto < PID_RETRY.length) pid.timer = setTimeout(() => { pid.timer = null; loadPlayerId(true); }, PID_RETRY[pid.auto++]);
+    }
     renderCloud();
     return playerId;
   }
@@ -1368,25 +1637,36 @@
     if (m.tool_id && m.tool_qty) { const t = toolDef(m.tool_id); parts.push((t ? t.name : m.tool_id) + " ×" + m.tool_qty); }
     return parts.join("　");
   }
+  function mailRow(m) {
+    const got = !!mailCache.claimed[m.id], old = mailExpired(m), rw = mailReward(m);
+    const when = m.created_at ? new Date(m.created_at).toLocaleDateString() : "";
+    const state = old
+      ? `<span class="mail-status mail-expired">${got ? "已領取・過期" : "過期"}</span>`
+      : got ? '<span class="mail-status">已領取</span>'
+      : rw ? `<button class="px-btn small" data-claim="${m.id}">領取</button>`
+      : `<button class="px-btn small" data-claim="${m.id}">已讀</button>`;
+    return `<div class="row mail-row">
+      <div><b>${esc(m.title)}</b> <span class="sub">${when}${m.to_user ? "｜給你的" : ""}</span></div>
+      ${m.body ? `<div class="sub mail-body">${esc(m.body)}</div>` : ""}
+      ${rw ? `<div class="sub mail-reward">附件：${esc(rw)}</div>` : ""}
+      <div class="mail-state">${state}</div>
+    </div>`;
+  }
+  function mailSection(title, list, empty) {
+    return `<section class="mail-section" data-mail-section="${title}">
+      <div class="mail-section-title"><b>${title}</b><span class="sub">${list.length}</span></div>
+      ${list.length ? list.map(mailRow).join("") : `<div class="sub mail-empty">${empty}</div>`}
+    </section>`;
+  }
   function openMail() {
     const box = $("modalBox");
-    const rows = mailCache.mail.map(m => {
-      const got = !!mailCache.claimed[m.id], old = mailExpired(m), rw = mailReward(m);
-      const when = m.created_at ? new Date(m.created_at).toLocaleDateString() : "";
-      return `<div class="row" style="display:block;text-align:left">
-        <div><b>${esc(m.title)}</b> <span class="sub">${when}${m.to_user ? "｜給你的" : ""}</span></div>
-        ${m.body ? `<div class="sub" style="white-space:pre-wrap;margin:4px 0">${esc(m.body)}</div>` : ""}
-        ${rw ? `<div class="sub" style="color:#ffd34d">附件：${esc(rw)}</div>` : ""}
-        <div style="margin-top:6px">${
-          got ? '<span class="sub">已領取</span>'
-          : old ? '<span class="sub" style="color:#888">已過期</span>'
-          : rw ? `<button class="px-btn small" data-claim="${m.id}">領取</button>`
-          : `<button class="px-btn small" data-claim="${m.id}">已讀</button>`}</div>
-      </div>`;
-    }).join("");
+    const unread = [], settled = [];
+    mailCache.mail.forEach(m => (mailCache.claimed[m.id] || mailExpired(m) ? settled : unread).push(m));
+    const rows = mailSection("未領取", unread, "目前沒有未領取信件。")
+      + mailSection("已領取", settled, "目前沒有已領取或過期信件。");
     box.innerHTML = `<div>信箱</div>
       <div class="sub" style="margin-top:4px">${cloudOn() ? "" : "要先登入雲端才收得到信。"}</div>
-      <div class="list" style="max-height:52vh;overflow:auto;margin-top:8px">${rows || '<div class="sub">目前沒有信件。</div>'}</div>
+      <div class="list mail-list">${rows}</div>
       <div class="btns"><button class="px-btn" id="mailRe">重新整理</button>
         ${adminSeen ? '<button class="px-btn" id="mailAdmin">管理信箱</button>' : ""}
         <button class="px-btn" id="mailNo">關閉</button></div>`;
@@ -1414,13 +1694,14 @@
   }
   async function claimMail(id, btn) {
     const m = mailCache.mail.find(x => x.id === id); if (!m) return;
+    if (mailExpired(m)) { toast("這封信已過期"); openMail(); return; }
     btn.disabled = true;
     const r = await Cloud.claim(id);
     if (!r.ok) { btn.disabled = false; return toast(r.err || "領取失敗"); }
     mailCache.claimed[id] = true;
     if (m.coins) save.coins += m.coins;
     if (m.ore_name && m.ore_qty) save.ores[m.ore_name] = (save.ores[m.ore_name] || 0) + m.ore_qty;
-    if (m.tool_id && m.tool_qty) for (let i = 0; i < m.tool_qty; i++) addTool(m.tool_id, 1);
+    if (m.tool_id && m.tool_qty && isStd(m.tool_id)) for (let i = 0; i < m.tool_qty; i++) addTool(m.tool_id, 1);   // 信箱只發標準鎬子（試用／付費品不能從這裡取得）
     persist(true); renderAll(); renderMailBadge();
     const rw = mailReward(m);
     toast(rw ? "領取成功：" + rw : "已讀");
@@ -1445,7 +1726,7 @@
   function openAdminMail() {
     const box = $("modalBox");
     const oreOpts = oreNamesAll().map(n => `<option value="${esc(n)}" ${ADM.ore === n ? "selected" : ""}>${esc(n)}</option>`).join("");
-    const toolOpts = config.tools.map(t => `<option value="${esc(t.id)}" ${ADM.tool === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("");
+    const toolOpts = stdTools().map(t => `<option value="${esc(t.id)}" ${ADM.tool === t.id ? "selected" : ""}>${esc(t.name)}</option>`).join("");
     const modeBtn = (m, label, danger) =>
       `<button data-adm-mode="${m}" class="${ADM.mode === m ? "on" : ""} ${danger ? "danger" : ""}">${label}</button>`;
 
@@ -1736,8 +2017,9 @@
     $("saYes").onclick = () => {
       $("modal").classList.add("hidden");
       const names = oreNames(); if (!names.length) return renderShop();
-      let s2 = 0; names.forEach(n => { s2 += itemPrice(n) * save.ores[n]; });
-      save.coins += s2; save.ores = {};
+      const s2 = sellTotal(names.map(n => [n, save.ores[n]]));
+      if (names.some(n => ((itemIndex()[n] || {}).cat || {}).rarity >= 4)) bossLine = TK().rareSell;
+      save.coins = Math.round((save.coins + s2) * 10) / 10; save.ores = {};
       Object.keys(sellQty).forEach(k => delete sellQty[k]);
       toast(`全部賣出 +$${money(s2)}`); persist(); renderShop();
     };
@@ -1760,17 +2042,113 @@
   /* ---------------- 礦坑老闆 佐佐木 ---------------- */
   let bossView = "menu", bossLine = null;
   const B = () => config.boss;
+
+  /* ---------------- 佐佐木的情境台詞（v0.10.13 本機） ----------------
+     save.boss.talk：舊存檔沒有 → 用到時才補預設；次數從這一版開始記，不從等級反推。
+       lines   交付過的委託「項目」數（一行算一次）
+       boards  整張委託全部完成的次數
+       lastVisit / lastLeave  上次進店／離店時間（毫秒）
+       broke   有工具真的挖到壞掉，還沒被佐佐木提過
+       trip    正在「三位前輩的考驗」這一趟：{ boss }＝這一趟最後談過話（成功或失敗）的前輩
+       after   剛從前輩礦坑離開的有效狀態 { boss }：離開時建立；下一次進店抽一次閒聊後就清掉，
+               或者還沒去店裡就又走進前輩礦坑，也清掉（避免之後每次進店都重抽）
+       chatIdx 每位前輩下一次說第幾句（兩句輪流）
+       dealAt  這次進店交付委託的時間（給「錢還沒捂熱」用，說過就清掉）
+     每次最多一句：操作結果／錯誤 ＞ 前輩閒聊與進店情境 ＞ 一般招呼。
+     同一個畫面重繪不會重抽（talkView / talkText）。 */
+  const TK = () => B().talk || {};
+  function talk() {
+    const bs = save.boss;
+    if (!bs.talk || typeof bs.talk !== "object") bs.talk = {};
+    const t = bs.talk;
+    if (!t.since) t.since = window.GAME_VERSION || "";
+    t.lines = Math.max(0, t.lines | 0); t.boards = Math.max(0, t.boards | 0);
+    t.lastVisit = +t.lastVisit || 0; t.lastLeave = +t.lastLeave || 0; t.dealAt = +t.dealAt || 0;
+    t.broke = !!t.broke;
+    if (!t.chatIdx || typeof t.chatIdx !== "object") t.chatIdx = {};
+    delete t.chat; delete t.lastChatAt;                      // 舊版（談話結束就排閒聊）的欄位，已停用
+    if (t.trip && typeof t.trip !== "object") t.trip = null;
+    if (t.after && typeof t.after !== "object") t.after = null;
+    return t;
+  }
+  function talkStage() {   // 0 完全不熟／1 開始熟悉／2 非常熟：只看恩惠等級
+    const S = TK().stages || [], lv = save.boss.level || 1;
+    let s = 0;
+    S.forEach((c, i) => { if (i && c.lv && lv >= c.lv) s = i; });
+    return s;
+  }
+  /* 前輩礦坑的「這一趟」與「剛離開」 */
+  function senpaiTripStart() { const t = talk(); t.trip = { boss: null }; t.after = null; }
+  function senpaiTripEnd() { const t = talk(); t.after = { boss: (t.trip && t.trip.boss) || null }; t.trip = null; }
+  /* 剛離開前輩礦坑後的第一次進店：抽一次，回傳台詞或 null；不管有沒有抽中，有效狀態都清掉 */
+  function senpaiChat() {
+    const t = talk(), K = TK(), a = t.after;
+    if (!a) return null;
+    t.after = null;
+    if (!(Math.random() < (K.chatChance ?? 0.4))) return null;
+    if (a.boss && hasMemory(a.boss) && (K.hidden || {})[a.boss]) return K.hidden[a.boss];
+    const ids = Object.keys(K.chat || {}); if (!ids.length) return null;
+    const b = a.boss && K.chat[a.boss] ? a.boss : pickOne(ids), pool = K.chat[b], i = (t.chatIdx[b] || 0) % pool.length;
+    t.chatIdx[b] = (i + 1) % pool.length;
+    return pool[i];
+  }
+  function tline(key, stage) {   // 兩句：[生客, 熟悉後]；三句：[生客, 熟悉中, 信得過]
+    const v = TK()[key], s = stage === undefined ? talkStage() : stage;
+    if (!Array.isArray(v)) return v || "";
+    return v.length >= 3 ? v[Math.min(s, v.length - 1)] : v[s >= 1 ? 1 : 0];
+  }
+  function lowTool() {
+    const tl = activeTool();
+    return !!tl && tl.max > 0 && tl.dur / tl.max <= (TK().lowToolRatio ?? 0.15);
+  }
+  let talkView = null, talkText = "", menuText = "";
+  /* 進店（從挖礦／背包／地圖／紀錄進來；從觀測鏡回來不算） */
+  function shopEnter() {
+    const t = talk(), K = TK(), now = Date.now();
+    let line = senpaiChat();          // 剛從前輩礦坑離開：這次進店抽一次（抽中就優先說）
+    if (line) { /* 前輩閒聊／隱藏台詞 */ }
+    else if (t.lastLeave && now - t.lastLeave < (K.shortReturnSec ?? 120) * 1000) line = K.shortReturn;
+    else if (lowTool()) line = K.lowTool;
+    else if (t.lastVisit && now - t.lastVisit > (K.longAwayHours ?? 72) * 3600000) line = K.longAway;
+    else if (!oreNames().length) line = K.emptyBag;
+    else line = tline("enter");
+    t.lastVisit = now; t.dealAt = 0;
+    menuText = line || tline("enter"); talkView = null;
+    persist();
+  }
+  function shopLeave() { talk().lastLeave = Date.now(); persist(); }
+  /* 進入某個分頁時的台詞（只在切換分頁時決定一次） */
+  function viewLine(view) {
+    const t = talk(), s = talkStage();
+    if (view === "menu") return menuText || tline("enter");
+    if (view === "board") { const req = checkRequest(); return req.lines.length && req.lines.every(l => l.done) ? TK().boardDone : tline("board"); }
+    if (view === "sell") {
+      const n = Object.values(save.ores).reduce((a, c) => a + (c > 0 ? c : 0), 0);
+      return s >= 1 && n >= (TK().heavyBag ?? 40) ? tline("sell") : tline("sell", 0);
+    }
+    if (view === "buy") {
+      const broke = t.broke; if (broke) { t.broke = false; persist(); }   // 提過一次就清掉，不留到以後
+      return broke && s >= 1 ? tline("buy") : tline("buy", 0);
+    }
+    if (view === "boons") return (v2() ? BV.filled(save.boss, config) + pendingN() > 0 : save.boss.boons.length) ? tline("boons") : B().lines.noBoon;
+    return "";
+  }
   const levelNeed = lv => B().levelNeed.base + B().levelNeed.step * Math.floor(lv / B().levelNeed.every);
-  const reqSlot = () => Math.floor(Date.now() / (B().reqHours * 3600000));
   function weighted(obj) { // {key: weight} 或 [weights] → key / index
     const keys = Object.keys(obj), tot = keys.reduce((a, k) => a + obj[k], 0);
     let r = Math.random() * tot;
     for (const k of keys) { r -= obj[k]; if (r < 0) return Array.isArray(obj) ? +k : k; }
     return Array.isArray(obj) ? keys.length - 1 : keys[keys.length - 1];
   }
-  function makeRequest() {
-    const n = weighted(B().lineWeights) + 1, lines = [], used = new Set();
-    for (let i = 0; i < n * 4 && lines.length < n; i++) {
+  /* v0.10.13 委託板（擁有者 2026-09-28 決定）
+     每個遊戲日（沿用 todayKey）先給 1 張；可另外看廣告重置 B().boardResets 次（預設 2），每張固定 B().boardLines 項（預設 5）且互不相同。
+     → 一天最多 3 張、15 項。取消舊的每 8 小時自動換板。
+     save.boss.req    = { day, no（今日第幾張）, lines }
+     save.boss.reqAds = { date, count }：委託板重置廣告的今日次數，跟領補給的 save.ads 完全分開；存在存檔裡，重整不會重來。
+     舊存檔的 req 只有 slot（8 小時制、1～3 項）→ 第一次載入就換成當日第 1 張 5 項板；恩惠、礦石、金錢都不動。 */
+  function makeRequest(no, day) {
+    const n = Math.max(1, B().boardLines || 5), lines = [], used = new Set();
+    for (let i = 0; i < n * 60 && lines.length < n; i++) {
       const m = pickOne(config.mines), cat = weighted(B().catWeights);
       const pool = (cat !== "common" && Math.random() < B().veinChance && m.veinItems && m.veinItems[cat]) || m.items[cat];
       if (!pool || !pool.length) continue;
@@ -1780,29 +2158,175 @@
       const base = lo + Math.floor(Math.random() * (hi - lo + 1));
       lines.push({ name, cat, qty: base, done: false });
     }
-    return { slot: reqSlot(), lines };
+    return { day: day || todayKey(), no: no || 1, lines };
   }
+  function boardAds() {
+    const bs = save.boss, k = todayKey();
+    if (!k) return bs.reqAds && typeof bs.reqAds === "object" ? bs.reqAds : { date: "", count: 0 };   // 日期未知：不換日、不歸零
+    if (!bs.reqAds || typeof bs.reqAds !== "object" || bs.reqAds.date !== k) bs.reqAds = { date: k, count: 0 };
+    return bs.reqAds;
+  }
+  const boardResetLeft = () => Math.max(0, (B().boardResets ?? 2) - boardAds().count);
   function checkRequest() {
-    const bs = save.boss;
-    if (!bs.req || bs.req.slot !== reqSlot()) { bs.req = makeRequest(); persist(); }
+    const bs = save.boss, k = todayKey();
+    if (!k) return bs.req && Array.isArray(bs.req.lines) ? bs.req : { day: "", no: 0, lines: [] };   // 日期未知：不建立新板（畫面也不給交付）
+    if (!bs.req || bs.req.day !== k || !Array.isArray(bs.req.lines)) {   // 換日（或舊的 8 小時制存檔）→ 當日第 1 張
+      bs.req = makeRequest(1); boardAds(); persist();
+    }
     return bs.req;
   }
-  const lineQty = l => Math.max(1, Math.ceil(l.qty * Math.pow(1 - boonVal("reqQty"), boonCount("reqQty"))));
-  function timeLeft() {
-    const ms = (reqSlot() + 1) * B().reqHours * 3600000 - Date.now();
-    const h = Math.floor(ms / 3600000), m = Math.floor(ms % 3600000 / 60000), s = Math.floor(ms % 60000 / 1000);
-    return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+  /* 看廣告重置委託板：有未交付的先確認；廣告看完才換板。次數在「開始看」時就先扣開始那天的（擁有者 Q5＝B），取消／失敗會退回 */
+  function askBoardReset() {
+    if (!dailyOK()) { toast("確認日期後可使用"); return; }
+    if (boardResetLeft() <= 0) return;
+    const req = checkRequest(), left = req.lines.filter(l => !l.done).length;
+    if (!left) { watchBoardAd(); return; }
+    const box = $("modalBox");
+    box.innerHTML = `<div class="boss-name">換一張委託</div>
+      <div style="margin:10px 0;line-height:1.7">這張還有 <b>${left}</b> 項沒交付。<br><span style="color:#ff8a4c">換板後，未完成的委託會消失。</span></div>
+      <div class="btns"><button class="px-btn" id="brYes">看廣告換板</button><button class="px-btn" id="brNo">取消</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("brNo").onclick = () => $("modal").classList.add("hidden");
+    $("brYes").onclick = () => watchBoardAd();
   }
+  async function watchBoardAd() {
+    if (adActive) return;
+    if (!(await clockFresh())) { $("modal").classList.add("hidden"); toast("確認日期後可使用"); renderShop(); return; }
+    if (boardResetLeft() <= 0) { $("modal").classList.add("hidden"); return; }
+    const s = adStart("board");
+    if (!s.p) { $("modal").classList.add("hidden"); adStartFail(s.err); renderShop(); return; }
+    adShow(s.p, "（委託板廣告示意）", "看完才會換板；中途取消不扣次數", "brCancel", r => {
+      if (!r) toast("已取消，委託板沒有變動");
+      else if (!r.ok) toast("這次廣告已失效，委託板沒有變動");
+      else if (r.cross) toast("換了一張新委託｜這次廣告算在昨天的次數，今天的次數沒有被扣。", 4000);
+      else toast(`換了一張新委託｜今日可重置剩 ${boardResetLeft()} 次`);
+      if (r && r.ok) { bossView = "board"; talkView = null; }
+      renderShop();
+    });
+  }
+
+  /* ---------------- 待完成廣告（階段3B，AD_STATE_MACHINE.md；擁有者 Q2＝A、Q5＝B） ----------------
+     補給（save.ads，每天 adDailyLimit 次）與換板（save.boss.reqAds，每天 boardResets 次）次數分開算，
+     但整份存檔同一時間只能有一個待完成廣告 save.adPending = { id, kind, day, startedAt }。
+     開始：先扣「開始那天」的 1 次＋寫 adPending＋寫 localStorage 鎖（擋另一個分頁），同一次寫入。
+     完成：id 已在 adDone → 不重發；重讀最新存檔，adPending 不是這個 id（被取消／逾時／別處處理）→ 不發；
+           否則發獎、記入 adDone（最近 20 筆）、清 adPending，同一次寫入。完成時不再扣任何次數（跨午夜不扣新一天）。
+     取消／失敗／關頁／逾時 10 分鐘：還是開始那天就退回 1 次；已換日就不動新一天。 */
+  const AD_LOCK_KEY = "mine_ad_lock_v1" + SB;
+  const AD_TIMEOUT = 600000;
+  let adActive = null;   // 這個分頁正在播的廣告 { id, timer }
+  const adLimit = kind => (kind === "board" ? (B().boardResets ?? 2) : config.rules.adDailyLimit);
+  function adCounter(kind) { if (kind === "board") return boardAds(); checkDay(); return save.ads; }   // 先換日，再看次數
+  function adLockLive(id) {   // 鎖有主（未過期）；有給 id 時只看是不是這個 id
+    const l = store.get(AD_LOCK_KEY), now = trustedNow();
+    return !!(l && l.id && (!id || l.id === id) && now !== null && l.until > now);
+  }
+  function adUnlock(id) { const l = store.get(AD_LOCK_KEY); if (l && l.id === id) store.del(AD_LOCK_KEY); }
+  function fixAds(sv) {   // 三個載入入口共用：舊存檔補欄位（頂層 v 不動）
+    if (!sv.adPending || typeof sv.adPending !== "object" || !sv.adPending.id) sv.adPending = null;
+    if (!Array.isArray(sv.adDone)) sv.adDone = [];
+  }
+  function adLeftover() {   // 載入時有殘留的待完成廣告（上次關頁／當機／雲端那份）＝取消（Q2＝A）；另一個分頁正在播的，等它的鎖過期再處理
+    const p = save.adPending; if (!p) return;
+    if (adLockLive(p.id)) { setTimeout(adLeftover, Math.max(1000, store.get(AD_LOCK_KEY).until - trustedNow() + 500)); return; }
+    adCancel(p.id);
+  }
+  function adStart(kind) {
+    const day = todayKey();
+    if (!day || clock.hold) return { err: "day" };
+    if (save.adPending || adLockLive()) return { err: "busy" };
+    const ctr = adCounter(kind);
+    if (ctr.count >= adLimit(kind)) return { err: "limit" };
+    const now = trustedNow();
+    const p = { id: "ad" + Math.floor(now).toString(36) + Math.random().toString(36).slice(2, 8), kind, day, startedAt: now };
+    ctr.count++;
+    save.adPending = p;
+    store.set(AD_LOCK_KEY, { id: p.id, until: now + AD_TIMEOUT });
+    persist();
+    return { p };
+  }
+  function adDrop(id) {   // 這個廣告已在別處取消／發過：只清掉本分頁記憶體裡卡住的待完成（同日退回），不另外寫檔
+    const p = save.adPending; if (!p || p.id !== id) return;
+    const ctr = p.kind === "board" ? save.boss.reqAds : save.ads;
+    if (ctr && ctr.date === p.day && ctr.count > 0 && !(save.adDone || []).includes(id)) ctr.count--;
+    save.adPending = null;
+  }
+  function adComplete(id) {
+    const disk = store.get(SAVE_KEY) || {};
+    if ((save.adDone || []).includes(id) || (Array.isArray(disk.adDone) && disk.adDone.includes(id))) { adDrop(id); return { ok: false, err: "repeat" }; }
+    const p = save.adPending;
+    if (!p || p.id !== id) return { ok: false, err: "gone" };
+    /* 最新存檔沒有這個待完成：可能是別處取消了，也可能只是另一個分頁把整份存檔蓋過去。
+       取消／完成一定會釋放鎖 → 鎖還在這個 id 上＝沒有被別處處理，照常完成；鎖也不在＝已被取消，不發獎。 */
+    const lock = store.get(AD_LOCK_KEY);
+    if (!(disk.adPending && disk.adPending.id === id) && !(lock && lock.id === id)) { adDrop(id); return { ok: false, err: "gone" }; }
+    const now = trustedNow();
+    if (now === null || now - p.startedAt > AD_TIMEOUT) { adCancel(id); return { ok: false, err: "timeout" }; }
+    const out = adGrant(p);
+    save.adDone = (save.adDone || []).concat([id]).slice(-20);
+    save.adPending = null;
+    persist();
+    adUnlock(id);
+    return Object.assign({ ok: true, p }, out);
+  }
+  function adCancel(id) {
+    const p = save.adPending;
+    if (!p || p.id !== id) { adUnlock(id); return false; }
+    const ctr = p.kind === "board" ? save.boss.reqAds : save.ads;
+    if (ctr && ctr.date === p.day && ctr.count > 0) ctr.count--;   // 還是開始那天 → 退回；已換日 → 舊的一天已結束，不動新一天
+    save.adPending = null;
+    persist();
+    adUnlock(id);
+    return true;
+  }
+  function adGrant(p) {   // 發獎（完成時呼叫一次）
+    const today = todayKey(), cross = !!today && today !== p.day;
+    if (p.kind === "board") {
+      const bs = save.boss;
+      if (cross) { checkRequest(); bs.req = makeRequest(((bs.req && bs.req.no) || 1) + 1, today); }   // 新一天先有第 1 張，再用這次獎勵換掉；新一天次數完整
+      else bs.req = makeRequest(((bs.req && bs.req.day === p.day && bs.req.no) || 1) + 1, p.day);
+      return { cross };
+    }
+    /* 2026-10-01 擁有者決定：領補給暫時固定為鑽石鎬；舊版 adWood／adStone 不再改變補給內容。 */
+    const toolId = config.rules.adSupplyTool || "diamond", qty = Math.max(1, config.rules.adSupplyQty | 0);
+    for (let i = 0; i < qty; i++) addTool(toolId, 1);
+    const msg = `獲得 ${toolDef(toolId).name} ×${qty}`;
+    return { cross, msg };
+  }
+  function adStartFail(err) {
+    toast(err === "day" ? "確認日期後可使用" : err === "busy" ? "還有一個廣告沒看完" : "今日次數已用完");
+  }
+  /* 廣告畫面（示意）：只負責倒數與取消，次數與獎勵都交給 adComplete／adCancel */
+  function adShow(p, title, note, cancelId, onDone) {
+    let sec = 5;
+    const box = $("modalBox");
+    adActive = { id: p.id, timer: null };
+    const end = () => { if (adActive) clearTimeout(adActive.timer); adActive = null; $("modal").classList.add("hidden"); };
+    const tick = () => {
+      if (!adActive || adActive.id !== p.id) return;
+      box.innerHTML = `<div>${title}</div><div style="font-size:2em;margin:16px 0">${sec}</div><div class="sub">${note}</div>
+        <div class="btns"><button class="px-btn" id="${cancelId}">取消</button></div>`;
+      $(cancelId).onclick = () => { end(); adCancel(p.id); onDone(null); };
+      if (sec-- <= 0) { end(); onDone(adComplete(p.id)); return; }
+      adActive.timer = setTimeout(tick, 1000);
+    };
+    $("modal").classList.remove("hidden"); tick();
+  }
+  window.addEventListener("pagehide", () => { if (adActive) { const id = adActive.id; adActive = null; adCancel(id); } });   // 關頁＝取消（Q2＝A）
+  const lineQty = l => Math.max(1, Math.ceil(l.qty * Math.pow(1 - boonVal("reqQty"), boonCount("reqQty"))));   // v2：boonCount＝0 → 原數量
   function addFavor(pts) {
-    const bs = save.boss, gained = [];
+    const bs = save.boss, gained = [], lv0 = bs.level;
     pts = Math.round(pts * (1 + boonSum("favorUp")) * 10) / 10;
     bs.favor += pts; bs.total += pts;
     while (bs.favor >= levelNeed(bs.level)) {
       bs.favor -= levelNeed(bs.level); bs.level++;
-      gained.push(rollBoon());
+      if (!v2()) gained.push(rollBoon());
     }
     bs.favor = Math.round(bs.favor * 10) / 10;
-    return { pts, gained };
+    /* v2：每一級都排進待領（跨多級不漏）。v2 關閉時讓 rewardLv 跟著等級走，日後開啟不會一次補發舊等級 */
+    if (v2() && !boonFail) BV.queue(save, config, msKnown);
+    else if (!boonFail && bs.schema === 2) bs.rewardLv = bs.level;   // 只更新已存在的欄位；v2 關閉時不替舊存檔新增 rewardLv
+    return { pts, gained, ups: bs.level - lv0 };
   }
   function rollBoon() {
     const r = weighted(B().boonRarity);
@@ -1832,29 +2356,96 @@
     $("mdClose").onclick = () => $("modal").classList.add("hidden");
   }
   function deliver(i) {
+    if (!todayKey()) return;   // 日期未知：不交付（板子可能已經是昨天的）
     const req = checkRequest(), l = req.lines[i]; if (!l || l.done) return;
     const need = lineQty(l);
     if ((save.ores[l.name] || 0) < need) { bossLine = B().lines.noEnough; renderShop(); return; }
     save.ores[l.name] -= need; if (save.ores[l.name] <= 0) delete save.ores[l.name];
-    const coins = Math.round(basePrice(l.name) * sellBonus(l.name, catDef(l.cat).rarity) * need * B().deliverMul * 10) / 10;
-    save.coins += coins; l.done = true;
+    // v2：委託酬勞＝基本售價 × 數量 × 交付倍率，不吃出售加價（與委託板顯示一致）
+    const coins = Math.round(basePrice(l.name) * (v2() ? 1 : sellBonus(l.name, catDef(l.cat).rarity)) * need * B().deliverMul * 10) / 10;
+    save.coins = Math.round((save.coins + coins) * 10) / 10; l.done = true;
     let pts = B().points[l.cat] || 1;
     const allDone = req.lines.every(x => x.done);
     if (allDone) pts += B().completeBonus;
     const fr = addFavor(pts);
-    bossLine = allDone ? B().lines.allDone : B().lines.deliver;
+    const t = talk(), first = t.lines === 0;
+    t.lines++; if (allDone) t.boards++;
+    t.dealAt = Date.now();
+    bossLine = allDone ? tline("allDone") : first ? TK().firstDeliver : tline("deliver");
     toast(`交付 ${l.name} ×${need}  +$${money(coins)}  恩惠+${fr.pts}`);
     persist(true); renderShop();
     if (fr.gained.length) showBoons(fr.gained);
+    if (fr.ups && v2()) offerPick();
   }
   function showBoons(list) {
     const box = $("modalBox");
-    box.innerHTML = `<div class="boss-name">${B().name}</div><div style="margin:8px 0">「${B().lines.levelUp}」</div>
+    box.innerHTML = `<div class="boss-name">${B().name}</div><div style="margin:8px 0">「${tline("levelUp")}」</div>
       <div style="margin:6px 0">恩惠等級 → Lv${save.boss.level}</div>
       ${list.map(b => `<div class="boon-get" style="border-color:${BOON_COLOR(b.r)};color:${BOON_COLOR(b.r)}">【${RARITY_NAME[b.r]}】${boonLabel(b)}</div>`).join("")}
       <div class="btns"><button class="px-btn" id="mdClose">收下</button></div>`;
     $("modal").classList.remove("hidden");
     $("mdClose").onclick = () => $("modal").classList.add("hidden");
+  }
+
+  /* ---------------- 恩惠 v2：顯示與選獎 ---------------- */
+  const pctTxt = r => `${Math.round(r * 1000) / 10}%`;
+  const bvDef = k => BV.kindDef(config, k), bvMax = k => BV.maxOf(config, k);
+  const bvTier = k => BV.tier(save.boss, config, k);
+  function bvEffect(k, t) {   // 某一階的效果說明（畫面與實際計算用同一組函式）
+    const r = BV.rate(config, k, t);
+    if (k === "autoSpeed") return `自動挖掘速度 +${pctTxt(r)}`;
+    if (k === "sell") return `出售 +${pctTxt(r)}`;
+    if (k === "toolCut") return `買鎬子 -${pctTxt(r)}`;
+    if (k === "toolDur") return `新鎬子耐久 +${pctTxt(r)}`;
+    return pctTxt(r);
+  }
+  const pips = (t, max) => `<span class="boon-pips" aria-label="${t}／${max}階">${Array.from({ length: max }, (_, i) => `<i class="${i < t ? "on" : ""}"></i>`).join("")}</span>`;
+  const pendingN = () => (v2() && !boonFail ? save.boss.pending.length : 0);
+  /* 能不能現在跳出選獎：只在佐佐木店裡、沒有前輩回憶在演、沒有其他視窗開著時；否則只在按鈕旁顯示「可選 N」 */
+  const pickSafe = () => currentScreen === "shop" && !(save.senpai && save.senpai.story) && $("modal").classList.contains("hidden");
+  function offerPick(force) {
+    if (!pendingN() || !(force || pickSafe())) { if (currentScreen === "shop") renderShop(); return; }
+    if (BV.prepare(save, config)) persist(true);   // 候選一產生就存檔：重整不重抽
+    const p = save.boss.pending[0], left = save.boss.pending.length - 1, box = $("modalBox");
+    const head = `<div class="boss-name">${B().name}</div><div style="margin:8px 0">「${tline("levelUp")}」</div>
+      <div class="boon-lv">恩惠 Lv${p.lv} 的謝禮${left ? `<span class="sub">（之後還有 ${left} 個）</span>` : ""}</div>`;
+    if (p.kind === "milestone") {
+      const tid = BV.msTool(config, p.id), d = toolDef(tid) || { name: p.id, rarity: 0 };
+      box.innerHTML = head + `<div class="boon-note">恩惠 Lv${p.lv} 的特別謝禮（每位玩家只有一次，不會占掉這一級的恩惠選擇）：</div>
+        <div class="boon-card tool"><div class="boon-card-name" style="color:${rarityColor(d.rarity)}">${esc(d.name)} ×1</div>
+        <div class="sub">全新・耐久 ${toolMax(tid)}（固定，不吃耐久恩惠）｜所有已解鎖礦坑都能用，收益跟合適的鎬子一樣</div></div>
+        <div class="btns"><button class="px-btn" data-bv-claim="${p.lv}" data-bv-kind="${esc(p.id)}">收下</button><button class="px-btn" id="bvLater">稍後</button></div>`;
+    } else if (p.kind === "tool") {
+      const d = toolDef(p.id) || { name: p.id, rarity: 0 };
+      box.innerHTML = head + `<div class="boon-note">四種恩惠都已滿階。這一級送你：</div>
+        <div class="boon-card tool"><div class="boon-card-name" style="color:${rarityColor(d.rarity)}">${esc(d.name)} ×1</div>
+        <div class="sub">全新・耐久 ${toolMax(p.id)}（依升級當下已解鎖的最高礦坑決定）</div></div>
+        <div class="btns"><button class="px-btn" data-bv-claim="${p.lv}" data-bv-kind="">收下</button><button class="px-btn" id="bvLater">稍後</button></div>`;
+    } else {
+      box.innerHTML = head + `<div class="boon-note">${p.opts.length > 1 ? `從 ${p.opts.length} 種裡選 1 種升一階` : "只剩這一種還能升階"}</div>` +
+        p.opts.map(k => { const t = bvTier(k); return `<button class="boon-card" data-bv-claim="${p.lv}" data-bv-kind="${k}">
+          <div class="boon-card-name">${esc(bvDef(k).name)}</div>${pips(t, bvMax(k))}
+          <div class="sub">第 ${t} 階 → 第 ${t + 1} 階／${bvMax(k)}</div>
+          <div class="boon-card-eff">${t ? bvEffect(k, t) : "尚未取得"} → <b>${bvEffect(k, t + 1)}</b></div></button>`; }).join("") +
+        `<div class="btns"><button class="px-btn" id="bvLater">稍後再選</button></div>`;
+    }
+    $("modal").classList.remove("hidden");
+    $("bvLater").onclick = () => { $("modal").classList.add("hidden"); if (currentScreen === "shop") renderShop(); };
+    box.querySelectorAll("[data-bv-claim]").forEach(b => b.onclick = () => {
+      box.querySelectorAll("[data-bv-claim]").forEach(x => { x.disabled = true; });   // 連點只算一次
+      let r;
+      try { r = BV.claim(save, config, Number(b.dataset.bvClaim), b.dataset.bvKind || null, addTool, msGuard); }
+      catch (e) { $("modal").classList.add("hidden"); toast("領取失敗：瀏覽器空間不足，謝禮還留著"); return; }
+      $("modal").classList.add("hidden");
+      if (!r.ok) {
+        if (r.why === "done") persist(true);   // 存檔內已有紀錄、只是待領沒清掉 → 清掉並存檔
+        /* why==="device"（另一個分頁剛領）：這裡不主動存檔，避免這個分頁的舊存檔立刻蓋掉另一分頁剛寫入、含試用的存檔（多分頁本來就是後寫蓋前寫，見 RELEASE_GATE） */
+        toast(r.why === "device" ? "這份謝禮在這台裝置已經領過了（可能是另一個分頁）" : "這份謝禮已經領過了"); if (currentScreen === "shop") renderShop(); return;
+      }
+      persist(true);
+      toast(r.kind === "milestone" ? `收下 ${(toolDef(r.tool) || {}).name} ×1（耐久 ${toolMax(r.tool)}）` : r.kind === "tool" ? `收下 ${(toolDef(r.id) || {}).name || r.id} ×1` : `${bvDef(r.choice).name} → 第 ${r.tier} 階`);
+      if (pendingN()) offerPick(true); else if (currentScreen === "shop") renderShop();
+    });
   }
 
   function renderShop() {
@@ -1864,26 +2455,30 @@
     $("bossLv").innerHTML = `恩惠 Lv${bs.level}　<span class="sub">${money(bs.favor)}/${levelNeed(bs.level)}</span>`;
     $("bossFavorBar").style.width = Math.min(100, bs.favor / levelNeed(bs.level) * 100) + "%";
     const view = bossView;
-    let say = bossLine, body = "";
+    // 台詞：有操作結果就用它；否則同一分頁沿用進來時決定的那句，不因重繪重抽
+    if (bossLine) { talkText = bossLine; talkView = view; }
+    else if (talkView !== view) { talkText = viewLine(view); talkView = view; }
+    let say = talkText, body = "";
     const back = `<button class="px-btn wide boss-opt" data-boss="menu">◀ 返回</button>`;
 
+    const dayOK = dailyOK(), wait = '<span class="sub">確認日期後可使用</span>';
     if (view === "menu") {
-      say = say || pickOne(L.greet);
       const req = checkRequest(), left = req.lines.filter(l => !l.done).length;
       const adLeft = config.rules.adDailyLimit - save.ads.count;
       body = `<div class="boss-opts">
-        <button class="px-btn wide boss-opt" data-boss="board">▶ 看委託板 <span class="sub">${left ? `剩${left}項` : "已完成"}</span></button>
+        <button class="px-btn wide boss-opt" data-boss="board" ${dayOK ? "" : "disabled"}>▶ 看委託板 ${!dayOK ? wait : `<span class="sub">${left ? `剩${left}項` : "已完成"}</span>`}</button>
         <button class="px-btn wide boss-opt" data-boss="sell">▶ 賣礦石</button>
         <button class="px-btn wide boss-opt" data-boss="buy">▶ 買鎬子</button>
-        <button class="px-btn wide boss-opt" data-boss="glass">▶ ${(config.glasses || {}).name || "礦脈觀測鏡"} <span class="sub">看今天的礦脈徵兆</span></button>
-        <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 <span class="sub">${bs.boons.length}個</span></button>
-        <button class="px-btn wide boss-opt" data-boss="ad" ${adLeft <= 0 ? "disabled" : ""}>▶ 領補給（看廣告） <span class="sub">今日剩${adLeft}次</span></button>
+        <button class="px-btn wide boss-opt" data-boss="glass" ${dayOK ? "" : "disabled"}>▶ ${(config.glasses || {}).name || "礦脈觀測鏡"} ${dayOK ? '<span class="sub">看今天的礦脈徵兆</span>' : wait}</button>
+        <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 ${v2() ? (pendingN() ? `<span class="boon-tag">可選 ${pendingN()}</span>` : `<span class="sub">共${BV.filled(bs, config)}／${BV.cap(config)}階</span>`) : `<span class="sub">${bs.boons.length}個</span>`}</button>
+        <button class="px-btn wide boss-opt" data-boss="ad" ${adLeft <= 0 || !dayOK ? "disabled" : ""}>▶ 領補給（看廣告） ${dayOK ? `<span class="sub">今日剩${adLeft}次</span>` : wait}</button>
         <button class="px-btn wide boss-opt" data-boss="bye">▶ 離開</button></div>`;
     }
-    if (view === "board") {
-      say = say || L.board;
+    if (view === "board" && !todayKey()) body = `<div class="board"><div class="board-head">委託板</div><div class="sub">需要連上網路確認今天的日期（台灣時間）。確認日期後可使用。</div></div>` + back;
+    else if (view === "board") {
       const req = checkRequest(), idx = itemIndex();
-      body = `<div class="board"><div class="board-head">委託板 <span class="sub">下一張 ${timeLeft()}</span></div>` +
+      const rl = boardResetLeft();
+      body = `<div class="board"><div class="board-head">委託板 <span class="sub">今日第 ${req.no || 1} 張｜今日可重置剩 ${rl} 次</span></div>` +
         req.lines.map((l, i) => {
           const known = !!save.dex[l.name], it = idx[l.name], color = rarityColor(it ? it.cat.rarity : 0);
           const need = lineQty(l), have = save.ores[l.name] || 0;
@@ -1893,20 +2488,20 @@
           return `<div class="row board-line ${l.done ? "done" : ""}"><div class="grow">${nameHtml} ×${need}
             <div class="sub">酬勞 $${money(pay)}＋恩惠${B().points[l.cat]}點</div></div>
             ${l.done ? '<span class="sub">✔ 已交付</span>' : `<button class="px-btn small" data-deliver="${i}" ${have >= need ? "" : "disabled"}>交付<br><span class="sub">包包 ${have}/${need}</span></button>`}</div>`;
-        }).join("") + `<div class="sub" style="margin-top:6px">全部完成再加 ${B().completeBonus} 點｜點礦石名稱可查產地</div></div>` + back;
+        }).join("") + `<div class="sub" style="margin-top:6px">全部完成再加 ${B().completeBonus} 點｜點礦石名稱可查產地</div>
+        <button class="px-btn wide" id="btnBoardReset" style="margin-top:8px;min-height:48px" ${rl > 0 && dayOK ? "" : "disabled"}>${!dayOK ? "確認日期後可使用" : rl > 0 ? `▶ 看廣告換一張新委託（今日剩 ${rl} 次）` : "今日的委託板重置次數已用完"}</button></div>` + back;
     }
     if (view === "sell") {
-      say = say || L.sell;
       const idx = itemIndex(), names = oreNames();
-      let total = 0;
+      const total = sellTotal(names.map(n => [n, save.ores[n]])), sr = v2Rate("sell");
       const rows = names.map(n => {
-        const p = itemPrice(n), c = save.ores[n]; total += p * c;
+        const p = itemPrice(n), c = save.ores[n];
         const q = Math.min(Math.max(1, sellQty[n] || 1), c);   // 記住玩家選過的數量，但不能超過現有庫存
         sellQty[n] = q;
         return `<div class="row sell-row" data-ore-row="${esc(n)}">
           <div class="sell-head">
             <span style="color:${rarityColor(idx[n].cat.rarity)}">${esc(n)}</span>
-            <span class="sub">持有 ×${c}｜單價 $${money(p)}</span>
+            <span class="sub">持有 ×${c}｜單價 $${money2(p)}</span>
           </div>
           <div class="sell-pick">
             <input type="range" class="sell-range" data-ore-range="${esc(n)}" min="1" max="${c}" step="1" value="${q}">
@@ -1915,27 +2510,37 @@
             <button class="px-btn small" data-ore-max="${esc(n)}">最大</button>
           </div>
           <div class="sell-info">
-            <span class="sub" data-ore-info="${esc(n)}">本次出售 ×${q}｜出售後剩餘 ×${c - q}｜可得 $${money(p * q)}</span>
+            <span class="sub" data-ore-info="${esc(n)}">本次出售 ×${q}｜出售後剩餘 ×${c - q}｜可得 $${money(sellTotal([[n, q]]))}</span>
             <button class="px-btn small" data-ore-sell="${esc(n)}">賣出 ${q} 個</button>
           </div>
         </div>`;
       }).join("");
-      body = `<div class="board"><div class="board-head">收購 <span class="sub">合計 $${money(total)}</span> ${names.length ? '<button class="px-btn small" id="btnSellAll">全部賣出</button>' : ""}</div>
+      body = `<div class="board"><div class="board-head">收購 <span class="sub">合計 $${money(total)}</span>${sr ? ` <span class="boon-tag">出售加價 +${pctTxt(sr)}</span>` : ""} ${names.length ? '<button class="px-btn small" id="btnSellAll">全部賣出</button>' : ""}</div>
         <div class="list">${rows || '<div class="sub">背包是空的</div>'}</div>
-        ${names.length ? '<div class="sub" style="margin-top:6px">拉滑桿或直接打數字都可以，按「賣出」才會真的賣掉。委託板需要的礦石記得留著。</div>' : ""}</div>` + back;
+        ${names.length ? `<div class="sub" style="margin-top:6px">拉滑桿或直接打數字都可以，按「賣出」才會真的賣掉。委託板需要的礦石記得留著。${sr ? `<br>恩惠加價 +${pctTxt(sr)}：每次出售的整筆金額一起計算，最後取到 0.1。` : ""}</div>` : ""}</div>` + back;
     }
     if (view === "buy") {
-      say = say || L.buy;
-      const cut = boonSum("shopCut");
-      body = `<div class="board"><div class="board-head">鎬子 ${cut ? `<span class="sub">恩惠折扣 -${Math.round(cut * 100)}%</span>` : ""}</div><div class="list">` + config.tools.map(t => {
+      const cut = v2() ? v2Rate("toolCut") : boonSum("shopCut"), dur = v2Rate("toolDur");
+      body = `<div class="board"><div class="board-head">鎬子 ${cut ? `<span class="boon-tag">恩惠折扣 -${pctTxt(cut)}</span>` : ""}${dur ? ` <span class="boon-tag">新鎬子耐久 +${pctTxt(dur)}</span>` : ""}</div><div class="list">` + stdTools().map(t => {
         const pr = toolPrice(t);
         return `<div class="row"><div class="grow"><span style="color:${rarityColor(t.rarity)}">${t.name}</span>
         <div class="sub">耐久 ${toolMax(t.id)}｜每揮 $${(pr / toolMax(t.id)).toFixed(1)}｜適合 ${config.mines.filter(m => m.tier === t.tier).map(m => m.name).join("、")}</div></div>
         <button class="px-btn small" data-buy="${t.id}" ${save.coins < pr ? "disabled" : ""}>$${fmt(pr)}</button></div>`;
       }).join("") + `</div></div>` + back;
     }
-    if (view === "boons") {
-      say = say || (bs.boons.length ? L.boons : L.noBoon);
+    if (view === "boons" && v2()) {
+      const n = pendingN();
+      body = `<div class="board"><div class="board-head">我的恩惠 <span class="sub">共${BV.filled(bs, config)}／${BV.cap(config)}階｜累計恩惠 ${money(bs.total)}點</span></div>` +
+        (boonFail ? '<div class="boon-note" style="color:#ff7755">恩惠資料轉換失敗：進度都還在，恩惠效果暫停，請回報。</div>' : "") +
+        (n ? `<button class="px-btn wide" id="btnBoonPick" style="margin:4px 0 8px;min-height:48px">▶ 領取升級謝禮 <span class="boon-tag">可選 ${n}</span></button>` : "") +
+        BV.KINDS.map(k => { const t = bvTier(k), mx = bvMax(k), full = t >= mx;
+          return `<div class="row boon-row ${full ? "full" : ""}"><div class="grow"><div class="boon-row-head"><span>${esc(bvDef(k).name)}</span>${pips(t, mx)}<span class="boon-lvtxt">${full ? "滿階" : `${t}／${mx}階`}</span></div>
+            <div class="sub">目前：${t ? bvEffect(k, t) : "尚未取得"}${full ? "" : `｜下一階：${bvEffect(k, t + 1)}`}</div>
+            <div class="sub">每階 ${bvEffect(k, 1)}，最多 ${mx} 階（${bvEffect(k, mx)}）</div></div></div>`; }).join("") +
+        `<div class="boon-rules sub"><b>怎麼拿恩惠</b><br>・每升一級，從還沒滿階的恩惠裡隨機出 2 種讓你選 1 種升一階；<b>每一種出現的機率都一樣</b>，沒有稀有度。<br>・已經滿階的不會再出現；只剩 1 種沒滿時就只出那 1 種。<br>・四種全部滿階後，每升一級改送 1 把標準鎬子（木／石／鐵／金／鑽石鎬中，依升級當下已解鎖的最高礦坑決定）。</div>` +
+        (bs.boons.length ? `<div class="sub" style="margin-top:4px">舊版恩惠紀錄 ${bs.boons.length} 個：新版不生效，資料照樣保留。</div>` : "") + `</div>` + back;
+    }
+    else if (view === "boons") {
       const groups = {};
       bs.boons.forEach(b => { const k = b.id + "|" + (b.target ?? ""); (groups[k] = groups[k] || { b, n: 0 }).n++; });
       const list = Object.values(groups).sort((x, y) => y.b.r - x.b.r);
@@ -1950,38 +2555,32 @@
     renderHud();
   }
   function bossGo(v) {
-    if (v === "bye") { bossView = "menu"; bossLine = B().lines.bye; go("mine"); return; }
-    if (v === "ad") { bossLine = B().lines.ad; watchAd(); return; }
-    if (v === "glass") { openScope(); return; }
+    // 離開：一句不擋路的短提示，不留到下次進店
+    if (v === "bye") { const w = tline("bye"); bossView = "menu"; go("mine"); toast(`${B().name}：「${w}」`); return; }
+    // 補給：看廣告「之前」就說；領完再換一句
+    if (v === "ad") { if (!dailyOK()) { toast("確認日期後可使用"); return; } if (adActive || save.ads.count >= config.rules.adDailyLimit) return; talkText = tline("adBefore"); talkView = bossView; $("bossSay").textContent = talkText; watchAd(); return; }
+    if (v === "glass") { if (!dailyOK()) { toast("確認日期後可使用"); return; } openScope(); return; }
     bossView = v; renderShop();
   }
 
-  function watchAd() {
-    if (save.ads.count >= config.rules.adDailyLimit) return;
-    let sec = 5;
-    const box = $("modalBox");
-    const tick = () => {
-      box.innerHTML = `<div>（廣告示意）</div><div style="font-size:2em;margin:16px 0">${sec}</div><div class="sub">之後會換成真實廣告</div>`;
-      if (sec-- <= 0) {
-        save.ads.count++;
-        const woods = 1 + boonCount("adWood");
-        for (let i = 0; i < woods; i++) addTool("wood", 1);
-        let msg = `獲得 木鎬 ×${woods}`;
-        if (boonCount("adStone") && Math.random() < boonSum("adStone")) { addTool("stone", 1); msg += "、石鎬 ×1"; }
-        $("modal").classList.add("hidden");
-        toast(msg); persist(); renderShop();
-        return;
-      }
-      setTimeout(tick, 1000);
-    };
-    $("modal").classList.remove("hidden"); tick();
+  async function watchAd() {
+    if (adActive) return;
+    if (!(await clockFresh())) { toast("確認日期後可使用"); renderShop(); return; }
+    const s = adStart("supply");
+    if (!s.p) { adStartFail(s.err); renderShop(); return; }
+    adShow(s.p, "（廣告示意）", "之後會換成真實廣告｜中途取消不扣次數", "adCancelBtn", r => {
+      if (!r) { toast("已取消，沒有扣次數"); renderShop(); return; }
+      if (!r.ok) { toast("這次廣告已失效，沒有發放補給"); renderShop(); return; }
+      bossLine = talkStage() >= 1 && lowTool() ? tline("adAfter") : tline("adAfter", 0);
+      if (r.cross) toast(r.msg + "｜這次廣告算在昨天的次數，今天的次數沒有被扣。", 4000); else toast(r.msg); renderShop();
+    });
   }
 
   /* ---------------- 共用 UI ---------------- */
   let toastTimer;
-  function toast(msg) {
+  function toast(msg, ms) {
     const t = $("toast"); t.textContent = msg; t.classList.remove("hidden");
-    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hidden"), 1600);
+    clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.add("hidden"), ms || 1600);
   }
   function askName(first) {
     const box = $("modalBox");
@@ -2034,6 +2633,7 @@
     $("lvNo").onclick = () => $("modal").classList.add("hidden");
     $("lvOk").onclick = () => {
       stopAuto(); clearM2UI();
+      if (mine.engine === 2) senpaiTripEnd();          // 確實從前輩礦坑離開
       $("modal").classList.add("hidden");
       go("map");
       delete save.plays[mine.id];
@@ -2045,11 +2645,21 @@
   }
 
   let currentScreen = "mine";
+  let recTab = "dex";          // 紀錄頁目前的子分頁：dex＝圖鑑、ach＝成就
   function clearM2UI() { const b = $("tbChoice"); if (b) { b.classList.add("hidden"); b.innerHTML = ""; } }
+  function renderRec() {
+    document.querySelectorAll("[data-rec]").forEach(b => { const on = b.dataset.rec === recTab; b.classList.toggle("on", on); b.setAttribute("aria-selected", on); });
+    $("recDex").classList.toggle("hidden", recTab !== "dex");
+    $("recAch").classList.toggle("hidden", recTab !== "ach");
+    (recTab === "dex" ? renderDex : renderAch)();
+  }
   function go(name) {
+    if (name === "dex" || name === "ach") { recTab = name; name = "rec"; }   // 舊的入口名稱 → 紀錄頁的子分頁
     clearM2UI();
     if (name !== "mine") stopAuto();
     if (name === "shop" && currentScreen !== "shop") bossView = "menu";
+    if (name === "shop" && currentScreen !== "shop" && currentScreen !== "scope") shopEnter();
+    if (currentScreen === "shop" && name !== "shop" && name !== "scope") shopLeave();
     if (name !== "scope") scopeReset();
     currentScreen = name;
     document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === "scr-" + name));
@@ -2058,7 +2668,7 @@
   }
   function renderAll() {
     applyLook();
-    ({ mine: renderMine, bag: renderBag, map: renderMap, dex: renderDex, shop: renderShop, scope: renderScope, ach: renderAch })[currentScreen]();
+    ({ mine: renderMine, bag: renderBag, map: renderMap, rec: renderRec, shop: renderShop, scope: renderScope })[currentScreen]();
     renderHud();
   }
 
@@ -2087,24 +2697,31 @@
     if (e.target.closest("#scopeLens")) { scopeTap(); return; }
   });
 
-  $("textbox").addEventListener("click", () => {
+  $("textbox").addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     if (save.senpai.story) { storyTap(); return; }
+    if (e.target.closest("#clockRetry")) { clockSync(); showClockMsg(); return; }
     if (Date.now() - storyDoneAt < 600) return;     // 剛收下回憶：連點的後幾下不要直接揮出去
     if (save.auto) { stopAuto(); return; }
     doSwing();
   });
   $("btnAuto").addEventListener("click", () => { if (!window.Editor?.isPicking()) toggleAuto(); });
   $("btnLeave").addEventListener("click", () => { if (!window.Editor?.isPicking()) leaveMine(); });
+  $("scr-rec").addEventListener("click", e => {
+    const b = e.target.closest("[data-rec]"); if (!b || window.Editor?.isPicking()) return;
+    recTab = b.dataset.rec; renderRec(); $("scr-rec").scrollTop = 0;
+  });
   $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking()) askName(false); });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     const link = e.target.closest("[data-origin]"); if (link) { oreOrigin(link.dataset.origin); return; }
     const t = e.target.closest("button"); if (!t) return;
     const d = t.dataset;
+    if (t.id === "btnBoardReset") { askBoardReset(); return; }
+    if (t.id === "btnBoonPick") { offerPick(true); return; }
     if (t.id === "btnSellAll") {
       const names = oreNames(); if (!names.length) return;
-      let sum = 0, cnt = 0; names.forEach(n => { sum += itemPrice(n) * save.ores[n]; cnt += save.ores[n]; });
+      const cnt = names.reduce((a, n) => a + save.ores[n], 0), sum = sellTotal(names.map(n => [n, save.ores[n]]));
       askSellAll(names.length, cnt, sum);
     }
     if (d.m2) { doSwing2({ choice: d.m2 }); return; }
@@ -2120,28 +2737,44 @@
       if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
       const from = curMine();
       if (from.engine === 2 && from.id !== d.goMine) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
+      if (from.engine === 2 && from.id !== d.goMine) senpaiTripEnd();        // 從前輩礦坑換到別座＝離開
+      if (mineDef(d.goMine).engine === 2 && from.id !== d.goMine) senpaiTripStart();   // 走進前輩礦坑＝新的一趟
       save.mineId = d.goMine; save.equipped = null; clearM2UI(); persist();
       if (!(from.engine === 2 && from.id !== d.goMine)) toast("前往 " + mineDef(d.goMine).name);
       go("mine");
     }
     if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); } }
-    if (d.buy) { const tl = toolDef(d.buy), pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); persist(); toast("購買 " + tl.name); renderShop(); } }
+    if (d.buy) { const tl = toolDef(d.buy); if (!tl || !isStd(tl.id)) return; /* 只有標準鎬子能用金幣買 */ const pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); const t = talk(); bossLine = t.dealAt ? TK().boughtAfterDeliver : TK().bought; t.dealAt = 0; persist(); toast("購買 " + tl.name); renderShop(); } }
   });
-  setInterval(() => { // 委託板倒數；時間到自動換新委託
+  let clockSeenDay = todayKey();
+  setInterval(() => { // 每 5 秒：可信日期換日／變成未知 → 重畫；委託板開著時跨日 → 換成新的一天（當日第 1 張、重置次數歸零）
+    const k = todayKey();
+    if (k !== clockSeenDay) { clockSeenDay = k; clockChanged(); }
+    if (!k && !clock.syncing && mono() - clock.lastTry > 15000) clockSync();   // 日期未知（午夜同步計時器被延誤、或重試計時器沒排到）→ 再試
     if (currentScreen !== "shop" || bossView !== "board" || !$("modal").classList.contains("hidden")) return;
-    const el = document.querySelector(".board-head .sub");
-    if (save.boss.req && save.boss.req.slot !== reqSlot()) renderShop(); else if (el) el.textContent = "下一張 " + timeLeft();
-  }, 1000);
-  document.addEventListener("visibilitychange", () => { if (document.hidden) { stopAuto(); persist(true); } });
+    if (k && save.boss.req && save.boss.req.day !== k) renderShop();
+  }, 5000);
+  setInterval(clockSync, 600000);   // 每 10 分鐘重新同步（裝置睡眠時單調時鐘可能停走）
+  /* 分頁到背景：停自動、存檔；回到前景且離開超過 60 秒：先重新同步，完成前每日功能暫停用（clock.hold） */
+  let hiddenAt = null;
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { hiddenAt = { m: mono(), d: Date.now() }; stopAuto(); persist(true); return; }
+    const away = hiddenAt ? Math.max(mono() - hiddenAt.m, Date.now() - hiddenAt.d) : 0;
+    hiddenAt = null;
+    if (away <= 60000) return;
+    clock.hold = true; clockChanged();
+    clockSync().finally(() => { clock.hold = false; clockChanged(); });
+  });
 
   /* ---------------- 對外介面（給編輯模式用） ---------------- */
   window.Game = {
     get config() { return config; },
     get save() { return save; },
     defaults: () => clone(window.DEFAULT_CONFIG),
-    setConfig(c, keep) { config = c; if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
-    resetConfig() { store.del(CFG_KEY); config = clone(window.DEFAULT_CONFIG); renderAll(); },
-    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); storyFresh = false; persist(true); renderAll(); },
+    setConfig(c, keep) { config = normTools(c); if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
+    resetConfig() { store.del(CFG_KEY); config = normTools(clone(window.DEFAULT_CONFIG)); renderAll(); },
+    stdTools: () => stdTools().map(t => t.id),
+    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); storyFresh = false; persist(true); adLeftover(); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
     setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
@@ -2155,6 +2788,7 @@
       counts(boss, n) { const st = state2(); st.counts[boss] = Math.max(0, (st.counts[boss] || 0) + n); persist(true); renderAll(); },
       card(cat) { state2().forceCat = cat; renderAll(); },
       date(boss, win) {
+        if (!todayKey()) return;
         const st = state2();
         E2.forceDate(M2(), todaySetting(curMine().id), st, boss, Math.random, win !== false);
         persist(true); go("mine");
@@ -2169,10 +2803,35 @@
       bonus(n) { const st = state2(); st.bonusTotal = n; st.bonusLeft = n; st.state = "bonus"; persist(true); go("mine"); },
       reset() { const id = curMine().id; delete save.plays2[id]; persist(true); renderAll(); }
     },
-    addFavor: p => { const r = addFavor(p); persist(true); renderAll(); if (r.gained.length) showBoons(r.gained); },
-    newRequest: () => { save.boss.req = makeRequest(); persist(true); renderAll(); },
-    toolFactor, itemPrice, basePrice
+    addFavor: p => { const r = addFavor(p); persist(true); renderAll(); if (r.gained.length) showBoons(r.gained); if (r.ups && v2()) offerPick(); },
+    /* 開發者（恩惠 v2）：直接設定階數／清空／全滿；只給編輯器與本機測試用 */
+    boonsV2: {
+      setTier(k, n) { if (!v2() || !BV.KINDS.includes(k)) return; save.boss.tiers[k] = Math.max(0, Math.min(BV.maxOf(config, k), n | 0)); save.boss.pending.forEach(p => { if (p.kind === "pick") p.opts = null; }); persist(true); renderAll(); },
+      maxAll() { if (!v2()) return; BV.KINDS.forEach(k => { save.boss.tiers[k] = BV.maxOf(config, k); }); save.boss.pending.forEach(p => { if (p.kind === "pick") p.opts = null; }); persist(true); renderAll(); },
+      reset() { if (!v2()) return; BV.KINDS.forEach(k => { save.boss.tiers[k] = 0; }); save.boss.pending = []; save.boss.rewardLv = save.boss.level; persist(true); renderAll(); },
+      offer: () => offerPick(true),
+      get failed() { return boonFail; },
+      get on() { return v2(); },
+      /* 備份清單只回傳 id、時間、來源、等級（不含帳號資料）；restore 用備份覆蓋目前存檔（之後照常遷移） */
+      backups() { const b = (store.get(BOON_BACKUP_KEY) || {}).entries || {}; return Object.keys(b).map(id => ({ id, at: b[id].at, src: b[id].src, lv: ((b[id].save || {}).boss || {}).level, boons: (((b[id].save || {}).boss || {}).boons || []).length })); },
+      backupSave(id) { const e = ((store.get(BOON_BACKUP_KEY) || {}).entries || {})[id]; return e ? clone(e.save) : null; },
+      restore(id) { const e = ((store.get(BOON_BACKUP_KEY) || {}).entries || {})[id]; if (!e) return false; window.Game.setSave(clone(e.save)); return true; },
+      sellTotal, autoWait, toolPrice, toolMax
+    },
+    newRequest: () => { const k = todayKey(); if (!k) return; const r = save.boss.req; save.boss.req = makeRequest(((r && r.day === k && r.no) || 0) + 1); persist(true); renderAll(); },   // 開發者：直接換板（不扣廣告次數）
+    toolFactor, itemPrice, basePrice,
+    /* 階段3B：唯讀的時鐘狀態（不含任何帳號資料）；重新同步只是再問一次伺服器，不能指定日期 */
+    clockInfo: () => ({ day: todayKey(), last: lastTrustedDay, fail: clock.failKind, hold: clock.hold, sandbox: clock.sandbox, syncing: !!clock.syncing }),
+    clockSync: () => clockSync()
   };
+  if (SANDBOX) {
+    window.Game.__ad = { start: adStart, complete: adComplete, cancel: adCancel };   // 只限 localhost 隔離測試：重送完成事件等案例
+    window.Game.__mail = {
+      set(data) { mailCache = clone(data || { mail: [], claimed: {} }); mailLoaded = true; renderMailBadge(); },
+      open: openMail,
+      unread: mailUnread
+    };
+  }
 
   /* ---------------- 啟動 ---------------- */
   applyLook();
@@ -2204,6 +2863,10 @@
   tryDevMode();
 
   glassState();   // 一開遊戲就檢查／清除舊版觀測鏡的紀錄（不必等玩家打開觀測畫面）
+  adLeftover();   // 上次關頁／當機留下的待完成廣告 → 取消（Q2＝A）
   renderAll();
+  renderClockTag();
+  if (!todayKey()) showClockMsg();   // 還沒拿到台灣日期：先顯示確認中
+  clockSync();
   if (!save.name) askName(true);
 })();

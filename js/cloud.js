@@ -16,7 +16,9 @@
   "use strict";
   const CFG = window.SUPABASE || {};
   const SESS_KEY = "mine_cloud_v1";
-  const ok = () => !!(CFG.url && CFG.anonKey);
+  /* 本機隔離測試（localhost／127.0.0.1 且 ?sandbox=名稱）：整個雲端模組關閉，不登入、不上傳、不讀信箱 */
+  const SANDBOX = /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && /[?&]sandbox=[\w-]{1,32}/.test(location.search);
+  const ok = () => !SANDBOX && !!(CFG.url && CFG.anonKey);
 
   let sess = null;                 // { access_token, refresh_token, expires_at, user:{id,email} }
   let status = "off";              // off | out | in | busy | error
@@ -255,6 +257,33 @@
     }
   }
 
+  /* ---------- 台灣遊戲日（階段3B） ----------
+     唯讀 RPC game_clock()：沒有參數，日期完全由資料庫決定。不需要登入（anon 可呼叫），所以不走上面要求登入的 rpc()。
+     只帶 apikey（publishable key）；不帶玩家 token，也不會因為 token 過期而失敗。
+     回傳 { ok:true, data } 或 { ok:false, kind:"offline"|"server"|"bad" }；console 只記狀態碼，不記 token 或完整回應。
+     本機隔離測試（localhost＋?sandbox=）：不連網，回傳 { ok:true, sandbox:true }，由 game.js 用裝置時間當測試替身；
+     測試腳本可以在頁面載入前放 window.__GAME_CLOCK_STUB__（只有 sandbox 會讀）模擬伺服器回應。 */
+  const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+  async function gameClock() {
+    if (SANDBOX) {
+      const stub = window.__GAME_CLOCK_STUB__;
+      if (typeof stub !== "function") return { ok: true, sandbox: true };
+      try { return await stub(); } catch (e) { return { ok: false, kind: "offline" }; }
+    }
+    if (!(CFG.url && CFG.anonKey)) return { ok: false, kind: "server" };
+    if (navigator.onLine === false) return { ok: false, kind: "offline" };
+    let r;
+    try {
+      r = await fetch(CFG.url.replace(/\/+$/, "") + "/rest/v1/rpc/game_clock", { method: "POST", headers: head(false), body: "{}", cache: "no-store" });
+    } catch (e) { return { ok: false, kind: "offline" }; }
+    if (!r.ok) { console.warn("game_clock HTTP " + r.status); return { ok: false, kind: "server" }; }
+    let d;
+    try { d = await r.json(); } catch (e) { return { ok: false, kind: "bad" }; }
+    if (Array.isArray(d)) d = d[0];
+    if (!d || typeof d !== "object" || !DAY_RE.test(String(d.game_day || "")) || !d.server_now || !d.next_reset_at) return { ok: false, kind: "bad" };
+    return { ok: true, data: { server_now: String(d.server_now), game_day: String(d.game_day), next_reset_at: String(d.next_reset_at), tz: d.tz, v: d.v } };
+  }
+
   /* ---------- 玩家 ID ---------- */
   let playerIdCache = null, playerProfileCache = null;
   async function myPlayerId(force) {
@@ -334,6 +363,7 @@
 
   window.Cloud = {
     enabled: ok,
+    gameClock,
     isAdmin, mailbox, claim,
     myPlayerId, myPlayerProfile, adminChangePlayerId, adminGetPlayer, adminSetIdStyle,
     adminSend, adminListMail, adminUnsend,

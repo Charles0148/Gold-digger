@@ -15,6 +15,8 @@
   const commit = (keep) => G.setConfig(draft, keep);
   const getPath = (o, p) => p.split(".").reduce((a, k) => a == null ? a : a[k], o);
   function setPath(o, p, v) { const ks = p.split("."); let a = o; ks.slice(0, -1).forEach(k => { if (a[k] == null) a[k] = {}; a = a[k]; }); a[ks[ks.length - 1]] = v; }
+  /* 標準鎬子（category:"pick"）：編輯器的工具名稱／數值表只列這五把；紅岩鑽頭等固定用程式內建值（game.js normTools），不能在這裡改 */
+  const STD = t => (window.BoonsV2 ? BoonsV2.toolCat({ tools: [t] }, t.id) === "pick" : !t.category || t.category === "pick");
   const esc = s => String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
 
   /* ---------------- 開關 ---------------- */
@@ -157,7 +159,7 @@
   function imageSlots() {
     return [["bg", "整體背景"], ["hud", "頂部資訊列"], ["scene", "場景區（通用）"], ["textbox", "敘述框"], ["nav", "底部導覽"]]
       .concat(draft.mines.map(m => ["mine_" + m.id, "場景：" + m.name]))
-      .concat(draft.tools.map(t => ["tool_" + t.id, "工具圖示：" + t.name]));
+      .concat(draft.tools.map(t => ["tool_" + t.id, "工具圖示：" + t.name]));   // 圖示可以換（紅岩鑽頭也一樣）
   }
   function tabImages(body) {
     const img = draft.images || (draft.images = {});
@@ -208,7 +210,7 @@
           <div class="ed-row"><label style="color:${draft.rarities[c.rarity].color}">　礦脈中</label>
           <input type="text" data-p="mines.${mi}.veinItems.${c.id}" data-csv value="${esc(((m.veinItems || {})[c.id] || []).join("、"))}"></div>`).join("")}`).join("")}
       <div class="ed-sec">工具名稱</div>
-      ${draft.tools.map((t, i) => `<div class="ed-row"><label>第${t.tier}階</label><input type="text" data-p="tools.${i}.name" value="${esc(t.name)}"></div>`).join("")}
+      ${draft.tools.map((t, i) => STD(t) ? `<div class="ed-row"><label>第${t.tier}階</label><input type="text" data-p="tools.${i}.name" value="${esc(t.name)}"></div>` : "").join("")}
       <div class="ed-sec">連續演出劇本（1～5 回合各一套，一行一個回合）</div>
       ${[1, 2, 3, 4, 5].map(n => `<div class="ed-row"><label>${n}回合</label><textarea rows="${n}" data-p="texts.chanceScript.r${n}" data-lines>${esc(((T.chanceScript || {})["r" + n] || []).join("\n"))}</textarea></div>`).join("")}
       <div class="ed-sec">顏色升級時額外插的句子（一行一句，隨機挑）</div>
@@ -222,7 +224,9 @@
       <div class="ed-row"><label>名字</label><input type="text" data-p="boss.name" value="${esc(draft.boss.name)}"></div>
       <div class="ed-row"><label>打招呼(多句)</label><textarea rows="3" data-p="boss.lines.greet" data-lines>${draft.boss.lines.greet.join("\n")}</textarea></div>
       ${Object.keys(draft.boss.lines).filter(k => k !== "greet").map(k => `<div class="ed-row"><label>${{ board: "委託板", noEnough: "數量不夠", deliver: "交付", allDone: "全部完成", sell: "收購", buy: "買鎬子", boons: "恩惠", noBoon: "沒有恩惠", levelUp: "升級給恩惠", ad: "補給", bye: "離開" }[k] || k}</label><input type="text" data-p="boss.lines.${k}" value="${esc(draft.boss.lines[k])}"></div>`).join("")}
-      <div class="ed-sec">恩惠名稱</div>
+      <div class="ed-sec">恩惠 v2 名稱（四種各 5 階）</div>
+      ${Object.keys(((draft.boss.boonsV2 || {}).kinds) || {}).map(k => `<div class="ed-row"><label>${k}</label><input type="text" data-p="boss.boonsV2.kinds.${k}.name" value="${esc(draft.boss.boonsV2.kinds[k].name)}"></div>`).join("")}
+      <div class="ed-sec">舊版恩惠名稱（v2 開啟時不使用）</div>
       ${Object.keys(draft.boss.boons).map(k => `<div class="ed-row"><label>${["普通", "藍", "紫", "金"][draft.boss.boons[k].r]}</label><input type="text" data-p="boss.boons.${k}.name" value="${esc(draft.boss.boons[k].name)}"></div>`).join("")}`;
     bindP(body);
     body.querySelectorAll("[data-csv]").forEach(inp => inp.onchange = inp.oninput = () => {
@@ -255,11 +259,13 @@
     steps: "對話步數（一般）", atTable: "報酬10轉的小役", bonusTable: "BONUS的小役", stTable: "ST的小役（依對手）", stTableUpper: "上位ST的小役",
     appear: "哪位前輩出現的權重", otherPass: "抽到別人的牌也通過", hitRight: "上位・壓對", hitWrong: "上位・壓錯", rewardTable: "一轉定勝負的小役", reward: "報酬轉數範圍", low: "無（最低）", mid: "銅鐘/空掘", card: "機會牌",
     dig: "鏟子", taps: "至少點幾下", plusTwo: "出現+2的機率", prices: "礦石基本售價", cardA: "甲的機會牌", cardB: "乙的機會牌", cardC: "丙的機會牌", bell: "銅鐘", replay: "空掘",
-    reqHours: "幾小時換委託", lineWeights: "委託1/2/3行權重", catWeights: "委託礦石稀有度權重", qty: "需求數量(最少,最多)", points: "恩惠點數",
+    boardLines: "每張委託項數", boardResets: "每日委託板重置次數", catWeights: "委託礦石稀有度權重", qty: "需求數量(最少,最多)", points: "恩惠點數",
     completeBonus: "全部完成加點", veinChance: "要求脈晶機率", deliverMul: "交付金額倍率", levelNeed: "升級所需點數", step: "每段增加", every: "每幾級一段",
-    boonRarity: "恩惠稀有度權重(普通/藍/紫/金)", r: "稀有度(0普通~3金)", v: "效果數值", underMul: "低階工具額外折扣"
+    boonRarity: "舊版恩惠稀有度權重(普通/藍/紫/金)", r: "稀有度(0普通~3金)", v: "效果數值", underMul: "低階工具額外折扣",
+    boonsV2: "恩惠 v2（四種各幾階）", kinds: "四種恩惠", offer: "每級候選數"
   };
-  const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "boons" && draft.boss.boons[k] ? draft.boss.boons[k].name : (LABEL[k] || k));
+  const BV2K = () => ((draft.boss.boonsV2 || {}).kinds) || {};
+  const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "kinds" && BV2K()[k]) ? BV2K()[k].name : (BV2K()[parent] && k === "step") ? "每階效果(0.04=4%)" : (BV2K()[parent] && k === "max") ? "最多幾階" : (parent === "boons" && draft.boss.boons[k] ? draft.boss.boons[k].name : (LABEL[k] || k));
   function numTree(obj, path, parent, depth) {
     let html = "";
     for (const k of Object.keys(obj)) {
@@ -271,7 +277,7 @@
           ? (k === "lenWeights" ? v.map((_, i) => (obj === draft.rules.gold ? i + 1 : i + 2) + "揮") : parent === "omen" ? draft.rules.omen.names : draft.rules.hints.ids)
           : parent === "lenWeights" ? ["1回合", "2回合", "3回合", "4回合", "5回合"]
           : (parent === "chance" && k.startsWith("color")) ? draft.rules.omen.names
-          : parent === "qty" ? ["最少", "最多"] : k === "lineWeights" ? ["1行", "2行", "3行"] : k === "boonRarity" ? ["普通", "藍", "紫", "金"]
+          : parent === "qty" ? ["最少", "最多"] : k === "boonRarity" ? ["普通", "藍", "紫", "金"]
           : v.map((_, i) => "設定" + (i + 1));
         html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>
           <tr>${v.map((x, i) => `<td><input type="number" step="any" data-n="${p}.${i}" value="${x}"></td>`).join("")}</tr></table></div>`;
@@ -301,11 +307,13 @@
       ${Object.keys(draft.machine2.prices).map(k => `<div class="ed-row"><label>${k}</label><input type="number" step="any" data-n="machine2.prices.${k}" value="${draft.machine2.prices[k]}"></div>`).join("")}
       <div class="ed-sec">礦坑老闆（委託／恩惠）</div>
       <div class="ed-note">升級所需 = 基本 + 每段增加 × floor(等級 ÷ 每幾級一段)。恩惠「效果數值」0.05 = 5%。</div>
+      <div class="ed-row"><label>恩惠 v2 狀態</label><span class="ed-note" style="margin:0">${G.boonsV2 && G.boonsV2.on ? "開啟中（本機隔離預覽）" : "關閉"}｜這裡不能切換：只看程式內建值，或 localhost＋?sandbox=名稱&boonsv2=1。正式開啟前須完成 RELEASE_GATE。</span></div>
+      <div class="ed-row"><label>滿階後送鎬子</label><input type="checkbox" data-bool="boss.boonsV2.maxedReward" ${(draft.boss.boonsV2 || {}).maxedReward !== false ? "checked" : ""}></div>
       ${numTree(draft.boss, "boss", "", 1)}
       <div class="ed-sec">小役售價（第1層基準）：平常 ／ 礦脈中</div>
       ${draft.categories.map((c, i) => field(c.name + " 平常", `categories.${i}.value`) + field(c.name + " 礦脈中", `categories.${i}.veinValue`)).join("")}
       <div class="ed-sec">工具</div><div class="ed-scroll"><table class="ed-table"><tr><th>工具</th><th>耐久</th><th>價格</th></tr>
-        ${draft.tools.map((t, i) => `<tr><th>${t.name}</th><td><input type="number" data-n="tools.${i}.durability" value="${t.durability}"></td><td><input type="number" data-n="tools.${i}.price" value="${t.price}"></td></tr>`).join("")}</table></div>
+        ${draft.tools.map((t, i) => STD(t) ? `<tr><th>${t.name}</th><td><input type="number" data-n="tools.${i}.durability" value="${t.durability}"></td><td><input type="number" data-n="tools.${i}.price" value="${t.price}"></td></tr>` : "").join("")}</table></div>
       ${field("低階工具額外折扣", "toolPenalty.underMul")}
       <div class="ed-sec">副本（礦坑）</div><div class="ed-scroll"><table class="ed-table"><tr><th>副本</th><th>天井</th><th>售價倍率</th><th>解鎖費用</th></tr>
         ${draft.mines.map((m, i) => `<tr><th>${m.name}</th><td><input type="number" data-n="mines.${i}.tenjou" value="${m.tenjou}"></td><td><input type="number" step="any" data-n="mines.${i}.mult" value="${m.mult}"></td><td><input type="number" data-n="mines.${i}.unlock" value="${m.unlock}"></td></tr>`).join("")}</table></div>`;
@@ -313,6 +321,7 @@
       if (inp.value === "" || isNaN(+inp.value)) { inp.value = getPath(draft, inp.dataset.n); return; }
       setPath(draft, inp.dataset.n, +inp.value); commit();
     });
+    body.querySelectorAll("[data-bool]").forEach(inp => inp.onchange = () => { setPath(draft, inp.dataset.bool, inp.checked); commit(); });
   }
 
   /* ================= 前輩台（第二台機台：台詞 + 開發者測試） ================= */
@@ -439,6 +448,12 @@
       <div class="ed-row"><label>包含小抽選</label><input type="checkbox" id="dbgRollsAll" ${S.debug.showAllRolls ? "checked" : ""}> <span class="ed-note" style="margin:0">假地鳴、高確轉落、普通礦進高確等每揮都會抽的項目</span></div>
       <div class="ed-row"><label>強制設定</label><select id="dbgForce"><option value="0">不強制（每日隨機）</option>${[1, 2, 3, 4, 5, 6].map(s => `<option value="${s}" ${S.debug.forceSetting === s ? "selected" : ""}>設定${s}</option>`).join("")}</select></div>
       <div class="ed-flex"><button class="ed-btn" id="dbgCoin">+$10,000</button><button class="ed-btn" id="dbgTools">每種工具各+1</button><button class="ed-btn" id="dbgUnlock">解鎖全部礦坑</button><button class="ed-btn" id="dbgFavor">恩惠 +25點</button><button class="ed-btn" id="dbgReq">立刻換委託</button><button class="ed-btn" id="dbgOres">委託礦石各+20</button></div>
+      <div class="ed-sec">恩惠 v2 測試</div>
+      <div class="ed-note">目前：${G.boonsV2 ? Object.entries((S.boss && S.boss.tiers) || {}).map(([k, v]) => `${((G.config.boss.boonsV2 || {}).kinds || {})[k] ? G.config.boss.boonsV2.kinds[k].name : k} ${v}階`).join("／") : "—"}｜待領 ${((S.boss && S.boss.pending) || []).length} 筆｜rewardLv ${(S.boss && S.boss.rewardLv) || "—"}</div>
+      <div class="ed-flex">${Object.keys(((G.config.boss.boonsV2 || {}).kinds) || {}).map(k => `<button class="ed-btn" data-bvup="${k}">${G.config.boss.boonsV2.kinds[k].name} +1階</button>`).join("")}</div>
+      <div class="ed-flex"><button class="ed-btn" id="dbgBvMax">四種全滿</button><button class="ed-btn danger" id="dbgBvReset">四種清零＋清待領</button><button class="ed-btn" id="dbgBvOffer">打開選獎</button></div>
+      <div class="ed-note">遷移前備份（每份存檔一筆，不顯示帳號資料）：</div>
+      <div class="ed-flex">${G.boonsV2 ? G.boonsV2.backups().map(b => `<button class="ed-btn" data-bvrestore="${esc(b.id)}">還原 ${esc(b.src)}｜Lv${b.lv}｜舊恩惠${b.boons}｜${esc((b.at || "").slice(0, 16))}</button>`).join("") || '<span class="ed-note" style="margin:0">（沒有）</span>' : ""}</div>
       <div class="ed-sec">玩家存檔</div>
       <div class="ed-flex">
         <button class="ed-btn" id="svDl">下載存檔</button>
@@ -456,11 +471,16 @@
     $b("dbgForce").onchange = e => { S.debug.forceSetting = +e.target.value; G.persist(true); G.renderAll(); };
     $b("dbgCoin").onclick = () => { S.coins += 10000; G.persist(true); G.renderAll(); };
     $b("dbgTools").onclick = () => {
-      G.config.tools.forEach(t => { const max = t.durability; S.tools.push({ uid: S.uid++, id: t.id, dur: max, max }); });
+      G.config.tools.filter(t => G.stdTools().includes(t.id)).forEach(t => { const max = t.durability; S.tools.push({ uid: S.uid++, id: t.id, dur: max, max }); });   // 只給五把標準鎬子，不含紅岩試用／付費品
       G.persist(true); G.renderAll(); G.toast("已加入工具");
     };
     $b("dbgUnlock").onclick = () => { S.unlocked = G.config.mines.map(m => m.id); G.persist(true); G.renderAll(); };
     $b("dbgFavor").onclick = () => G.addFavor(25);
+    body.querySelectorAll("[data-bvup]").forEach(b => b.onclick = () => { const k = b.dataset.bvup; G.boonsV2.setTier(k, ((S.boss.tiers || {})[k] || 0) + 1); tabData(body); });
+    $b("dbgBvMax").onclick = () => { G.boonsV2.maxAll(); tabData(body); };
+    $b("dbgBvReset").onclick = () => { if (confirm("把四種恩惠清為 0 階並清空待領？（只影響這份存檔）")) { G.boonsV2.reset(); tabData(body); } };
+    $b("dbgBvOffer").onclick = () => G.boonsV2.offer();
+    body.querySelectorAll("[data-bvrestore]").forEach(b => b.onclick = () => { if (confirm("用這份備份覆蓋目前存檔？")) { G.boonsV2.restore(b.dataset.bvrestore); G.toast("已還原備份"); tabData(body); } });
     $b("dbgReq").onclick = () => { G.newRequest(); G.toast("已換新委託"); };
     $b("dbgOres").onclick = () => { const q = S.boss && S.boss.req; if (!q) return; q.lines.forEach(l => { S.ores[l.name] = (S.ores[l.name] || 0) + 20; }); G.persist(true); G.renderAll(); G.toast("已加入委託礦石"); };
     $b("svDl").onclick = () => download("mine-save.json", S);

@@ -419,7 +419,8 @@
     rng = rng || Math.random;
     const rules = config.rules;
     const mine = config.mines[mineIndex || 0];
-    const tool = config.tools.find(t => t.tier === mine.tier) || config.tools[0];
+    const picks = (config.tools || []).filter(t => !t.category || t.category === "pick");   // 只算標準鎬子（紅岩鑽頭等不是）
+    const tool = picks.find(t => t.tier === mine.tier) || picks[0];
     const costPerSwing = tool.price / tool.durability;
     const catValue = {}, veinValue = {};
     config.categories.forEach(c => { catValue[c.id] = c.value * mine.mult; veinValue[c.id] = (c.veinValue ?? c.value) * mine.mult; });
@@ -455,7 +456,7 @@
       }
     }
     const td = rules.toolDrop, avgDur = (td.minDur + td.maxDur) / 2;
-    const lower = config.tools.filter(t => t.tier < mine.tier);
+    const lower = picks.filter(t => t.tier < mine.tier);
     const lowerAvg = lower.length ? lower.reduce((a, t) => a + t.price, 0) / lower.length : tool.price;
     const dropValue = (lower.length ? td.sameTier * tool.price + (1 - td.sameTier) * lowerAvg : tool.price) * avgDur;
     stat.income += stat.toolDrops * dropValue;

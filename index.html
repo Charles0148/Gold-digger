@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.10.12">
+<link rel="stylesheet" href="css/style.css?v=0.10.13">
 </head>
 <body>
 <div id="app">
@@ -24,27 +24,31 @@
 
     <!-- ===== 挖礦 ===== -->
     <section class="screen active" id="scr-mine">
-      <div id="mineBar" class="px-box" data-edit="mineBar" data-label="礦坑資訊列">
-        <div class="mb-row">
-          <span id="mbName" class="mb-name">淺層洞窟</span>
-          <span id="mbState" class="mb-state"></span>
-        </div>
-        <div class="mb-row mb-data">
-          <span>本日 <b id="mbSwings">0</b></span>
-          <span>礦脈 <b id="mbHits">0</b></span>
-          <span>紫 <b id="mbEpic">0</b></span>
-          <span>累計 <b id="mbSince">0</b></span>
-        </div>
-      </div>
-
+      <!-- v0.10.13：礦坑名稱／階段／統計整合進場景上方的固定資訊區 -->
       <div id="scene" class="px-box" data-edit="scene" data-label="場景區">
-        <div id="verTag" class="ver-tag"></div>
-        <div id="sceneBig" class="scene-big">⛏</div>
-        <div id="sceneSub" class="scene-sub">點擊下方敘述框開始挖礦</div>
+        <div id="mineBar" class="scene-info" data-edit="mineBar" data-label="礦坑資訊列">
+          <div class="mb-row">
+            <span id="mbName" class="mb-name">淺層洞窟</span>
+            <span id="mbState" class="mb-state"></span>
+          </div>
+          <div class="mb-row mb-data">
+            <span>今日此坑 <b id="mbSwings">0</b></span>
+            <span>礦脈 <b id="mbHits">0</b></span>
+            <span>紫 <b id="mbEpic">0</b></span>
+            <span><span id="mbSinceL">距上次礦脈</span> <b id="mbSince">0</b></span>
+          </div>
+        </div>
         <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
+          <div id="vbUp" class="vb-up hidden">已獲得最終認可</div>
           <div><b id="vbChain">BB</b></div>
           <div>剩餘 <b id="vbLeft">25</b></div>
           <div>收穫 <b id="vbGain">0</b></div>
+        </div>
+        <div id="sceneStage" class="scene-stage">
+          <div id="sceneBig" class="scene-big">⛏</div>
+          <div id="sceneSub" class="scene-sub">點擊下方敘述框開始挖礦</div>
+          <div id="verTag" class="ver-tag"></div>
+          <div id="clockTag" class="clock-tag hidden"></div>
         </div>
       </div>
 
@@ -89,27 +93,31 @@
       <div class="px-box panel" id="cloudPanel" data-edit="cloudPanel" data-label="雲端存檔"></div>
     </section>
 
-    <!-- ===== 圖鑑 ===== -->
-    <section class="screen" id="scr-dex">
-      <div class="px-box panel" data-edit="dexPanel" data-label="圖鑑">
-        <div class="panel-title">圖鑑 <span class="sub" id="dexCount"></span></div>
-        <div id="dexList"></div>
+    <!-- ===== 紀錄（v0.10.13）：圖鑑／成就 兩個子分頁 ===== -->
+    <section class="screen" id="scr-rec">
+      <div class="subtabs" role="tablist">
+        <button class="subtab" data-rec="dex" role="tab">圖鑑</button>
+        <button class="subtab" data-rec="ach" role="tab">成就</button>
       </div>
-    </section>
-
-    <!-- ===== 成就（v0.10.12） ===== -->
-    <section class="screen" id="scr-ach">
-      <div class="px-box panel" data-edit="achSenpai" data-label="成就-前輩信賴">
-        <div class="panel-title">前輩信賴 <span class="sub" id="bagSenpaiSince"></span></div>
-        <div id="bagSenpai" class="list"></div>
+      <div id="recDex" class="rec-pane">
+        <div class="px-box panel" data-edit="dexPanel" data-label="圖鑑">
+          <div class="panel-title">圖鑑 <span class="sub" id="dexCount"></span></div>
+          <div id="dexList"></div>
+        </div>
       </div>
-      <div class="px-box panel" data-edit="achMemory" data-label="成就-珍貴回憶">
-        <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
-        <div id="bagMemory" class="list"></div>
-      </div>
-      <div class="px-box panel" data-edit="achRecord" data-label="成就-挖礦紀錄">
-        <div class="panel-title">挖礦紀錄 <span class="sub">準備中</span></div>
-        <div class="sub">之後會在這裡加入挖礦、圖鑑、礦坑與老闆相關的成就。</div>
+      <div id="recAch" class="rec-pane hidden">
+        <div class="px-box panel" data-edit="achSenpai" data-label="成就-前輩信賴">
+          <div class="panel-title">前輩信賴 <span class="sub" id="bagSenpaiSince"></span></div>
+          <div id="bagSenpai" class="list"></div>
+        </div>
+        <div class="px-box panel" data-edit="achMemory" data-label="成就-珍貴回憶">
+          <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
+          <div id="bagMemory" class="list"></div>
+        </div>
+        <div class="px-box panel" data-edit="achRecord" data-label="成就-挖礦紀錄">
+          <div class="panel-title">其他成就 <span class="sub">準備中</span></div>
+          <div class="sub">之後會在這裡加入挖礦、圖鑑、礦坑與老闆相關的成就。</div>
+        </div>
       </div>
     </section>
 
@@ -146,14 +154,21 @@
   </main>
 
   <!-- ===== 底部導覽 ===== -->
+  <!-- v0.10.13：五項主導覽＋一致的像素圖示（10×10 格，currentColor 上色） -->
   <nav id="nav" data-edit="nav" data-label="底部導覽">
-    <button data-go="mine" class="active">挖礦</button>
-    <button data-go="bag">背包</button>
-    <button data-go="map">地圖</button>
-    <button data-go="dex">圖鑑</button>
-    <button data-go="shop">老闆</button>
-    <button data-go="ach">成就</button>
+    <button data-go="mine" class="active"><svg class="nav-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-mine"/></svg><span>挖礦</span></button>
+    <button data-go="bag"><svg class="nav-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-bag"/></svg><span>背包</span></button>
+    <button data-go="map"><svg class="nav-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-map"/></svg><span>地圖</span></button>
+    <button data-go="shop"><svg class="nav-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-boss"/></svg><span>老闆</span></button>
+    <button data-go="rec"><svg class="nav-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-rec"/></svg><span>紀錄</span></button>
   </nav>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="ico-mine" viewBox="0 0 10 10"><path d="M2 1h6v1H2zM1 2h2v1H1zM7 2h2v1H7zM0 3h2v2H0zM8 3h2v2H8zM4 2h2v8H4z"/></symbol>
+    <symbol id="ico-bag" viewBox="0 0 10 10"><path fill-rule="evenodd" d="M3 0h4v1H3zM2 1h1v2H2zM7 1h1v2H7zM1 3h8v7H1zM4 5h2v2H4z"/></symbol>
+    <symbol id="ico-map" viewBox="0 0 10 10"><path d="M0 1h3v8H0zM4 2h2v8H4zM7 1h3v8H7z"/></symbol>
+    <symbol id="ico-boss" viewBox="0 0 10 10"><path d="M2 0h6v1H2zM3 1h4v3H3zM1 5h8v5H1z"/></symbol>
+    <symbol id="ico-rec" viewBox="0 0 10 10"><path fill-rule="evenodd" d="M1 0h8v10H1zM3 2h4v1H3zM3 4h4v1H3zM3 6h3v1H3z"/></symbol>
+  </svg>
 
   <button id="editFab" class="hidden" title="編輯模式">✎</button>
   <div id="toast" class="toast hidden"></div>
@@ -162,12 +177,13 @@
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=0.10.12"></script>
-<script src="js/cloud-config.js?v=0.10.12"></script>
-<script src="js/cloud.js?v=0.10.12"></script>
-<script src="js/config.js?v=0.10.12"></script>
-<script src="js/engine.js?v=0.10.12"></script>
-<script src="js/engine2.js?v=0.10.12"></script>
-<script src="js/game.js?v=0.10.12"></script>
+<script src="js/version.js?v=0.10.13"></script>
+<script src="js/cloud-config.js?v=0.10.13"></script>
+<script src="js/cloud.js?v=0.10.13"></script>
+<script src="js/config.js?v=0.10.13"></script>
+<script src="js/engine.js?v=0.10.13"></script>
+<script src="js/engine2.js?v=0.10.13"></script>
+<script src="js/boons.js?v=0.10.13"></script>
+<script src="js/game.js?v=0.10.13"></script>
 </body>
 </html>

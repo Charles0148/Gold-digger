@@ -11,6 +11,8 @@
   --hi: rgba(255,255,255,.18); --lo: rgba(0,0,0,.55);
   --omen: #e8e8e8;
   --font: "Cubic11", "DotGothic16", ui-monospace, "Noto Sans Mono CJK TC", monospace;
+  /* 閱讀字級倍率：敘述框／回憶等「要讀的內容」用（固定標準字級；2026-09-28 取消大字模式） */
+  --rd: 1.0625;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -64,35 +66,46 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .screen.active { display: flex; }
 
 /* ===== 挖礦畫面 ===== */
-#mineBar { padding: 8px 10px; }
-.mb-row { display: flex; justify-content: space-between; align-items: center; }
-.mb-name { color: var(--accent); }
-.mb-state { font-size: .8em; }
-.mb-data { font-size: .75em; color: var(--sub); margin-top: 4px; }
+/* v0.10.13：礦坑資訊列放進場景上方，用暗底＋分隔線分組（不再是獨立立體框） */
+.scene-info {
+  flex: none; text-align: left; padding: 7px 10px 6px;
+  background: rgba(0,0,0,.5); border-bottom: 2px solid rgba(0,0,0,.65);
+}
+.mb-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.mb-name { flex: 1; color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mb-state { font-size: .875em; text-align: right; flex: none; max-width: 62%; }
+.mb-data { font-size: .8125em; color: var(--sub); margin-top: 3px; }
 .mb-data b { color: var(--text); font-weight: normal; }
 
 #scene {
-  flex: 1; min-height: 160px; display: flex; flex-direction: column;
-  align-items: center; justify-content: center; position: relative; text-align: center; padding: 10px;
+  flex: 1 1 0; min-height: 150px; display: flex; flex-direction: column;
+  position: relative; text-align: center; padding: 3px; overflow: hidden;
   background-color: #222228;
   background-image: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 16px, transparent 16px 32px),
                     repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 16px, transparent 16px 32px);
 }
-.scene-big { font-size: 2.2em; line-height: 1.3; min-height: 1.3em; }
-.scene-sub { margin-top: 6px; color: var(--sub); font-size: .85em; min-height: 1.2em; }
+.scene-stage {
+  flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; padding: 8px; overflow: hidden; container-type: size;
+}
+/* 選項很多、場景被擠扁時：中央大字整個收起來，不要只露出半截 */
+@container (max-height: 52px) { .scene-big, .scene-sub, .ver-tag { display: none; } }
+.scene-big { font-size: 2.2em; line-height: 1.3; min-height: 1.3em; overflow-wrap: anywhere; }
+.scene-sub { margin-top: 6px; color: var(--sub); font-size: .875em; min-height: 1.2em; }
 .scene-big.pop { animation: pop .18s steps(3); }
 @keyframes pop { 0% { transform: scale(.7); } 100% { transform: scale(1); } }
 #scene.shake { animation: shake .2s steps(4); }
 @keyframes shake { 25% { transform: translate(-3px, 2px); } 50% { transform: translate(3px, -2px); } 75% { transform: translate(-2px, -1px); } }
 
 .vein-banner {
-  position: absolute; top: 8px; left: 8px; right: 8px; display: flex; justify-content: space-between;
-  font-size: .8em; padding: 4px 8px; background: rgba(0,0,0,.6); border: 2px solid var(--accent); color: var(--accent);
+  flex: none; margin: 6px 6px 0; display: flex; justify-content: space-between; flex-wrap: wrap; gap: 2px 10px;
+  font-size: .875em; padding: 4px 8px; background: rgba(0,0,0,.6); border: 2px solid var(--accent); color: var(--accent);
 }
 .vein-banner b { color: #fff; font-weight: normal; }
+.vb-up { flex-basis: 100%; text-align: center; color: #ffcc33; padding-bottom: 3px; margin-bottom: 1px; border-bottom: 1px solid rgba(255,204,51,.35); }
 
 .textbox {
-  min-height: 118px; padding: 10px 12px 22px; position: relative; cursor: pointer;
+  flex: none; min-height: 118px; padding: 10px 12px 26px; position: relative; cursor: pointer;
   border-color: var(--omen); background-color: #101014;
 }
 .textbox.omen-rainbow, #scene.vein-on { animation: rainbowBorder 1s steps(6) infinite; }
@@ -107,13 +120,17 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   0% { color: #ff5555; } 17% { color: #ffaa00; } 33% { color: #ffff55; }
   50% { color: #55ff55; } 67% { color: #55aaff; } 83% { color: #d070ff; }
 }
-.tb-tag { position: absolute; top: -12px; left: 10px; background: #101014; padding: 0 6px; font-size: .75em; color: var(--accent); animation: blink 1.2s steps(2) 2; }
-#tbLines div { line-height: 1.55; min-height: 1.55em; }
-.tb-tap { position: absolute; right: 10px; bottom: 4px; font-size: .75em; color: var(--sub); animation: blink 1s steps(2) infinite; }
+.tb-tag { position: absolute; top: -12px; left: 10px; background: #101014; padding: 0 6px; font-size: .875em; color: var(--accent); animation: blink 1.2s steps(2) 2; }
+#tbLines { font-size: calc(var(--rd) * 1em); }
+#tbLines div { line-height: 1.6; min-height: 1.6em; overflow-wrap: anywhere; }
+.tb-tap { position: absolute; right: 10px; bottom: 5px; font-size: .8125em; color: var(--sub); animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
 
-#controls { display: flex; gap: 8px; align-items: stretch; }
-.tool-info { flex: 1; padding: 6px 10px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .85em; }
+/* 控制列：工具耐久＋手動／離開（按鈕至少 48px 高） */
+#controls { flex: none; display: flex; gap: 8px; align-items: stretch; }
+.tool-info { flex: 1; min-width: 0; padding: 5px 10px; min-height: 48px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .875em; }
+#controls > .px-btn { min-height: 48px; min-width: 72px; }
+.ti-name { white-space: nowrap; }
 .bar { height: 10px; background: #000; border: 2px solid #000; }
 .bar-fill { height: 100%; background: #55ff55; width: 0; }
 
@@ -144,14 +161,29 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .dex-cell .n { font-size: .7em; color: var(--sub); }
 
 /* ===== 導覽 ===== */
-#nav { display: flex; background: var(--panel-dark); border-top: 3px solid #000; padding-bottom: env(safe-area-inset-bottom); }
-#nav button { flex: 1; min-width: 0; background: none; border: none; padding: 12px 0; color: var(--sub); cursor: pointer; white-space: nowrap; }
-#nav button.active { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); }
+#nav { flex: none; display: flex; background: var(--panel-dark); border-top: 3px solid #000; padding-bottom: env(safe-area-inset-bottom); }
+#nav button {
+  flex: 1; min-width: 0; min-height: 54px; background: none; border: none; padding: 7px 0 6px; color: var(--sub); cursor: pointer; white-space: nowrap;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-size: .875em;
+}
+#nav button.active { color: var(--accent); box-shadow: inset 0 3px 0 var(--accent); background: rgba(255,255,255,.04); }
+.nav-ico { width: 20px; height: 20px; fill: currentColor; shape-rendering: crispEdges; flex: none; }
+
+/* ===== 紀錄頁：圖鑑／成就 子分頁 ===== */
+.subtabs { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.subtab {
+  min-height: 46px; background: var(--panel-dark); border: 3px solid #000; color: var(--sub); cursor: pointer;
+  box-shadow: inset 3px 3px 0 rgba(255,255,255,.08);
+}
+.subtab.on { color: var(--accent); background: var(--panel); box-shadow: inset 3px 3px 0 var(--hi), inset 0 -3px 0 var(--accent); }
+.rec-pane { display: flex; flex-direction: column; gap: 10px; }
+
 
 /* ===== 提示 / 對話框 ===== */
 .toast {
   position: absolute; left: 50%; top: 60px; transform: translateX(-50%); z-index: 50;
-  background: #000; border: 2px solid var(--accent); padding: 6px 12px; font-size: .85em; white-space: nowrap;
+  background: #000; border: 2px solid var(--accent); padding: 6px 12px; font-size: .85em;
+  width: max-content; max-width: calc(100% - 32px); text-align: center;   /* 階段3B：長提示（跨午夜）自動換行，不再撐出橫向捲軸；短提示照舊一行 */
 }
 .modal { position: absolute; inset: 0; background: rgba(0,0,0,.7); display: flex; align-items: center; justify-content: center; z-index: 60; padding: 20px; }
 .modal-box { padding: 16px; width: 100%; max-width: 340px; text-align: center; }
@@ -221,12 +253,42 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .ore-link { text-decoration: underline dotted; cursor: pointer; }
 .boon-get { border: 2px solid; padding: 6px; margin: 6px 0; background: rgba(0,0,0,.3); }
 
+/* ===== 佐佐木恩惠 v2（2026-09-29 本機）：四種各 5 階、兩選一 ===== */
+.boon-tag { display: inline-block; padding: 1px 6px; border: 2px solid #ffcc33; color: #ffcc33; background: #24190e; font-size: .78em; font-weight: bold; line-height: 1.4; white-space: nowrap; }
+.boss-opt .boon-tag { float: right; }
+.boon-pips { display: inline-flex; gap: 3px; vertical-align: middle; }
+.boon-pips i { width: 12px; height: 12px; border: 2px solid #7a5a32; background: #1a120a; box-shadow: inset 1px 1px 0 #000; }
+.boon-pips i.on { background: #ffcc33; border-color: #ffe0a0; box-shadow: inset -2px -2px 0 #c89414; }
+.boon-row-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.boon-row-head > span:first-child { min-width: 7.5em; color: #ffe0a0; }
+.boon-lvtxt { margin-left: auto; font-size: .85em; color: var(--sub); }
+.boon-row.full .boon-lvtxt { color: #ffcc33; font-weight: bold; }
+.boon-lv { color: #ffe0a0; margin: 4px 0 2px; }
+.boon-note { font-size: .88em; color: var(--sub); margin: 4px 0 6px; }
+.boon-card { display: block; width: 100%; text-align: left; font: inherit; color: var(--text); cursor: pointer;
+  margin: 6px 0; padding: 8px 10px; min-height: 48px; background: #3a2c1c; border: 3px solid #7a5a32; box-shadow: inset 0 0 0 2px #24190e, 0 3px 0 #120c06; }
+.boon-card:hover:not(:disabled), .boon-card:focus-visible { border-color: #ffcc33; }
+.boon-card:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 2px #24190e, 0 1px 0 #120c06; }
+.boon-card:disabled { opacity: .5; cursor: default; }
+.boon-card.tool { cursor: default; }
+.boon-card-name { font-weight: bold; color: #ffe0a0; margin-bottom: 3px; }
+.boon-card-eff { font-size: .88em; margin-top: 3px; }
+.boon-card-eff b { color: #ffcc33; }
+.boon-rules { margin-top: 8px; padding: 6px 8px; border: 2px dashed #7a5a32; line-height: 1.6; }
+.boon-rules b { color: #ffe0a0; }
+
+/* 地圖：探索保障說明獨立一行 */
+.nowrap { white-space: nowrap; }
+.map-guard { color: var(--text); opacity: .8; line-height: 1.5; margin: 2px 0; }
+
 /* 版本編號 */
 .ver-tag { position: absolute; right: 6px; bottom: 4px; font-size: .7em; color: var(--sub); opacity: .7; pointer-events: none; }
+/* 階段3B：只有 localhost 測試替身會出現（正式網址永遠不顯示） */
+.clock-tag { position: absolute; left: 6px; bottom: 4px; font-size: .7em; color: #ff4fd8; opacity: .85; pointer-events: none; }
 
 /* ===== 第二台機台：選擇按鈕 ===== */
 .tb-choice { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 4px; }
-.tb-choice .px-btn { text-align: left; }
+.tb-choice .px-btn { text-align: left; min-height: 48px; white-space: normal; line-height: 1.45; }
 .dig-plus { color: var(--accent); font-weight: bold; }
 
 /* 鏟子挖出的 +N 數字 */
@@ -237,6 +299,16 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hud-mail{position:relative;background:none;border:0;color:inherit;font-size:16px;line-height:1;padding:2px 4px;cursor:pointer}
 .hud-dot{position:absolute;top:-4px;right:-6px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;
   background:#ff3b3b;color:#fff;font-size:9px;line-height:14px;text-align:center}
+.mail-list{max-height:52vh;overflow:auto;margin-top:8px;text-align:left}
+.mail-section+.mail-section{margin-top:12px;padding-top:10px;border-top:2px solid var(--line)}
+.mail-section-title{display:flex;align-items:center;justify-content:space-between;margin:0 2px 6px;color:var(--gold)}
+.mail-row{display:block;text-align:left}
+.mail-body{white-space:pre-wrap;margin:4px 0}
+.mail-reward{color:#ffd34d}
+.mail-state{margin-top:6px}
+.mail-status{opacity:.72}
+.mail-expired{color:#999;opacity:1}
+.mail-empty{padding:7px 4px 9px}
 
 /* 編輯模式：外出劇本小標題 */
 .ed-sub{margin:8px 0 4px;font-size:11px;color:#ffcc33}
@@ -335,13 +407,21 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 
 /* ===== 前輩百次回憶（v0.10.11） ===== */
 .story-log { display: none; }
-#scene.story-on { justify-content: flex-start; align-items: stretch; }
-#scene.story-on > .scene-big, #scene.story-on > .scene-sub, #scene.story-on > .vein-banner,
-#scene.story-on > .ver-tag, #scene.story-on > .dig-num { display: none !important; }
+/* 擁有者 2026-09-28：回憶時展示框只剩對話——資訊列、標題、外框都收起來。
+   對話從上往下疊，滿了之後最舊的從上方淡出消失（不捲動、不留捲軸）。 */
+#scene.story-on .scene-info, #scene.story-on .scene-big, #scene.story-on .scene-sub, #scene.story-on .vein-banner,
+#scene.story-on .ver-tag, #scene.story-on .dig-num { display: none !important; }
+#scene.story-on .scene-stage { min-height: 120px; padding: 0; }
+/* 回憶播放中收起控制列（工具耐久／手動／離開），結束後恢復 */
+#scr-mine.story-mode #controls { display: none !important; }
 #scene.story-on .story-log {
-  display: block; position: absolute; inset: 8px; overflow-y: auto; -webkit-overflow-scrolling: touch;
-  text-align: left; padding: 8px 10px; background: rgba(0,0,0,.55); border: 2px solid #ffcc33;
-  font-size: .92em; line-height: 1.6;
+  display: block; position: absolute; inset: 0; overflow: hidden;
+  text-align: left; padding: 12px 14px;
+  font-size: calc(var(--rd) * 1em); line-height: 1.65;
+}
+#scene.story-on .story-log.over {
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.2em);
+  mask-image: linear-gradient(to bottom, transparent 0, #000 3.2em);
 }
 .story-head { color: #ffcc33; margin-bottom: 6px; }
 .story-line { padding: 3px 0; color: var(--sub); }
@@ -352,3 +432,18 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .senpai-note { font-size: .8em; margin-top: 3px; }
 .memory-row.locked { opacity: .55; }
 @media (prefers-reduced-motion: reduce) { .story-line.new { animation: none; } }
+
+/* ===== v0.10.13 矮螢幕：先壓場景空白、裝飾與次要間距；對話與操作不縮 ===== */
+@media (max-height: 720px) {
+  .screen { padding: 8px; gap: 8px; }
+  #scene { min-height: 116px; }
+  .scene-big { font-size: 1.8em; }
+  .scene-sub { margin-top: 3px; }
+  .scene-info { padding: 5px 8px 4px; }
+  .scene-stage { padding: 4px 8px; }
+  .textbox { min-height: 96px; }
+  .ver-tag { display: none; }
+  #hud { padding-top: 6px; padding-bottom: 6px; }
+  #nav button { min-height: 50px; padding: 5px 0 4px; gap: 2px; }
+  .nav-ico { width: 16px; height: 16px; }
+}

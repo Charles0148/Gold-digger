@@ -462,7 +462,8 @@
     rng = rng || Math.random;
     const R = config.machine2;
     const mine = config.mines.find(m => m.engine === 2) || config.mines[0];
-    const tool = config.tools.find(t => t.tier === mine.tier) || config.tools[0];
+    const picks = (config.tools || []).filter(t => !t.category || t.category === "pick");   // 只算標準鎬子
+    const tool = picks.find(t => t.tier === mine.tier) || picks[0];
     const costPerSwing = tool.price / tool.durability;
     const st = newState2();
     const stat = { swings: 0, paidSwings: 0, income: 0, dates: 0, dateWins: 0, ats: 0, stRounds: 0, stPasses: 0, uppers: 0, bonusSwings: 0, bonusTotal: 0, chains: [], atSwings: 0 };

@@ -1,0 +1,6 @@
+# 只留在本機、不上傳 GitHub 的檔案（擁有者 2026-09 決定）
+雲端存檔密碼.txt
+Claude outputs/
+AGENTS.md
+CLAUDE.md
+.claude/
