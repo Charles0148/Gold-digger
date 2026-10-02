@@ -2567,16 +2567,24 @@
         <div class="btns"><button class="px-btn" data-bv-claim="${p.lv}" data-bv-kind="">收下</button><button class="px-btn" id="bvLater">稍後</button></div>`;
     } else {
       box.innerHTML = head + `<div class="boon-note">${p.opts.length > 1 ? `從 ${p.opts.length} 種裡選 1 種升一階` : "只剩這一種還能升階"}</div>` +
-        p.opts.map(k => { const t = bvTier(k); return `<button class="boon-card" data-bv-claim="${p.lv}" data-bv-kind="${k}">
+        p.opts.map(k => { const t = bvTier(k); return `<button class="boon-card" data-bv-pick="${k}" aria-pressed="false">
           <div class="boon-card-name">${esc(bvDef(k).name)}</div>${pips(t, bvMax(k))}
           <div class="sub">第 ${t} 階 → 第 ${t + 1} 階／${bvMax(k)}</div>
           <div class="boon-card-eff">${t ? bvEffect(k, t) : "尚未取得"} → <b>${bvEffect(k, t + 1)}</b></div></button>`; }).join("") +
-        `<div class="btns"><button class="px-btn" id="bvLater">稍後再選</button></div>`;
+        `<div class="sub boon-pick-hint" id="bvHint">先點一種恩惠，再按「確定」。</div>
+        <div class="btns"><button class="px-btn" id="bvOk" data-bv-claim="${p.lv}" data-bv-kind="" disabled>確定</button><button class="px-btn" id="bvLater">稍後再選</button></div>`;
     }
     $("modal").classList.remove("hidden");
     $("bvLater").onclick = () => { $("modal").classList.add("hidden"); if (currentScreen === "shop") renderShop(); };
+    /* 2026-10-02 擁有者要求：選恩惠要兩步（點卡片＝選取，按「確定」才升階），避免誤觸 */
+    box.querySelectorAll("[data-bv-pick]").forEach(c => c.onclick = () => {
+      box.querySelectorAll("[data-bv-pick]").forEach(x => { const on = x === c; x.classList.toggle("selected", on); x.setAttribute("aria-pressed", on ? "true" : "false"); });
+      const ok = $("bvOk"); ok.dataset.bvKind = c.dataset.bvPick; ok.disabled = false;
+      $("bvHint").textContent = `選擇「${bvDef(c.dataset.bvPick).name}」，按「確定」升一階。`;
+    });
     box.querySelectorAll("[data-bv-claim]").forEach(b => b.onclick = async () => {
-      box.querySelectorAll("[data-bv-claim]").forEach(x => { x.disabled = true; });   // 連點只算一次
+      if (!b.dataset.bvKind && b.id === "bvOk") return;   // 還沒選
+      box.querySelectorAll("[data-bv-claim], [data-bv-pick]").forEach(x => { x.disabled = true; });   // 連點只算一次
       const lv = Number(b.dataset.bvClaim), kind = b.dataset.bvKind || null;
       /* 階段4-2：里程碑先問雲端領取紀錄（已登入時）。雲端說別處領過 → 不發；連不上 → 照發，之後 msSync 補紀錄（擁有者決定） */
       let guard = msGuard, srv = false;

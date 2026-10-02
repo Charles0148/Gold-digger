@@ -271,6 +271,9 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .boon-card:active:not(:disabled) { transform: translateY(2px); box-shadow: inset 0 0 0 2px #24190e, 0 1px 0 #120c06; }
 .boon-card:disabled { opacity: .5; cursor: default; }
 .boon-card.tool { cursor: default; }
+.boon-card.selected { border-color: #ffcc33; background: #3a2a12; box-shadow: inset 0 0 0 2px #ffcc33; }
+.boon-card.selected .boon-card-name::before { content: "▶ "; color: #ffcc33; }
+.boon-pick-hint { margin-top: 6px; color: #ffcc33; }
 .boon-card-name { font-weight: bold; color: #ffe0a0; margin-bottom: 3px; }
 .boon-card-eff { font-size: .88em; margin-top: 3px; }
 .boon-card-eff b { color: #ffcc33; }
