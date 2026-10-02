@@ -171,6 +171,7 @@
       ));
       if (rows && rows.length) {
         save.rev = rows[0].rev;
+        takeEpoch(save, rows[0]);
         setStatus("in");
         return { ok: true, rev: rows[0].rev };
       }
@@ -183,6 +184,7 @@
           body: JSON.stringify([Object.assign(JSON.parse(body(1)), { user_id: uid })])
         }));
         save.rev = (ins && ins[0] && ins[0].rev) || 1;
+        takeEpoch(save, ins && ins[0]);   // 新建時資料庫可能把世代補成目前世代（docs/15）
         setStatus("in");
         return { ok: true, rev: save.rev, created: true };
       }
@@ -190,9 +192,28 @@
       setStatus("error", "雲端有更新的存檔（別台裝置存過）");
       return { ok: false, conflict: true, remote: cur, err: "雲端有更新的存檔（別台裝置存過）" };
     } catch (e) {
+      const kind = guardKind(e);
+      if (kind) {
+        const msg = kind === "epoch" ? "這台的存檔是舊資料，雲端不收（請改用雲端的存檔）" : "遊戲版本太舊，雲端不收（請重新整理更新遊戲）";
+        setStatus("error", msg);
+        return { ok: false, blocked: kind, err: msg };
+      }
       setStatus("error", e.message);
       return { ok: false, err: e.message };
     }
+  }
+  /* 階段4（docs/15）：資料庫觸發器 saves_guard 拒絕 → 回傳 "epoch"｜"version"｜null。
+     看原始錯誤訊息（body.message），不看翻成中文後的文字。 */
+  function guardKind(e) {
+    const m = String((e && e.body && (e.body.message || e.body.msg)) || (e && e.message) || "");
+    if (/SAVE_EPOCH_STALE/.test(m)) return "epoch";
+    if (/SAVE_VERSION_OLD/.test(m)) return "version";
+    return null;
+  }
+  /* 雲端回傳的世代比本機新（只會發生在新建時被資料庫補上）→ 跟著記下，下次上傳才不會被當成舊資料 */
+  function takeEpoch(save, row) {
+    const e = row && row.data && row.data.boss && row.data.boss.epoch;
+    if (Number.isFinite(e) && save.boss && typeof save.boss === "object" && e > (Number(save.boss.epoch) || 0)) save.boss.epoch = e;
   }
   /* 玩家在衝突畫面選了「用這台的」→ 接手雲端目前的 rev 再寫一次 */
   async function pushOver(save, remoteRev) {
@@ -284,6 +305,17 @@
     return { ok: true, data: { server_now: String(d.server_now), game_day: String(d.game_day), next_reset_at: String(d.next_reset_at), tz: d.tz, v: d.v } };
   }
 
+  /* ---------- 里程碑領取紀錄（階段4-2，docs/16） ----------
+     RPC claim_milestone：先在雲端搶下「這個帳號、這個世代」的領取紀錄。
+     回傳 { ok:true, result:"ok"|"already"|"stale" }；未登入 { ok:false, out:true }；網路／後台錯誤 { ok:false, err }。 */
+  async function claimMilestone(id, epoch, sync) {
+    if (!ok() || !sess) return { ok: false, out: true };
+    const r = await rpc("claim_milestone", { p_milestone: String(id || ""), p_epoch: Math.max(0, Math.floor(Number(epoch) || 0)), p_sync: !!sync });
+    if (!r.ok) return r;
+    const v = String(Array.isArray(r.data) ? r.data[0] : r.data || "");
+    return /^(ok|already|stale)$/.test(v) ? { ok: true, result: v } : { ok: false, err: "雲端回應不正確" };
+  }
+
   /* ---------- 玩家 ID ---------- */
   let playerIdCache = null, playerProfileCache = null;
   async function myPlayerId(force) {
@@ -367,7 +399,7 @@
 
   window.Cloud = {
     enabled: ok,
-    gameClock,
+    gameClock, claimMilestone,
     isAdmin, mailbox, claim,
     myPlayerId, myPlayerProfile, adminChangePlayerId, adminGetPlayer, adminSetIdStyle,
     adminSend, adminListMail, adminUnsend,

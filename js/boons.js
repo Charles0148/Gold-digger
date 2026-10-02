@@ -175,9 +175,11 @@
       const tool = msTool(config, p.id);
       if (choice !== p.id || p.epoch !== bs.epoch || !tool) return { ok: false, why: "bad" };
       if (msDone(bs, p.id)) { bs.pending.shift(); return { ok: false, why: "done" }; }
-      if (guard && guard(p.id, bs.epoch) === false) {
-        bs.milestones[p.id] = { epoch: bs.epoch, lv: p.lv, at: null, via: "device" }; bs.pending.shift();
-        return { ok: false, why: "device" };
+      const g = guard ? guard(p.id, bs.epoch) : true;   // false＝這台裝置發過；"server"＝雲端領取紀錄說這個帳號已在別處領過（階段4-2）
+      if (g === false || g === "server") {
+        const via = g === "server" ? "server" : "device";
+        bs.milestones[p.id] = { epoch: bs.epoch, lv: p.lv, at: null, via }; bs.pending.shift();
+        return { ok: false, why: via };
       }
       bs.milestones[p.id] = { epoch: bs.epoch, lv: p.lv, at: new Date().toISOString() };
       bs.pending.shift();

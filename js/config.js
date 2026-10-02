@@ -310,11 +310,11 @@
       deliverMul: 1.5,                               // 交付金額 = 基本售價 × 此倍率
       levelNeed: { base: 25, step: 10, every: 5 },   // 升級所需點數：base + step × floor(等級 / every)
       /* 佐佐木恩惠 v2（擁有者 2026-09-29 定案，docs/13）：四種各 5 階、固定階幅，每升一級從未滿階的恩惠「等機率」抽兩種選一。
-         enabled 預設 false（正式網址一律維持舊恩惠）。本機測試只能用 localhost／127.0.0.1＋?sandbox=名稱&boonsv2=1 暫時開啟，
-         game.js 只讀 DEFAULT_CONFIG 的這個值，編輯器存的設定改不動它。正式開啟前須完成 RELEASE_GATE。
+         2026-10-02 正式開啟（擁有者授權，與 docs/17 恩惠正式重置同一次切換；v0.10.15）。
+         game.js 只讀 DEFAULT_CONFIG 的這個值，編輯器存的設定改不動它。
          開啟時舊的 boons／boonRarity 完全不讀（資料保留在存檔，方便回滾）。 */
       boonsV2: {
-        enabled: false,
+        enabled: true,
         offer: 2,                                    // 每級提供幾個候選（只剩一種未滿就只給一個）
         kinds: {
           autoSpeed: { step: 0.04, max: 5, name: "自動挖掘速度" },   // 間隔 = 基礎 ÷ (1 + 比例)

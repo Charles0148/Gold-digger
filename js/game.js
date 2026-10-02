@@ -200,6 +200,26 @@
     if (!store.set(MS_LEDGER_KEY, all)) throw new Error("領取紀錄寫入失敗（瀏覽器空間不足）");
     return true;
   }
+  /* 階段4-2：把「srv:false」（未登入或連不上雲端時領的）里程碑補登到雲端領取紀錄（docs/16）。
+     ok／already／stale 都算處理完（already＝別處也領過；已經發了就不收回，記 dup 供日後盤點）；連線失敗就停，下次再補。 */
+  let msSyncBusy = false;
+  async function msSync() {
+    if (msSyncBusy || !cloudOn() || cloudBlocked || !v2() || !Cloud.claimMilestone) return;
+    const ms = save.boss && save.boss.milestones;
+    const ids = ms ? Object.keys(ms).filter(id => ms[id] && ms[id].srv === false && ms[id].at) : [];
+    if (!ids.length) return;
+    msSyncBusy = true;
+    let changed = false;
+    try {
+      for (const id of ids) {
+        const rec = ms[id], sr = await Cloud.claimMilestone(id, rec.epoch, true);
+        if (!sr.ok) break;
+        if (save.boss.milestones !== ms || ms[id] !== rec) break;   // 等待期間換了存檔
+        rec.srv = true; if (sr.result === "already") rec.dup = true; changed = true;
+      }
+    } finally { msSyncBusy = false; }
+    if (changed) persist(true);
+  }
   function fixBoss(sv, src) {
     /* v2 關閉：零遷移、零備份。只做舊版原本就有的「沒有 boss 就補一個」，其他欄位一個都不碰。 */
     if (!V2_ON) { if (!sv.boss) sv.boss = newBoss(); boonFail = false; return; }
@@ -256,9 +276,14 @@
      持續自動時雲端一直不上傳。現在「變髒」後最晚 30 秒一定嘗試上傳一次；本機 localStorage 照舊每次立即寫入。 */
   const CLOUD_MAX_WAIT = 30000;
   let cloudTimer = null, cloudBusy = false, cloudDirty = false, cloudDirtySince = 0;
+  /* 階段4（docs/15）：雲端拒收（"epoch"＝這台是恩惠重置前的舊存檔／"version"＝遊戲版本太舊）。
+     拒收後停止自動上傳，直到玩家接回雲端存檔、登出或重新整理；本機存檔照常寫入、不清除。 */
+  let cloudBlocked = null;
   const cloudOn = () => !!(window.Cloud && Cloud.enabled() && Cloud.status() !== "out");
+  const epochOf = sv => { const e = Number(sv && sv.boss && sv.boss.epoch); return Number.isFinite(e) && e > 0 ? Math.floor(e) : 0; };
+  const staleVs = row => !!(row && row.data && epochOf(save) < epochOf(row.data));   // 這台的恩惠世代比雲端舊 → 不能「用這台的」
   function cloudLater() {
-    if (!cloudOn()) return;
+    if (!cloudOn() || cloudBlocked) return;
     if (!cloudDirty || !cloudDirtySince) cloudDirtySince = Date.now();
     cloudDirty = true;
     clearTimeout(cloudTimer);
@@ -266,12 +291,15 @@
   }
   async function cloudPush(opt) {
     if (!cloudOn()) return;
+    if (cloudBlocked) { clearTimeout(cloudTimer); return { ok: false, blocked: cloudBlocked, err: Cloud.error() }; }
     if (cloudBusy) { clearTimeout(cloudTimer); cloudTimer = setTimeout(cloudPush, 1000); return; }   // 上一次還沒回來：稍後再試，不丟掉這次
     cloudBusy = true; cloudDirty = false; cloudDirtySince = 0;
     const r = await Cloud.push(save, opt);
     cloudBusy = false;
     renderCloud();
     if (!r.ok) { cloudDirty = true; cloudDirtySince = Date.now(); }
+    if (r.blocked) { cloudBlocked = r.blocked; clearTimeout(cloudTimer); stopAuto(); showBlocked(); return r; }
+    if (r.ok) msSync();   // 上傳成功＝連得上雲端 → 順便補登里程碑領取紀錄
     /* v0.10.3：雲端已經被別台裝置寫過 → 停下來問玩家，不默默覆蓋也不默默放棄 */
     if (r.conflict && r.remote) { clearTimeout(cloudTimer); stopAuto(); showConflict(r.remote); }
     return r;
@@ -281,35 +309,81 @@
   function showConflict(row) {
     if (conflictOpen) return;
     conflictOpen = true;
+    const stale = staleVs(row);
     const when = row.updated_at ? new Date(row.updated_at).toLocaleString() : "—";
     const box = $("modalBox");
     box.innerHTML = `<div style="color:#ff5555">存檔撞到了</div>
       <div class="sub" style="margin-top:6px;text-align:left">
-        你在別的裝置（或另一個分頁）也玩了這個帳號，雲端的存檔比這台新。<br>
-        <b>兩邊只能留一邊</b>，沒選到的會被覆蓋掉。
+        你在別的裝置（或另一個分頁）也玩了這個帳號，雲端的存檔比這台新。${stale ? "" : `<br>
+        <b>兩邊只能留一邊</b>，沒選到的會被覆蓋掉。`}
       </div>
       <div class="sub" style="margin-top:8px;text-align:left">
         <b>雲端</b>：${esc(row.name || "（無名）")}　$${fmt(row.coins || 0)}<br>
         <span class="sub">最後存檔 ${when}</span><br><br>
         <b>這台</b>：${esc(save.name || "（無名）")}　$${fmt(save.coins)}
       </div>
-      <div class="btns"><button class="px-btn" id="cfCloud">用雲端的</button><button class="px-btn" id="cfLocal">用這台的</button></div>`;
+      ${stale ? STALE_NOTE : ""}
+      <div class="btns"><button class="px-btn" id="cfCloud">用雲端的</button>${stale ? "" : `<button class="px-btn" id="cfLocal">用這台的</button>`}</div>`;
     $("modal").classList.remove("hidden");
     $("cfCloud").onclick = () => {
       $("modal").classList.add("hidden"); conflictOpen = false;
       if (!row.data || row.data.v !== 1) return toast("雲端存檔格式不對");
+      if (stale) staleBackup("conflict");
       adoptSave(row);
       toast("已接回雲端存檔");
     };
+    if (stale) return;
     $("cfLocal").onclick = async () => {
       $("modal").classList.add("hidden"); conflictOpen = false;
       const r = await Cloud.pushOver(save, row.rev);
       renderCloud();
+      if (r && r.blocked) { cloudBlocked = r.blocked; showBlocked(); return; }
       toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
     };
   }
+  const STALE_NOTE = `<div class="sub" style="color:#ffcc33;margin-top:8px;text-align:left">這台的存檔是佐佐木恩惠重新整理<b>之前</b>的舊資料，不能再蓋回雲端，只能用雲端的。這台原本的存檔會先另外備份在這台裝置。</div>`;
+  /* 接回雲端前，把這台的舊存檔另存一份（最多留 3 份，最新在前）；永遠不直接丟掉本機進度 */
+  const STALE_KEY = "mine_stale_save_backup_v1" + SB;
+  function staleBackup(why) {
+    const list = store.get(STALE_KEY);
+    const box = (Array.isArray(list) ? list : []).slice(0, 2);
+    box.unshift({ at: new Date().toISOString(), why, ver: window.GAME_VERSION || "", save: JSON.parse(JSON.stringify(save)) });
+    if (!store.set(STALE_KEY, box)) console.warn("舊存檔備份寫入失敗（瀏覽器空間不足）");
+  }
+  /* 雲端拒收畫面（docs/15）：epoch → 只能用雲端的；version → 請重新整理更新遊戲（也可以先用雲端的） */
+  let blockedOpen = false;
+  async function showBlocked() {
+    if (blockedOpen || !cloudBlocked) return;
+    blockedOpen = true;
+    const kind = cloudBlocked;
+    let row = null, pullErr = false;
+    try { row = await Cloud.pull(); } catch (e) { pullErr = true; }
+    const okRow = !!(row && row.data && row.data.v === 1);
+    const head = kind === "version"
+      ? `<div style="color:#ff5555">遊戲版本太舊</div>
+         <div class="sub" style="margin-top:6px;text-align:left">雲端現在只收新版遊戲的存檔，這台還在跑舊版，所以<b>暫停上傳</b>。<br>
+         請按「重新整理」更新遊戲；如果重新整理後還是這個畫面，請把分頁整個關掉再打開。<br>
+         這台的存檔還在，不會消失。</div>`
+      : `<div style="color:#ff5555">這台的存檔不能再上傳</div>
+         <div class="sub" style="margin-top:6px;text-align:left">佐佐木的恩惠已經重新整理過，雲端存的是新的存檔；這台裝置上的是整理<b>之前</b>的舊資料，所以雲端不收。<br>
+         請按「用雲端的」接回新存檔。這台原本的存檔會先另外備份在這台裝置，不會直接刪掉。</div>`;
+    const cloudInfo = okRow
+      ? `<div class="sub" style="margin-top:8px;text-align:left"><b>雲端</b>：${esc(row.name || "（無名）")}　$${fmt(row.coins || 0)}<br>
+         <span class="sub">最後存檔 ${row.updated_at ? new Date(row.updated_at).toLocaleString() : "—"}</span></div>`
+      : `<div class="sub" style="margin-top:8px;color:#ffcc33">${pullErr ? "現在讀不到雲端存檔，請確認網路後按「再試一次」。" : "雲端沒有可用的存檔。"}</div>`;
+    $("modalBox").innerHTML = head + cloudInfo + `<div class="btns">
+      ${okRow ? `<button class="px-btn" id="bkCloud">用雲端的</button>` : `<button class="px-btn" id="bkRetry">再試一次</button>`}
+      ${kind === "version" ? `<button class="px-btn" id="bkReload">重新整理</button>` : ""}</div>`;
+    $("modal").classList.remove("hidden");
+    const close = () => { $("modal").classList.add("hidden"); blockedOpen = false; };
+    const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
+    on("bkCloud", () => { close(); staleBackup(kind); adoptSave(row); toast("已接回雲端存檔"); });
+    on("bkRetry", () => { close(); showBlocked(); });
+    on("bkReload", () => { store.set(SAVE_KEY, save); location.reload(); });
+  }
   /* 採用雲端那一份（登入時二選一、衝突時都走這裡） */
   function adoptSave(row) {
+    cloudBlocked = null;   // 接回雲端（世代跟雲端一致）→ 解除拒收暫停；若仍被拒，下次上傳會再擋下來
     save = row.data;
     save.rev = Number(row.rev || 0);
     save.auto = false;
@@ -1483,8 +1557,8 @@
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
-    on("cldOut", async () => { await Cloud.signOut(); mailLoaded = false; pidReset(null); adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
-    on("cldPush", async () => { const r = await cloudPush(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
+    on("cldOut", async () => { await Cloud.signOut(); cloudBlocked = null; mailLoaded = false; pidReset(null); adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
+    on("cldPush", async () => { const r = await cloudPush(); if (r && r.blocked) return showBlocked(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
     on("cldPull", cloudPullAsk);
     on("pidCopy", () => copyText(playerId, "已複製玩家 ID " + playerId));
     on("pidRetry", () => loadPlayerId(true, true));
@@ -1590,6 +1664,7 @@
     pickSave(row);
   }
   function pickSave(row) {
+    const stale = staleVs(row);
     const when = row.updated_at ? new Date(row.updated_at).toLocaleString() : "—";
     const box = $("modalBox");
     box.innerHTML = `<div>要留哪一邊的存檔？</div>
@@ -1598,18 +1673,21 @@
         <span class="sub">最後上傳 ${when}</span><br><br>
         <b>這台手機</b>：${save.name || "（無名）"}　$${fmt(save.coins)}
       </div>
-      <div class="sub" style="color:#ff5555;margin-top:8px">沒選到的那一邊會被覆蓋掉。</div>
-      <div class="btns"><button class="px-btn" id="useCloud">用雲端的</button><button class="px-btn" id="useLocal">用這台的</button></div>`;
+      ${stale ? STALE_NOTE : `<div class="sub" style="color:#ff5555;margin-top:8px">沒選到的那一邊會被覆蓋掉。</div>`}
+      <div class="btns"><button class="px-btn" id="useCloud">用雲端的</button>${stale ? "" : `<button class="px-btn" id="useLocal">用這台的</button>`}</div>`;
     $("modal").classList.remove("hidden");
     $("useCloud").onclick = () => {
       $("modal").classList.add("hidden");
       if (!row.data || row.data.v !== 1) return toast("雲端存檔格式不對");
+      if (stale) staleBackup("login");
       adoptSave(row); toast("已接回雲端存檔");
     };
+    if (stale) return;
     $("useLocal").onclick = async () => {
       $("modal").classList.add("hidden");
       const r = await Cloud.pushOver(save, row.rev);   // 接手雲端的 rev 再蓋過去
       renderCloud();
+      if (r && r.blocked) { cloudBlocked = r.blocked; showBlocked(); return; }
       toast(r && r.ok ? "已用這台的存檔覆蓋雲端" : "上傳失敗");
     };
   }
@@ -2482,18 +2560,32 @@
     }
     $("modal").classList.remove("hidden");
     $("bvLater").onclick = () => { $("modal").classList.add("hidden"); if (currentScreen === "shop") renderShop(); };
-    box.querySelectorAll("[data-bv-claim]").forEach(b => b.onclick = () => {
+    box.querySelectorAll("[data-bv-claim]").forEach(b => b.onclick = async () => {
       box.querySelectorAll("[data-bv-claim]").forEach(x => { x.disabled = true; });   // 連點只算一次
+      const lv = Number(b.dataset.bvClaim), kind = b.dataset.bvKind || null;
+      /* 階段4-2：里程碑先問雲端領取紀錄（已登入時）。雲端說別處領過 → 不發；連不上 → 照發，之後 msSync 補紀錄（擁有者決定） */
+      let guard = msGuard, srv = false;
+      if (p.kind === "milestone" && cloudOn() && Cloud.claimMilestone) {
+        b.textContent = "確認中…";
+        const sr = await Cloud.claimMilestone(p.id, save.boss.epoch);
+        const q = save.boss.pending[0];
+        if (!q || q !== p) { $("modal").classList.add("hidden"); if (currentScreen === "shop") renderShop(); return; }   // 等待期間存檔換了（例如接回雲端）
+        if (sr.ok && sr.result === "stale") { $("modal").classList.add("hidden"); toast("這份存檔是舊資料，請先改用雲端的存檔再領取"); return; }
+        if (sr.ok && sr.result === "already") guard = () => "server";
+        srv = !!(sr.ok && sr.result === "ok");
+      }
       let r;
-      try { r = BV.claim(save, config, Number(b.dataset.bvClaim), b.dataset.bvKind || null, addTool, msGuard); }
+      try { r = BV.claim(save, config, lv, kind, addTool, guard); }
       catch (e) { $("modal").classList.add("hidden"); toast("領取失敗：瀏覽器空間不足，謝禮還留著"); return; }
       $("modal").classList.add("hidden");
       if (!r.ok) {
-        if (r.why === "done") persist(true);   // 存檔內已有紀錄、只是待領沒清掉 → 清掉並存檔
+        if (r.why === "done" || r.why === "server") persist(true);   // 存檔內已有紀錄、或雲端說已領過 → 清掉待領並存檔
         /* why==="device"（另一個分頁剛領）：這裡不主動存檔，避免這個分頁的舊存檔立刻蓋掉另一分頁剛寫入、含試用的存檔（多分頁本來就是後寫蓋前寫，見 RELEASE_GATE） */
-        toast(r.why === "device" ? "這份謝禮在這台裝置已經領過了（可能是另一個分頁）" : "這份謝禮已經領過了"); if (currentScreen === "shop") renderShop(); return;
+        toast(r.why === "device" ? "這份謝禮在這台裝置已經領過了（可能是另一個分頁）" : r.why === "server" ? "這份謝禮這個帳號已經在別的裝置領過了" : "這份謝禮已經領過了"); if (currentScreen === "shop") renderShop(); return;
       }
+      if (r.kind === "milestone") save.boss.milestones[r.id].srv = srv;   // false＝雲端還沒有這筆領取紀錄，之後補
       persist(true);
+      if (r.kind === "milestone" && !srv) setTimeout(msSync, 0);
       toast(r.kind === "milestone" ? `收下 ${(toolDef(r.tool) || {}).name} ×1（耐久 ${toolMax(r.tool)}）` : r.kind === "tool" ? `收下 ${(toolDef(r.id) || {}).name || r.id} ×1` : `${bvDef(r.choice).name} → 第 ${r.tier} 階`);
       if (pendingN()) offerPick(true); else if (currentScreen === "shop") renderShop();
     });
@@ -2893,6 +2985,7 @@
     await loadMail(true); openMail();
   });
   loadMail();
+  setTimeout(msSync, 3000);   // 開遊戲時補登上次沒送到的里程碑領取紀錄
 
   /* ---------------- 開發者模式：只有我進得去 ----------------
      1. 網址要帶 ?dev=1
