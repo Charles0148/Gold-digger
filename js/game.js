@@ -392,6 +392,7 @@
     fixSenpai(save);
     fixBoss(save, "cloud");
     fixAds(save);
+    fixToolDur();
     storyFresh = false;
     store.set(SAVE_KEY, save);
     adLeftover();   // 雲端那份帶著待完成廣告 → 視同關頁重開：取消、同日退回
@@ -696,6 +697,20 @@
     const t = { uid: save.uid++, id, dur: Math.max(1, Math.round(max * ratio)), max };
     save.tools.push(t);
     return t;
+  }
+  /* 2026-10-02 恩惠重置後：舊恩惠「新工具耐久」做出來的鎬子，存檔裡的 max 仍比標準高。
+     每次載入／接回雲端／匯入都把可套耐久恩惠的工具夾回「目前應有的上限」（toolMax，含目前 v2 耐久階級）；
+     目前耐久超過新上限就切到上限。只會往下修：之後靠新版恩惠合法變高的鎬子不受影響（同一世代階級只增不減）。回傳是否有修改。 */
+  function fixToolDur() {
+    if (!v2() || boonFail || !Array.isArray(save.tools)) return false;
+    let n = 0;
+    save.tools.forEach(t => {
+      if (!t || !toolDef(t.id) || !BV.toolFlag(config, t.id, "boonDurability")) return;
+      const cap = toolMax(t.id);
+      if (!(Number(t.max) > cap)) return;
+      t.max = cap; t.dur = Math.max(1, Math.min(Number(t.dur) || 1, cap)); n++;
+    });
+    return n > 0;
   }
   function activeTool() {
     const mine = curMine();
@@ -2917,7 +2932,7 @@
     setConfig(c, keep) { config = normTools(c); if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
     resetConfig() { store.del(CFG_KEY); config = normTools(clone(window.DEFAULT_CONFIG)); renderAll(); },
     stdTools: () => stdTools().map(t => t.id),
-    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); storyFresh = false; persist(true); adLeftover(); renderAll(); },
+    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); fixToolDur(); storyFresh = false; persist(true); adLeftover(); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
     setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
@@ -2985,6 +3000,7 @@
     await loadMail(true); openMail();
   });
   loadMail();
+  if (fixToolDur()) persist(true);   // 本機存檔：舊恩惠留下的過高耐久上限修回標準
   setTimeout(msSync, 3000);   // 開遊戲時補登上次沒送到的里程碑領取紀錄
 
   /* ---------------- 開發者模式：只有我進得去 ----------------
