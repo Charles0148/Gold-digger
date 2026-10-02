@@ -1770,14 +1770,21 @@
       ${list.length ? list.map(mailRow).join("") : `<div class="sub mail-empty">${empty}</div>`}
     </section>`;
   }
+  /* 2026-10-03 擁有者要求：未領取／領取紀錄改成切換式分頁（沿用紀錄頁 subtab 樣式）。每次從信箱鈕打開都回到「未領取」 */
+  let mailTab = "unread";
   function openMail() {
     const box = $("modalBox");
     const unread = [], settled = [];
     mailCache.mail.forEach(m => (mailCache.claimed[m.id] || mailExpired(m) ? settled : unread).push(m));
-    const rows = mailSection("未領取", unread, "目前沒有未領取信件。")
-      + mailSection("已領取", settled, "目前沒有已領取或過期信件。");
+    const rows = mailTab === "settled"
+      ? mailSection("領取紀錄", settled, "目前沒有已領取或過期信件。")
+      : mailSection("未領取", unread, "目前沒有未領取信件。");
     box.innerHTML = `<div>信箱</div>
       <div class="sub" style="margin-top:4px">${cloudOn() ? "" : "要先登入雲端才收得到信。"}</div>
+      <div class="subtabs mail-tabs" role="tablist">
+        <button class="subtab ${mailTab === "unread" ? "on" : ""}" data-mail-tab="unread" role="tab" aria-selected="${mailTab === "unread"}">未領取 ${unread.length}</button>
+        <button class="subtab ${mailTab === "settled" ? "on" : ""}" data-mail-tab="settled" role="tab" aria-selected="${mailTab === "settled"}">領取紀錄 ${settled.length}</button>
+      </div>
       <div class="list mail-list">${rows}</div>
       <div class="btns"><button class="px-btn" id="mailRe">重新整理</button>
         ${adminSeen ? '<button class="px-btn" id="mailAdmin">管理信箱</button>' : ""}
@@ -1787,6 +1794,7 @@
     $("mailRe").onclick = async () => { await loadMail(true); openMail(); };
     const adm = $("mailAdmin"); if (adm) adm.onclick = () => openAdminMail();
     box.querySelectorAll("[data-claim]").forEach(b => { b.onclick = () => claimMail(+b.dataset.claim, b); });
+    box.querySelectorAll("[data-mail-tab]").forEach(b => { b.onclick = () => { mailTab = b.dataset.mailTab; openMail(); }; });
     checkAdmin();   // 查完才會顯示管理按鈕（查到是管理員會重畫一次）
   }
   /* 管理員判斷：等 Cloud.isAdmin() 回 true 才顯示入口。
@@ -3013,7 +3021,7 @@
   if (window.Cloud) Cloud.onChange(() => { if (currentScreen === "map") renderCloud(); });
   $("mailBtn").addEventListener("click", async () => {
     if (window.Editor?.isPicking()) return;
-    await loadMail(true); openMail();
+    await loadMail(true); mailTab = "unread"; openMail();
   });
   loadMail();
   if (fixToolDur()) persist(true);   // 本機存檔：舊恩惠留下的過高耐久上限修回標準

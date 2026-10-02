@@ -303,6 +303,8 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hud-dot{position:absolute;top:-4px;right:-6px;min-width:14px;height:14px;padding:0 3px;border-radius:7px;
   background:#ff3b3b;color:#fff;font-size:9px;line-height:14px;text-align:center}
 .mail-list{max-height:52vh;overflow:auto;margin-top:8px;text-align:left}
+.mail-tabs{margin-top:8px}
+.mail-tabs+.mail-list .mail-section-title{display:none}
 .mail-section+.mail-section{margin-top:12px;padding-top:10px;border-top:2px solid var(--line)}
 .mail-section-title{display:flex;align-items:center;justify-content:space-between;margin:0 2px 6px;color:var(--gold)}
 .mail-row{display:block;text-align:left}
