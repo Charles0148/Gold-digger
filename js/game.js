@@ -574,8 +574,10 @@
     const g = glassCfg(), list = scopeMines();
     if (!list.length) { $("scopeMines").innerHTML = '<div class="sub">還沒有解鎖任何礦坑。</div>'; return; }
     if (!scopeMine || !list.some(m => m.id === scopeMine)) scopeMine = list[0].id;
-    const m = mineDef(scopeMine), seen = glassSeen(scopeMine), n = seen.length;
-    const max = g.dailyMax ?? 5, full = n >= max, pr = glassPrice(scopeMine);
+    /* 2026-10-03：購買當下就已寫入紀錄（防重整只扣錢不記次數）；轉鏡中先把這一筆藏起來，揭曉後才顯示 */
+    const all = glassSeen(scopeMine), hide = scopePhase === "focus" && scopePending && scopePending.mine === scopeMine ? 1 : 0;
+    const m = mineDef(scopeMine), seen = all.slice(0, all.length - hide), n = seen.length;
+    const max = g.dailyMax ?? 5, full = all.length >= max, pr = glassPrice(scopeMine);
 
     $("scopeSub").textContent = `每座礦坑每天 ${max} 次｜每再看一次 ×${g.repeatMul ?? 2} 價`;
     $("scopeMines").innerHTML = list.map(x =>
@@ -628,9 +630,14 @@
     }).join("") : '<div class="sub">今天還沒觀測這座礦坑。</div>';
   }
 
-  /* 把這次觀測結果寫進「購買那天」的紀錄（擁有者 Q5＝B 同理）。轉鏡中跨過台灣午夜 → 舊的一天已結束，不寫進新一天 */
+  /* 把這次觀測結果寫進「購買那天」的紀錄（擁有者 Q5＝B 同理）。轉鏡中跨過台灣午夜 → 舊的一天已結束，不寫進新一天
+     2026-10-03 起購買當下就寫入（recorded:true），這裡只處理舊流程留下的未寫入情況 */
   function scopeRecord() {
     const st = glassState();
+    if (scopePending && scopePending.recorded) {   // 已在購買那天的紀錄裡；跨午夜只需提醒
+      if (st.date !== scopePending.day) { toast("觀測中跨過午夜：這次結果算在昨天，不計入今天的紀錄", 4000); return false; }
+      return true;
+    }
     if (st.date !== scopePending.day) { toast("觀測中跨過午夜：這次結果算在昨天，不計入今天的紀錄", 4000); return false; }
     (st.byMine[scopeMine] || (st.byMine[scopeMine] = [])).push(scopePending.e);
     return true;
@@ -647,7 +654,8 @@
     const st = glassState();
     const list = st.byMine[scopeMine] || (st.byMine[scopeMine] = []);
     const stage = list.length + 1;
-    scopePending = { e: glassDraw(todaySetting(scopeMine), stage), stage, day: st.date };
+    scopePending = { e: glassDraw(todaySetting(scopeMine), stage), stage, day: st.date, mine: scopeMine, recorded: true };
+    list.push(scopePending.e);   // 扣錢與記次數同一次存檔：轉鏡中重新整理也不會只扣錢（2026-10-03）
     scopePhase = "focus"; scopeTurns = 0; scopeFrame = 0;
     persist(); renderScope(); renderHud();
     // 佐佐木的階段台詞
@@ -1720,7 +1728,7 @@
     return { ok: true };
   }
   function mailUnread() { return mailCache.mail.filter(m => !mailCache.claimed[m.id] && !mailExpired(m)).length; }
-  const mailExpired = m => !!(m.expires_at && new Date(m.expires_at) < new Date());
+  const mailExpired = m => !!(m._expired || (m.expires_at && new Date(m.expires_at) < new Date()));   // _expired＝伺服器已判定過期（裝置時間可能不準）
   function renderMailBadge() {
     const b = $("mailDot"); if (!b) return;
     const n = mailUnread();
@@ -1801,7 +1809,7 @@
     if (mailExpired(m)) { toast("這封信已過期"); openMail(); return; }
     btn.disabled = true;
     const r = MAIL_TEST ? mailTestClaim(id) : await Cloud.claim(id);
-    if (!r.ok) { btn.disabled = false; return toast(r.err || "領取失敗"); }
+    if (!r.ok) { btn.disabled = false; toast(r.err || "領取失敗"); if (r.expired) { m._expired = true; openMail(); } return; }   // 伺服器判定過期（docs/18）：畫面也改成過期、不再顯示領取鈕
     mailCache.claimed[id] = true;
     if (m.coins) save.coins += m.coins;
     if (m.ore_name && m.ore_qty) save.ores[m.ore_name] = (save.ores[m.ore_name] || 0) + m.ore_qty;

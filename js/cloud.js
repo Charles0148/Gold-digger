@@ -257,6 +257,8 @@
       return { ok: true };
     } catch (e) {
       if (e.status === 409) return { ok: false, err: "這封信已經領過了" };
+      /* docs/18：資料庫拒絕（過期或不是寄給自己）→ RLS 錯誤，翻成白話 */
+      if (e.status === 403 || /row-level security/i.test(String((e.body && (e.body.message || e.body.msg)) || ""))) return { ok: false, expired: true, err: "這封信已經過期了，不能領取" };
       return { ok: false, err: e.message };
     }
   }
