@@ -692,7 +692,7 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 /* ===== 前輩百次回憶（v0.10.11） ===== */
 .story-log { display: none; }
 /* 擁有者 2026-09-28：回憶時展示框只剩對話——資訊列、標題、外框都收起來。
-   對話從上往下疊，滿了之後最舊的從上方淡出消失（不捲動、不留捲軸）。 */
+   （2026-10-03 起改視覺小說式，見下方） */
 #scene.story-on .scene-info, #scene.story-on .scene-big, #scene.story-on .scene-sub, #scene.story-on .vein-banner,
 #scene.story-on .ver-tag, #scene.story-on .dig-num { display: none !important; }
 #scene.story-on .scene-stage { min-height: 120px; padding: 0; }
@@ -703,19 +703,30 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
   text-align: left; padding: 12px 14px;
   font-size: calc(var(--rd) * 1em); line-height: 1.65;
 }
-#scene.story-on .story-log.over {
-  -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 3.2em);
-  mask-image: linear-gradient(to bottom, transparent 0, #000 3.2em);
-}
+/* 2026-10-03 視覺小說式：上方標題＋前輩名字，右下紀錄鈕；回看時才列出句子 */
+#scene.story-on .story-log.list { padding: 0; }
+.story-stage { height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; text-align: center; }
+.story-title { color: var(--gold); }
+.story-face { width: 3.5em; height: 3.5em; border: 2px solid var(--gold); display: flex; align-items: center; justify-content: center; font-size: 1.5em; color: var(--gold); background: var(--panel-dark); }
+.story-name { color: var(--text); }
+.story-list { position: absolute; inset: 0; overflow-y: auto; padding: 12px 14px 2.6em; }
+.story-logbtn { position: absolute; right: 8px; bottom: 8px; font: inherit; font-size: .8125em; color: var(--sub); background: var(--panel-dark); border: 1px solid var(--border); padding: 2px 8px; cursor: pointer; }
+.story-bar { display: flex; gap: 3px; margin-top: 8px; }
+.story-bar i { flex: 1; height: 6px; background: var(--border); }
+.story-bar i.on { background: var(--gold); }
+#scr-mine.story-mode .tb-tag { animation: none; }
 .story-head { color: var(--gold); margin-bottom: 6px; }
 .story-line { padding: 3px 0; color: var(--sub); }
-.story-line.new { color: var(--text); animation: storyIn .25s steps(3); }
+.story-list .story-line { color: var(--text); }
 .story-end { margin-top: 8px; text-align: center; color: var(--gold); }
-@keyframes storyIn { 0% { opacity: 0; } 100% { opacity: 1; } }
 .textbox.story-final .tb-tap { color: var(--gold); font-size: 1em; }
 .senpai-note { font-size: .8125em; margin-top: 3px; }
-.memory-row.locked { opacity: .55; }
-@media (prefers-reduced-motion: reduce) { .story-line.new { animation: none; } }
+/* 2026-10-03 珍貴回憶：每位前輩三格（100／500／1000） */
+.mem-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin-top: 4px; }
+.mem-slot { border: 1px solid var(--border); background: var(--panel-dark); padding: 4px; text-align: center; font-size: .8125em; overflow-wrap: anywhere; }
+.mem-slot.on { border-color: var(--gold); }
+.mem-foot { margin-top: 6px; font-size: .8125em; }
+.dex-tabs button.dim { opacity: .55; }
 
 /* ===== v0.10.13 矮螢幕：先壓場景空白、裝飾與次要間距；對話與操作不縮 ===== */
 @media (max-height: 720px) {

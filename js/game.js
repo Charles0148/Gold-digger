@@ -1630,12 +1630,32 @@
     if (!el) { el = document.createElement("div"); el.id = "storyLog"; el.className = "story-log"; $("sceneStage").appendChild(el); }
     return el;
   }
-  /* 每次 renderMine 都會呼叫：有回憶就把上方畫成對話紀錄、下方改成「點擊繼續」；沒有就收掉 */
+  /* 每次 renderMine 都會呼叫。2026-10-03 擁有者選 A「視覺小說式」：
+     上方展示框放標題＋前輩名字（右下「≡ 紀錄」可回看前面的句子），下方敘述框一次只放目前這一句（逐字跑出）＋進度格。
+     以「開頭的句子掛前輩名牌，其餘是敘述不掛。 */
+  let storyLogOpen = false;
+  const storyType = { step: -1, n: 0, timer: null };   // 逐字顯示：第幾句、已顯示幾個字
+  const storyReduced = () => window.matchMedia && matchMedia("(prefers-reduced-motion: reduce)").matches;
+  function storyTypeStop() { clearInterval(storyType.timer); storyType.timer = null; }
+  function storyTypeStart(step, text) {
+    storyTypeStop();
+    storyType.step = step;
+    storyType.n = storyReduced() ? text.length : 0;
+    if (storyType.n >= text.length) return;
+    storyType.timer = setInterval(() => {
+      storyType.n++;
+      const el = $("storyCur");
+      if (el) el.textContent = text.slice(0, storyType.n);
+      if (storyType.n >= text.length) storyTypeStop();
+    }, 40);
+  }
+  const storyTyping = () => !!storyType.timer;
   function storySync() {
     const S = save.senpai.story, sceneEl = $("scene");
     // 回憶播放中收起「工具耐久／手動／離開」整列，讓出閱讀空間；結束就恢復
     $("scr-mine").classList.toggle("story-mode", !!(S && memDef(S.boss)));
     if (!S) {
+      storyTypeStop(); storyType.step = -1; storyLogOpen = false;
       if (sceneEl.classList.contains("story-on")) { sceneEl.classList.remove("story-on"); storyLogEl().innerHTML = ""; }
       return;
     }
@@ -1645,33 +1665,47 @@
     sceneEl.classList.add("story-on");
     sceneEl.classList.remove("vein-on");
     const log = storyLogEl();
-    // 展示框只放對話（標題與進度在下方敘述框）；取得的收藏品在收下時才揭曉
-    log.innerHTML = d.lines.slice(0, step).map((l, i) => `<div class="story-line${i === step - 1 ? " new" : ""}">${esc(l)}</div>`).join("");
-    storyFit(log);
+    const btn = step > 1 ? `<button class="story-logbtn" id="storyLogBtn">${storyLogOpen ? "× 關閉" : "≡ 紀錄"}</button>` : "";
+    if (storyLogOpen && step > 1) {
+      // 回看：只列已經看過的句子（不含目前這一句）
+      log.classList.add("list");
+      log.innerHTML = `<div class="story-list">${d.lines.slice(0, step - 1).map(l => `<div class="story-line">${esc(l)}</div>`).join("")}</div>` + btn;
+      const list = log.querySelector(".story-list"); list.scrollTop = list.scrollHeight;
+    } else {
+      log.classList.remove("list");
+      log.innerHTML = `<div class="story-stage"><div class="story-title">〈${esc(d.title || "")}〉</div>` +
+        `<div class="story-face">${esc(name.slice(0, 1))}</div><div class="story-name">${esc(name)}</div></div>` + btn;
+    }
+    const lb = $("storyLogBtn");
+    if (lb) lb.onclick = ev => { ev.stopPropagation(); storyLogOpen = !storyLogOpen; storySync(); };
     const tap = step >= N ? "▼ 收下回憶並繼續" : "▼ 點擊繼續";
     if (storyFresh) { $("tbTap").textContent = tap; }
-    else {
-      setTextbox([colored(`【${esc(name)}】的回憶〈${esc(d.title || "")}〉`, "#ffcc33"),
-        colored(step >= N ? "回憶到這裡結束了。" : step ? `${step}／${N}` : `${name}好像有話要跟你說……`, config.theme.sub)],
-        0, { tag: "≋ 珍貴回憶 ≋", tap });
+    else if (!step) {
+      setTextbox([colored(`${esc(name)}好像有話要跟你說……`, config.theme.sub)], 0, { tag: "≋ 珍貴回憶 ≋", tap });
+    } else {
+      const text = d.lines[step - 1];
+      if (storyType.step !== step) storyTypeStart(step, text);
+      const cells = 10, on = Math.ceil(step / N * cells);
+      const bar = `<span class="story-bar">${Array.from({ length: cells }, (_, i) => `<i class="${i < on ? "on" : ""}"></i>`).join("")}</span>`;
+      setTextbox([`<span id="storyCur">${esc(text.slice(0, storyType.n))}</span>`, bar], 0,
+        { tag: text.startsWith("「") ? name : "", tap });
     }
     $("textbox").classList.toggle("story-final", step >= N);
     setChoices(null);
   }
-  /* 對話往下疊；超出展示框時貼齊最新一句，最舊的從上方淡出（.over 才加淡出遮罩） */
-  function storyFit(log) {
-    log.scrollTop = log.scrollHeight;
-    log.classList.toggle("over", log.scrollHeight > log.clientHeight + 1);
-  }
-  window.addEventListener("resize", () => { const el = $("storyLog"); if (el && save.senpai.story) storyFit(el); });
+  window.addEventListener("resize", () => { const l = document.querySelector("#storyLog .story-list"); if (l) l.scrollTop = l.scrollHeight; });
   function storyTap() {
     const S = save.senpai.story; if (!S) return;
     const d = memDef(S.boss);
     if (!d) { save.senpai.story = null; persist(); renderMine(); return; }
     const now = Date.now();
+    if (storyTyping()) {                         // 字還在跑：這一下只把整句顯示出來
+      storyTypeStop(); storyType.n = (d.lines[S.step - 1] || "").length; storyAt = now;
+      const el = $("storyCur"); if (el) el.textContent = d.lines[S.step - 1] || ""; return;
+    }
     if (S.step < d.lines.length) {
       if (now - storyAt < 150) return;          // 同一下點擊被重複觸發
-      S.step++; storyAt = now; storyFresh = false;
+      S.step++; storyAt = now; storyFresh = false; storyLogOpen = false;
       persist(); renderMine(); return;
     }
     if (now - storyAt < 600) return;            // 最後一句剛出來，不讓連點直接按掉
@@ -1723,29 +1757,43 @@
   }
   /* 前輩信賴＋珍貴回憶（收藏品，不是礦石：不進 save.ores、不能賣、不算圖鑑） */
   /* 成就頁（v0.10.12）：目前放前輩信賴與珍貴回憶；挖礦紀錄類成就先保留位置，見 BACKLOG */
-  function renderAch() { renderSenpaiBag(); }
+  /* 2026-10-03 擁有者：成就分書籤（目前「三位前輩的考驗」＋「其他 準備中」）。
+     前輩信賴拿到 100 次回憶後改看下一個門檻（memories.next）；珍貴回憶每位三格（100／500／1000），500、1000 內容未寫只占位。 */
+  let achTab = "senpai";
+  function renderAch() {
+    const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["other", "其他", "準備中"]];
+    $("achTabs").innerHTML = tabs.map(([id, n, sub]) =>
+      `<button data-ach-tab="${id}" class="${id === achTab ? "on" : ""}${sub ? " dim" : ""}">${esc(n)}${sub ? ` <span class="sub">${sub}</span>` : ""}</button>`).join("");
+    document.querySelectorAll("#recAch .ach-senpai").forEach(el => el.classList.toggle("hidden", achTab !== "senpai"));
+    $("achOther").classList.toggle("hidden", achTab !== "other");
+    if (achTab === "senpai") renderSenpaiBag();
+  }
   function renderSenpaiBag() {
     const S = save.senpai, need = memNeed(), gold = "#ffcc33";
+    const tiers = [need].concat((MEM().next || []).filter(n => n > need));
     const bosses = (M2().bosses || []).filter(b => memDef(b.id));
     $("bagSenpaiSince").textContent = S.since ? `自 v${S.since} 開始記錄` : "自此版本開始記錄";
     $("bagSenpai").innerHTML = bosses.map(b => {
-      const w = S.wins[b.id] || 0, got = S.memories[b.id], d = memDef(b.id);
-      const pct = Math.min(100, w / need * 100);
-      const note = got ? colored(`已獲得：${esc(d.item)}`, gold)
-        : (S.story && S.story.boss === b.id) ? colored("回憶還沒看完——回到礦坑點擊繼續", gold)
-        : `<span class="sub">獎勵：${esc(b.name)}好像有話要跟你說……</span>`;
-      return `<div class="row senpai-row"><div class="grow"><span>${esc(b.name)}</span> <span class="sub">談話成功 ${fmt(Math.min(w, need))}／${need}${w > need ? `（共 ${fmt(w)}）` : ""}</span>
-        <div class="bar"><div class="bar-fill" style="width:${pct}%;background:${got ? gold : ""}"></div></div>
+      const w = S.wins[b.id] || 0, got = S.memories[b.id];
+      const target = got ? (tiers[1] || need) : need;   // 拿到 100 → 看 500；500 回憶還沒寫，到了就停在 500／500「準備中」
+      const pct = Math.min(100, w / target * 100);
+      const teaser = `${esc(b.name)}好像有話要跟你說……`;
+      const note = (S.story && S.story.boss === b.id) ? colored("回憶還沒看完——回到礦坑點擊繼續", gold)
+        : got && w >= target ? `<span class="sub">準備中</span>`
+        : `<span class="sub">${got ? "下一份" : "獎勵"}：${teaser}</span>`;
+      return `<div class="row senpai-row"><div class="grow"><span>${esc(b.name)}</span> <span class="sub">談話成功 ${fmt(Math.min(w, target))}／${fmt(target)}${w > target ? `（共 ${fmt(w)}）` : ""}</span>
+        <div class="bar"><div class="bar-fill" style="width:${pct}%"></div></div>
         <div class="senpai-note">${note}</div></div></div>`;
     }).join("");
-    const owned = bosses.filter(b => S.memories[b.id]);
-    $("bagMemCount").textContent = `${owned.length}／${bosses.length}`;
+    const owned = bosses.filter(b => S.memories[b.id]).length;
+    $("bagMemCount").textContent = `${owned}／${bosses.length * tiers.length}`;
     $("bagMemory").innerHTML = bosses.map(b => {
       const m = S.memories[b.id], d = memDef(b.id);
-      return m
-        ? `<div class="row memory-row"><div class="grow">${colored(esc(d.item), gold)}<div class="sub">〈${esc(d.title || "")}〉　取得於 ${esc(m.date || "")}｜收藏品・不能出售</div></div></div>`
-        : `<div class="row memory-row locked"><div class="grow"><span class="sub">？？？？？</span><div class="sub">與某位前輩談話成功 ${need} 次</div></div></div>`;
-    }).join("");
+      const slots = tiers.map((t, i) => i === 0 && m
+        ? `<div class="mem-slot on"><div>${colored(esc(d.item), gold)}</div><div class="sub">${esc(m.date || "")}</div></div>`
+        : `<div class="mem-slot"><div class="sub">？？？</div><div class="sub">${fmt(t)} 次</div></div>`).join("");
+      return `<div class="row memory-row"><div class="grow"><span>${esc(b.name)}</span><div class="mem-slots">${slots}</div></div></div>`;
+    }).join("") + `<div class="sub mem-foot">收藏品・不能出售</div>`;
   }
   function oreNames() {
     const idx = itemIndex();
@@ -3257,6 +3305,7 @@
     if (t.id === "btnBoardReset") { askBoardReset(); return; }
     if (t.id === "acctRename") { askName(false); return; }
     if (d.dexMine) { dexMine = d.dexMine; renderDex(); return; }
+    if (d.achTab) { achTab = d.achTab; renderAch(); return; }
     if (d.rubyMock) { toast("示意畫面：還沒開放購買"); return; }
     if (t.id === "hudRuby") { if (!RUBY_PREVIEW) { toast("紅晶商店準備中，敬請期待"); return; } go("shop"); bossView = "ruby"; renderShop(); return; }
     if (t.id === "acctBack") { go(acctBack === "acct" ? "mine" : acctBack); return; }

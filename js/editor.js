@@ -447,7 +447,7 @@
       <div class="ed-row"><label>顯示抽選數字</label><input type="checkbox" id="dbgRolls" ${S.debug.showRolls ? "checked" : ""}></div>
       <div class="ed-row"><label>包含小抽選</label><input type="checkbox" id="dbgRollsAll" ${S.debug.showAllRolls ? "checked" : ""}> <span class="ed-note" style="margin:0">假地鳴、高確轉落、普通礦進高確等每揮都會抽的項目</span></div>
       <div class="ed-row"><label>強制設定</label><select id="dbgForce"><option value="0">不強制（每日隨機）</option>${[1, 2, 3, 4, 5, 6].map(s => `<option value="${s}" ${S.debug.forceSetting === s ? "selected" : ""}>設定${s}</option>`).join("")}</select></div>
-      <div class="ed-flex"><button class="ed-btn" id="dbgCoin">+$10,000</button><button class="ed-btn" id="dbgTools">每種工具各+1</button><button class="ed-btn" id="dbgUnlock">解鎖全部礦坑</button><button class="ed-btn primary" id="dbgFreeze">下一揮必定凍結</button><button class="ed-btn" id="dbgFavor">恩惠 +25點</button><button class="ed-btn" id="dbgReq">立刻換委託</button><button class="ed-btn" id="dbgOres">委託礦石各+20</button></div>
+      <div class="ed-flex"><button class="ed-btn" id="dbgCoin">+$10,000</button><button class="ed-btn" id="dbgTools">每種工具各+1</button><button class="ed-btn" id="dbgUnlock">解鎖全部礦坑</button><button class="ed-btn primary" id="dbgFreeze">下一揮必定凍結</button><button class="ed-btn" id="dbgFavor">恩惠 +25點</button><button class="ed-btn" id="dbgReq">立刻換委託</button><button class="ed-btn" id="dbgOres">委託礦石各+20</button><button class="ed-btn" id="dbgMem99">三位前輩回憶重測（設99次）</button></div>
       <div class="ed-sec">恩惠 v2 測試</div>
       <div class="ed-note">目前：${G.boonsV2 ? Object.entries((S.boss && S.boss.tiers) || {}).map(([k, v]) => `${((G.config.boss.boonsV2 || {}).kinds || {})[k] ? G.config.boss.boonsV2.kinds[k].name : k} ${v}階`).join("／") : "—"}｜待領 ${((S.boss && S.boss.pending) || []).length} 筆｜rewardLv ${(S.boss && S.boss.rewardLv) || "—"}</div>
       <div class="ed-flex">${Object.keys(((G.config.boss.boonsV2 || {}).kinds) || {}).map(k => `<button class="ed-btn" data-bvup="${k}">${G.config.boss.boonsV2.kinds[k].name} +1階</button>`).join("")}</div>
@@ -475,6 +475,7 @@
       G.persist(true); G.renderAll(); G.toast("已加入工具");
     };
     $b("dbgFreeze").onclick = e => { e.target.textContent = G.forceFreeze && G.forceFreeze() ? "✓ 已設定：關掉編輯器去揮一下" : "無法設定"; };   // 2026-10-03：手機測凍結用（前輩台要在通常狀態）
+    $b("dbgMem99").onclick = () => { if (!confirm("三位前輩談話成功都設成 99 次，並清掉已拿到的珍貴回憶？（只影響這份存檔）")) return; const P = S.senpai; P.wins = { a: 99, b: 99, c: 99 }; P.memories = {}; P.story = null; G.persist(true); G.renderAll(); G.toast("已設定：再成功一次就會播回憶"); };   // 2026-10-03：本機測百次回憶用
     $b("dbgUnlock").onclick = () => { S.unlocked = G.config.mines.map(m => m.id); G.persist(true); G.renderAll(); };
     $b("dbgFavor").onclick = () => G.addFavor(25);
     body.querySelectorAll("[data-bvup]").forEach(b => b.onclick = () => { const k = b.dataset.bvup; G.boonsV2.setTier(k, ((S.boss.tiers || {})[k] || 0) + 1); tabData(body); });

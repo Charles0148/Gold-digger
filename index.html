@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=1.01.02">
+<link rel="stylesheet" href="css/style.css?v=1.01.03">
 </head>
 <body>
 <div id="app">
@@ -117,15 +117,16 @@
         </div>
       </div>
       <div id="recAch" class="rec-pane hidden">
-        <div class="px-box panel" data-edit="achSenpai" data-label="成就-前輩信賴">
+        <div id="achTabs" class="scope-mines dex-tabs"></div>   <!-- 2026-10-03：成就分書籤，之後其他台的成就再加 -->
+        <div class="px-box panel ach-senpai" data-edit="achSenpai" data-label="成就-前輩信賴">
           <div class="panel-title">前輩信賴 <span class="sub" id="bagSenpaiSince"></span></div>
           <div id="bagSenpai" class="list"></div>
         </div>
-        <div class="px-box panel" data-edit="achMemory" data-label="成就-珍貴回憶">
+        <div class="px-box panel ach-senpai" data-edit="achMemory" data-label="成就-珍貴回憶">
           <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
           <div id="bagMemory" class="list"></div>
         </div>
-        <div class="px-box panel hidden" data-edit="achRecord" data-label="成就-挖礦紀錄">   <!-- 2026-10-03：成就做好前先藏起來 -->
+        <div class="px-box panel hidden" id="achOther" data-edit="achRecord" data-label="成就-挖礦紀錄">   <!-- 2026-10-03：「其他」書籤才顯示 -->
           <div class="panel-title">其他成就 <span class="sub">準備中</span></div>
           <div class="sub">之後會在這裡加入挖礦、圖鑑、礦坑與老闆相關的成就。</div>
         </div>
@@ -206,13 +207,13 @@
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=1.01.02"></script>
-<script src="js/cloud-config.js?v=1.01.02"></script>
-<script src="js/cloud.js?v=1.01.02"></script>
-<script src="js/config.js?v=1.01.02"></script>
-<script src="js/engine.js?v=1.01.02"></script>
-<script src="js/engine2.js?v=1.01.02"></script>
-<script src="js/boons.js?v=1.01.02"></script>
-<script src="js/game.js?v=1.01.02"></script>
+<script src="js/version.js?v=1.01.03"></script>
+<script src="js/cloud-config.js?v=1.01.03"></script>
+<script src="js/cloud.js?v=1.01.03"></script>
+<script src="js/config.js?v=1.01.03"></script>
+<script src="js/engine.js?v=1.01.03"></script>
+<script src="js/engine2.js?v=1.01.03"></script>
+<script src="js/boons.js?v=1.01.03"></script>
+<script src="js/game.js?v=1.01.03"></script>
 </body>
 </html>
