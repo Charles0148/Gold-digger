@@ -3374,7 +3374,10 @@
     toolFactor, itemPrice, basePrice,
     /* 階段3B：唯讀的時鐘狀態（不含任何帳號資料）；重新同步只是再問一次伺服器，不能指定日期 */
     clockInfo: () => ({ day: todayKey(), last: lastTrustedDay, fail: clock.failKind, hold: clock.hold, sandbox: clock.sandbox, syncing: !!clock.syncing }),
-    clockSync: () => clockSync()
+    clockSync: () => clockSync(),
+    /* 管理者測試（2026-10-03 擁有者：要能在手機上測凍結）：下一揮必定地底凍結。
+       只在開發者模式（正式網址＝管理員帳號＋?dev=1）或本機 sandbox 有效，一般玩家呼叫無效。 */
+    forceFreeze() { if (!devMode && !SANDBOX) return false; FORCE_FREEZE = true; return true; }
   };
   if (SANDBOX) {
     window.Game.__ad = { start: adStart, complete: adComplete, cancel: adCancel };   // 只限 localhost 隔離測試：重送完成事件等案例
