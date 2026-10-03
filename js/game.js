@@ -12,6 +12,7 @@
      正式版：頂部顯示紅晶 0（還沒有雲端錢包）、老闆選單的紅晶商店上鎖（準備中）。
      本機 sandbox：照舊是示意商店（假數字、不寫存檔、不連雲端、按了不會買）。正式開放要等雲端錢包（伺服器把關）做好。 */
   const RUBY_PREVIEW = !!SANDBOX, RUBY_MOCK = 120;
+  let FORCE_FREEZE = !!SANDBOX && /[?&]freeze=1/.test(location.search);   // 本機測試：網址加 ?freeze=1 → 下一次通常揮必定「地底凍結」
   const RUBY_ICO = '<svg class="ruby-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-ruby"/></svg>';
   const CFG_KEY = "mine_config_v4" + SB;
   const SAVE_KEY = "mine_save_v1" + SB;
@@ -955,6 +956,210 @@
       playWelcome();
     }, 100);
   }
+  /* 地底凍結演出（2026-10-03 擁有者）：結果在揮下去那一刻已寫進存檔，這裡只負責演出——
+     中途重新整理不會少拿，只是看不到演出、直接是礦脈中。
+     擁有者第二版：「不用把恩惠說出來、要更絲滑」→ 只顯示標題、不寫獎勵內容；全部改平滑轉場（淡入淡出、緩動）。
+     分層一次建好，靠 class 切階段：s-c1～s-c3 碎裂三階段（越來越灰、每段震一下）→ s-off 電視關機 → s-black 台詞＋礦井 → s-hold 長按 → s-reveal 白光揭曉 → s-out 淡出 */
+  function freezeShow(F, lines, omen, bigHtml) {
+    F = F || {};
+    clearTimeout(autoTimer);   // 自動模式不關：演出照常放，只停在長按等玩家；結束後 freezeDone() 接著挖
+    const app = $("app"), at = (ms, fn) => setTimeout(fn, ms);
+    app.classList.add("frz-on");   // 揭曉前藏起礦脈看板與資訊列，不能先洩漏結果
+    setTextbox([colored("……", config.theme.sub)], 0);
+    $("sceneBig").textContent = ""; $("sceneSub").textContent = "";
+    const ov = document.createElement("div");
+    ov.id = "freeze"; ov.className = "frz";   // 蓋住整個遊戲：演出中不能操作
+    ov.innerHTML = `<svg class="frz-crack" viewBox="0 0 40 60" preserveAspectRatio="none" aria-hidden="true">
+        <path class="c1" pathLength="1" d="M20 22v6h-4v7h3v6"/>
+        <path class="c2" pathLength="1" d="M20 22v-7h-3v-7h3V0M19 41v7h-4v6h3v6"/><path class="c2" pathLength="1" d="M16 29h7v4h6"/>
+        <path class="c3" pathLength="1" d="M17 14h-6v-3h-5V0M29 33h5v-6h6M15 48h-8v4H0"/><path class="c3" pathLength="1" d="M23 8h6v-4h5M18 41h6v6h5v6h5v7"/><path class="c3" pathLength="1" d="M11 11v8h-6v7H0"/></svg>
+      <div class="frz-dark"></div><div class="frz-line"></div>
+      <div class="frz-stage"><div class="frz-talk" id="frzTalk"></div><div class="sp-shaft frz-shaft"><div class="sp-rock"></div></div>
+        <div class="frz-hold"><span class="frz-hold-t">${esc(F.hold || "長按揭曉")}</span><div class="frz-bar" id="frzBarBox"><i id="frzBar"></i></div></div></div>
+      <div class="frz-reveal"><div class="frz-title">${esc(F.title || "")}</div><div class="frz-tap">▼ 點擊繼續</div></div>
+      <div class="frz-flash"></div>`;
+    app.appendChild(ov);
+    const crack = (n, buzz) => {   // 碎裂三階段：每段畫面再暗一點、震一下
+      app.classList.add("frz-gray", "frz-g" + n); ov.classList.add("s-c" + n);
+      app.classList.remove("frz-shake"); void app.offsetWidth; app.classList.add("frz-shake");
+      try { navigator.vibrate && navigator.vibrate(buzz); } catch (e) {}
+    };
+    at(800, () => crack(1, 60));
+    at(1900, () => crack(2, [80, 50, 120]));
+    at(3000, () => crack(3, [120, 60, 120, 60, 260]));
+    at(4400, () => { app.classList.remove("frz-shake"); ov.classList.add("s-off"); });
+    at(5300, () => { app.classList.remove("frz-gray", "frz-g1", "frz-g2", "frz-g3"); ov.classList.add("s-black"); typeLines($("frzTalk"), F.talk || ["……"], () => at(600, holdStep)); });
+    function holdStep() {
+      ov.classList.add("s-hold");
+      const box = $("frzBarBox"), bar = $("frzBar");
+      let t0 = 0, raf = 0;
+      const stop = () => { if (!raf) return; cancelAnimationFrame(raf); raf = 0; box.classList.remove("holding"); bar.style.width = "0"; };
+      const tick = () => {
+        const p = Math.min(1, (Date.now() - t0) / 1000);
+        bar.style.width = (p * 100) + "%";   // 連續長，不分格
+        if (p >= 1) { raf = 0; ov.onpointerdown = ov.onpointerup = ov.onpointerleave = ov.onpointercancel = null; box.classList.add("full"); at(120, reveal); return; }
+        raf = requestAnimationFrame(tick);
+      };
+      ov.onpointerdown = e => { e.preventDefault(); if (raf) return; t0 = Date.now(); box.classList.add("holding"); raf = requestAnimationFrame(tick); };
+      ov.onpointerup = ov.onpointerleave = ov.onpointercancel = stop;
+    }
+    function reveal() {
+      ov.classList.add("s-reveal");
+      at(900, () => {
+        ov.onclick = () => {
+          ov.onclick = null;
+          app.classList.remove("frz-on");
+          renderMine();
+          setTextbox(lines, omen);
+          const big = $("sceneBig"); big.innerHTML = bigHtml || ""; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
+          ov.classList.add("s-out"); at(500, () => { ov.remove(); freezeDone(); });   // 淡出後才拿掉，畫面不跳
+        };
+        if (save.auto) at(2200, () => ov.onclick && ov.onclick());   // 自動模式：揭曉後自己繼續
+      });
+    }
+  }
+  function freezeDone() { if (save.auto) { clearTimeout(autoTimer); autoTimer = setTimeout(autoStep, autoWait()); } }
+  /* 前輩台的地底凍結＝「一場夢」（2026-10-03 擁有者：夢到跟三位前輩去路邊攤吃燒烤、和樂融融；動畫要非常高品質）。
+     結果早已寫進存檔，這裡只是演出。流程：
+       ①打瞌睡：敘述框「眼皮好重」、畫面變暖變糊、上下眼皮半閉→張開→闔上
+       ②入夢：黑暗中浮起暖色光點、「在夢中」
+       ③路邊攤：燈泡串、燒烤架炭火與白煙；旁白與三位前輩逐句打字（點一下加快），乾杯爆金色火花
+       ④笑聲遠去→淡出 → 醒來：眼皮只剩一條縫；長按時眼皮跟著睜開、畫面變清楚（放開會闔回）
+       ⑤金光擴散 → 「★ 最終認可 ★」＋帶你走的那位前輩說一句 → 點擊淡出回遊戲 */
+  function dreamShow(D, boss, lines, omen, bigHtml) {
+    D = D || {};
+    clearTimeout(autoTimer);   // 自動模式不關（同 freezeShow）
+    const app = $("app"), colorOf = w => (D.colors || {})[w] || "#e8e8e8";
+    app.classList.add("frz-on");
+    setTextbox([colored("……", config.theme.sub)], 0);
+    $("sceneBig").textContent = ""; $("sceneSub").textContent = "";
+    const rnd = (a, b) => a + Math.random() * (b - a);
+    const bokeh = Array.from({ length: 24 }, () => `<i class="drm-b" style="left:${rnd(0, 100).toFixed(1)}%;top:${rnd(5, 95).toFixed(1)}%;width:${rnd(6, 30).toFixed(0)}px;height:${rnd(6, 30).toFixed(0)}px;--d:${rnd(7, 13).toFixed(1)}s;--t:${rnd(2, 4.5).toFixed(1)}s;animation-delay:-${rnd(0, 12).toFixed(1)}s,-${rnd(0, 4).toFixed(1)}s"></i>`).join("");
+    const N = 13;
+    const bulbs = Array.from({ length: N }, (_, k) => `<i class="drm-bulb" style="left:${(k / (N - 1) * 100).toFixed(2)}%;top:${(4 + 22 * Math.sin(Math.PI * k / (N - 1))).toFixed(1)}px;--t:${rnd(1.6, 3.2).toFixed(1)}s;animation-delay:-${rnd(0, 3).toFixed(1)}s"></i>`).join("");
+    const smoke = Array.from({ length: 6 }, (_, k) => `<i class="drm-smoke" style="left:${18 + k * 13}%;animation-delay:-${(k * 0.7).toFixed(1)}s"></i>`).join("");
+    const sticks = [0, 1, 2].map(k => `<div class="drm-stick" style="left:${22 + k * 22}%;animation-delay:-${k * 0.6}s"><b></b><b></b><b></b></div>`).join("");
+    const sparks = Array.from({ length: 24 }, (_, k) => { const a = k / 24 * Math.PI * 2 + rnd(-.1, .1), r = rnd(80, 170); return `<i style="--x:${(Math.cos(a) * r).toFixed(0)}px;--y:${(Math.sin(a) * r).toFixed(0)}px"></i>`; }).join("");
+    const ov = document.createElement("div");
+    ov.id = "freeze"; ov.className = "frz drm";
+    ov.innerHTML = `<div class="drm-black"></div>
+      <div class="drm-dream">
+        <div class="drm-bokeh">${bokeh}</div>
+        <div class="drm-title">${esc(D.title || "在夢中")}</div>
+        <div class="drm-scene">
+          <div class="drm-lights"><svg viewBox="0 0 100 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0 2 Q50 46 100 2"/></svg>${bulbs}</div>
+          <div class="drm-log" id="drmLog"></div>
+          <div class="drm-grill">${smoke}${sticks}<div class="drm-grate"></div><div class="drm-coals"></div></div>
+          <div class="drm-burst">${sparks}</div>
+        </div>
+        <div class="drm-skip">點一下加快</div>
+      </div>
+      <div class="drm-lid top"></div><div class="drm-lid bot"></div>
+      <div class="drm-wake"><div class="drm-wake-t">${esc(D.wake || "……你醒了。")}</div>
+        <div class="frz-hold"><span class="frz-hold-t">${esc(D.hold || "長按睜開眼睛")}</span><div class="frz-bar drm-bar" id="frzBarBox"><i id="frzBar"></i></div></div></div>
+      <div class="drm-reveal"><div class="drm-glow"></div><div class="frz-title">${esc(D.reveal || "★ 最終認可 ★")}</div>
+        <div class="drm-greet"><span class="drm-name" style="color:${colorOf(boss)}">${esc(bossName2(boss))}</span>${esc((D.greet || {})[boss] || "")}</div>
+        <div class="frz-tap">▼ 點擊繼續</div></div>`;
+    app.appendChild(ov);
+    const lidT = ov.querySelector(".drm-lid.top"), lidB = ov.querySelector(".drm-lid.bot");
+    const setLid = pct => { lidT.style.height = lidB.style.height = pct + "%"; };
+    let fast = false, phase = "drowse";
+    ov.onclick = () => { if (phase === "dream") { fast = true; ov.classList.add("s-fast"); } };
+    const wait = ms => new Promise(r => setTimeout(r, fast && phase === "dream" ? Math.min(ms, 150) : ms));
+    const say = async it => {
+      const log = $("drmLog"); if (!log) return;
+      log.querySelectorAll(".drm-line").forEach(x => x.classList.add("old"));
+      const row = document.createElement("div");
+      row.className = "drm-line " + (it.who ? "drm-say" : "drm-nar");
+      row.innerHTML = it.who ? `<span class="drm-name" style="color:${colorOf(it.who)}">${esc(bossName2(it.who))}</span><span class="drm-txt"></span>` : `<span class="drm-txt"></span>`;
+      log.appendChild(row);
+      const el = row.querySelector(".drm-txt"), txt = it.text || "";
+      for (let k = 1; k <= txt.length; k++) {
+        if (fast) { el.textContent = txt; break; }
+        el.textContent = txt.slice(0, k);
+        await new Promise(r => setTimeout(r, 40));
+      }
+      if (it.cheers) {   // 乾杯：金色火花＋整個場景亮一下
+        const b = ov.querySelector(".drm-burst"); b.classList.remove("on"); ov.classList.remove("s-cheer"); void b.offsetWidth; b.classList.add("on"); ov.classList.add("s-cheer");
+        try { navigator.vibrate && navigator.vibrate(40); } catch (e) {}
+      }
+      await wait(700 + txt.length * 22);   // 讀完這句的時間（字越多停越久）
+    };
+    (async () => {
+      await wait(600);
+      setTextbox([colored("……", config.theme.sub), colored(D.drowsy || "眼皮……好重……", "#d9c3a3")], 0);
+      await wait(700);
+      app.classList.add("drm-sleepy"); ov.classList.add("s-drowse");   // 眼皮：半閉→張開→闔上（CSS 動畫 4 秒）
+      await wait(4100);
+      ov.classList.remove("s-drowse"); setLid(50); ov.classList.add("s-dark");
+      await wait(400);
+      setLid(0); ov.classList.add("s-dream");
+      await wait(1500);
+      ov.classList.add("s-title"); await wait(2200); ov.classList.remove("s-title");
+      await wait(700);
+      phase = "dream"; ov.classList.add("s-scene");
+      await wait(1200);
+      for (const t of D.scene || []) await say({ text: t });
+      for (const t of D.talk || []) await say(t);
+      phase = "out"; ov.classList.remove("s-fast");
+      await wait(900);
+      ov.classList.add("s-fade"); await wait(2200);
+      // 醒來：眼皮只剩一條縫，看得到模糊的礦坑
+      app.classList.remove("drm-sleepy"); app.classList.add("drm-wakeup");
+      setLid(50); ov.classList.add("s-wake"); ov.classList.remove("s-dream", "s-dark");
+      setTextbox([colored("……", config.theme.sub)], 0);   // 夢裡的「眼皮好重」不要留到醒來
+      await wait(300);
+      ov.classList.add("lid-ease"); setLid(44);
+      await wait(1400);
+      holdStep();
+    })();
+    function holdStep() {
+      ov.classList.add("s-hold");
+      const box = $("frzBarBox"), bar = $("frzBar");
+      let t0 = 0, raf = 0;
+      const apply = p => { bar.style.width = (p * 100) + "%"; setLid(44 * (1 - p)); app.style.setProperty("--wb", (2.4 * (1 - p)).toFixed(2) + "px"); };
+      const stop = () => { if (!raf) return; cancelAnimationFrame(raf); raf = 0; box.classList.remove("holding"); ov.classList.add("lid-ease"); apply(0); };
+      const tick = () => {
+        const p = Math.min(1, (Date.now() - t0) / 1200);
+        apply(p);   // 長按＝慢慢睜開眼睛
+        if (p >= 1) { raf = 0; ov.onpointerdown = ov.onpointerup = ov.onpointerleave = ov.onpointercancel = null; box.classList.add("full"); setTimeout(reveal, 150); return; }
+        raf = requestAnimationFrame(tick);
+      };
+      ov.onpointerdown = e => { e.preventDefault(); if (raf) return; t0 = Date.now(); box.classList.add("holding"); ov.classList.remove("lid-ease"); raf = requestAnimationFrame(tick); };
+      ov.onpointerup = ov.onpointerleave = ov.onpointercancel = stop;
+    }
+    function reveal() {
+      app.classList.remove("drm-wakeup"); app.style.removeProperty("--wb");
+      ov.classList.add("s-reveal");
+      setTimeout(() => {
+        ov.onclick = () => {
+          ov.onclick = null;
+          app.classList.remove("frz-on");
+          renderMine();
+          setTextbox(lines, omen);
+          const big = $("sceneBig"); big.innerHTML = bigHtml || ""; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
+          ov.classList.add("s-out"); setTimeout(() => { ov.remove(); freezeDone(); }, 600);
+        };
+        if (save.auto) setTimeout(() => ov.onclick && ov.onclick(), 2500);   // 自動模式：揭曉後自己繼續
+      }, 1200);
+    }
+  }
+  function typeLines(el, list, done) {   // 逐行逐字打出來（每字約 0.1 秒、「...」後停頓、行與行之間停 0.7 秒；每行淡入由 CSS 負責）
+    let li = 0;
+    const next = () => {
+      if (li >= list.length) { done && done(); return; }
+      const div = document.createElement("div"); el.appendChild(div);
+      const txt = list[li++]; let i = 0;
+      const step = () => {
+        div.textContent = txt.slice(0, ++i);
+        if (i >= txt.length) { setTimeout(next, 700); return; }
+        const ch = txt[i - 1], nx = txt[i];
+        setTimeout(step, (ch === "." || ch === "…") && nx !== "." && nx !== "…" ? 550 : 95);   // 「...」說完停頓一下
+      };
+      step();
+    };
+    next();
+  }
   /* 歡迎字條（2026-10-03 擁有者）：每次打開遊戲、開場動畫收起後，在敘述框逐字播放一句（config.texts.welcome 隨機）。
      日期沒確認（顯示連線提示）、不在挖礦畫面、回憶播放中都不播；玩家一揮鎬就被正常內容蓋掉。 */
   function playWelcome() {
@@ -999,6 +1204,7 @@
       return null;
     }
     st.mood = moodBoss();
+    if (FORCE_FREEZE && st.state === "normal") { st.forceFreeze = true; FORCE_FREEZE = false; }
     const res = E2.step2(R, todaySetting(mine.id), st, Math.random, input || {});
     const ms = mineStats(mine.id);
     const lines = [];
@@ -1121,6 +1327,11 @@
     logRolls(res, ms.swings);
     renderMine();
     persist();
+    const fz = res.events.find(e => e.t === "freeze");
+    if (fz) {
+      const shown = lines.slice(1);   // 第一行是這一揮的碎石；其餘就是一般約會成功的開牌畫面（擁有者：結束後不要出現「凍結」字眼）
+      dreamShow(R.lines.dream, fz.boss, storyNow ? shown.slice(-6) : shown.slice(0, 5), 6, colored(`【${bossName2(fz.boss)}】`, "rainbow"));
+    }
     return { res, st };
   }
   const bl = (boss, key, fallback) => {
@@ -1211,6 +1422,7 @@
     }
     const st = save.plays[mine.id] || (save.plays[mine.id] = E.newPlayState());
     if (!st.stock) { Object.assign(st, E.newPlayState(), { sinceHit: st.sinceHit || 0 }); } // 舊存檔轉換
+    if (FORCE_FREEZE) { st.forceFreeze = true; FORCE_FREEZE = false; }
     const r = E.swing(rules, todaySetting(mine.id), st, Math.random, mine.tenjou);
     const ms = mineStats(mine.id);
     ms.swings++;
@@ -1328,6 +1540,9 @@
     logRolls(r, ms.swings);
     renderMine();
     persist();
+    if (ev("freeze")) {   // 揭曉後的敘述框：不顯示這一揮的碎石、不寫獎勵內容、不出現「凍結」字眼
+      freezeShow(config.texts.freeze, lines.slice(1), "vein", colored(veinName("SBB"), "rainbow"));   // 去掉碎石行，其餘＝一般開牌（不出現「凍結」字眼）
+    }
     return { r, broke, newFind, cat, st };
   }
 
@@ -1357,6 +1572,7 @@
     if (isM2()) return autoStep2();
     const res = doSwing();
     if (!res) return;
+    if (res.r.events.some(e => e.t === "freeze")) return;   // 凍結：自動不關，等演出結束由 freezeDone() 接著挖
     const stopAt = (config.play && config.play.autoStopOmen) || 3;
     const r = res.r;
     const stop = r.events.some(e => AUTO_STOP.includes(e.t) && !((e.t === "stock" || e.t === "upgrade") && !e.shown)) ||
@@ -1376,6 +1592,7 @@
       : {};
     const out = doSwing2(input);
     if (!out) return;
+    if (out.res.events.some(e => e.t === "freeze")) return;   // 凍結：同上
     const free = FREE2.includes(out.res.stateBefore);
     if (out.res.events.some(e => AUTO_STOP2.includes(e.t))) { stopAuto(); return; }
     if (!activeTool() && !FREE2.includes(state2().state)) { stopAuto(); return; }

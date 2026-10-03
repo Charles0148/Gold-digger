@@ -266,6 +266,169 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .mi-v { flex: 1; min-width: 0; }
 .modal-box .btns { flex-wrap: wrap; align-items: center; }
 
+/* ===== 地底凍結（2026-10-03；擁有者第二版要「更絲滑」→ 這段全部用平滑轉場，不用 steps） ===== */
+.frz { position: absolute; inset: 0; z-index: 75; display: flex; align-items: center; justify-content: center;
+  touch-action: none; user-select: none; -webkit-user-select: none; transition: opacity .45s ease; }
+.frz.s-out { opacity: 0; }
+#app > #hud, #app > #screens, #app > #nav { transition: filter 1.1s ease; }
+#app.frz-gray > #hud, #app.frz-gray > #screens, #app.frz-gray > #nav { filter: grayscale(.6) brightness(.85); }
+#app.frz-g2 > #hud, #app.frz-g2 > #screens, #app.frz-g2 > #nav { filter: grayscale(.9) brightness(.72); }
+#app.frz-g3 > #hud, #app.frz-g3 > #screens, #app.frz-g3 > #nav { filter: grayscale(1) brightness(.55); }
+#app.frz-shake > #screens { animation: frzShake .35s ease-out; }
+@keyframes frzShake { 20% { transform: translate(-4px, 2px); } 40% { transform: translate(4px, -2px); } 60% { transform: translate(-2px, -1px); } 80% { transform: translate(2px, 1px); } }
+#app.frz-on #veinBanner, #app.frz-on .mb-state, #app.frz-on .mb-data { visibility: hidden; }   /* 礦脈數也會先 +1，一起藏 */
+#app.frz-on #scene, #app.frz-on .textbox { animation: none !important; }
+/* 裂痕：線條自己畫出來 */
+.frz-crack { position: absolute; left: 30%; top: 18%; width: 40%; height: 55%; fill: none; stroke: #000; stroke-width: 2.5;
+  transition: opacity .3s ease; }
+.frz-crack path { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .7s cubic-bezier(.3,.9,.4,1); }
+.frz-crack .c2 + .c2, .frz-crack .c3 + .c3 { transition-delay: .2s; }
+.frz-crack .c3 + .c3 + .c3 { transition-delay: .4s; }
+.frz.s-c1 .frz-crack .c1, .frz.s-c2 .frz-crack .c2, .frz.s-c3 .frz-crack .c3 { stroke-dashoffset: 0; }
+.frz.s-c3 .frz-crack { stroke-width: 3; }
+.frz.s-off .frz-crack { opacity: 0; }
+/* 電視關機：黑幕淡入，白線先壓扁再往中間收掉 */
+.frz-dark { position: absolute; inset: 0; background: #000; opacity: 0; transition: opacity .4s ease; }
+.frz.s-off .frz-dark { opacity: 1; }
+.frz-line { position: absolute; left: 0; right: 0; top: 50%; height: 4px; margin-top: -2px; background: #fff;
+  box-shadow: 0 0 14px #fff, 0 0 30px rgba(255,255,255,.5); opacity: 0; }
+.frz.s-off .frz-line { animation: frzLine .9s cubic-bezier(.6,0,.35,1) forwards; }
+@keyframes frzLine {
+  0% { opacity: 0; transform: scaleY(80); } 18% { opacity: .9; } 50% { opacity: 1; transform: scaleY(1); }
+  100% { opacity: 0; transform: scale(0, 1); } }
+/* 全黑：台詞＋礦井＋長按，整組淡入 */
+.frz-stage { position: relative; display: flex; flex-direction: column; align-items: center; gap: 18px;
+  opacity: 0; transition: opacity .8s ease; pointer-events: none; }
+.frz.s-black .frz-stage { opacity: 1; }
+.frz.s-reveal .frz-stage { opacity: 0; transition-duration: .25s; }
+.frz-talk { color: #e8e8e8; min-height: 5.4em; text-align: center; line-height: 1.8; font-size: 1.125em; padding: 0 20px; max-width: 100%; }
+.frz-talk div { animation: frzFade .5s ease; }
+@keyframes frzFade { from { opacity: 0; transform: translateY(6px); } }
+.frz-shaft { width: 96px; height: 112px; }
+.frz-shaft .sp-rock { animation: spDig .45s linear infinite; }
+.frz-shaft .sp-rock::after { animation: spOre .45s linear infinite; }
+.frz-hold { text-align: center; color: var(--gold); opacity: 0; transform: translateY(8px); transition: opacity .5s ease, transform .5s ease; }
+.frz.s-hold .frz-hold { opacity: 1; transform: none; }
+.frz-hold-t { animation: frzPulse 1.4s ease-in-out infinite; }
+@keyframes frzPulse { 50% { opacity: .4; } }
+.frz-bar { width: 160px; height: 16px; margin: 8px auto 0; border: 3px solid #e8e8e8; background: #111; transition: box-shadow .3s ease; }
+.frz-bar i { display: block; height: 100%; width: 0; background: var(--gold); transition: width .3s ease-out; }
+.frz-bar.holding i { transition: none; }
+.frz-bar.full { box-shadow: 0 0 16px var(--gold); }
+/* 揭曉：白光一閃後慢慢退掉，標題從大縮回來、彩虹慢慢流動 */
+.frz-reveal { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  opacity: 0; pointer-events: none; }
+.frz.s-reveal .frz-reveal { opacity: 1; transition: opacity .3s ease .1s; }
+.frz-flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; }
+.frz.s-reveal .frz-flash { animation: frzFlash 1.1s ease-out; }
+@keyframes frzFlash { 0% { opacity: 0; } 8% { opacity: 1; } 100% { opacity: 0; } }
+.frz-title { font-size: 2.25em; color: #ffcc33; text-shadow: 0 0 18px rgba(255,255,255,.35), 3px 3px 0 #000; }
+.frz.s-reveal .frz-title { animation: frzZoom .9s cubic-bezier(.2,1.3,.4,1) both, frzRainbow 2.4s linear infinite; }
+@keyframes frzZoom { from { transform: scale(1.8); opacity: 0; filter: blur(6px); } to { transform: none; opacity: 1; filter: none; } }
+@keyframes frzRainbow { 0%, 100% { color: #ff5555; } 17% { color: #ffaa00; } 33% { color: #ffff55; } 50% { color: #55ff55; } 67% { color: #55aaff; } 83% { color: #d070ff; } }
+.frz-tap { color: var(--sub); font-size: .875em; opacity: 0; transition: opacity .5s ease .9s; }
+.frz.s-reveal .frz-tap { opacity: 1; animation: frzPulse 1.4s ease-in-out 1.4s infinite; }
+@media (prefers-reduced-motion: reduce) { .frz *, .frz { animation: none !important; transition: none !important; } }
+
+/* ===== 前輩台凍結：一場夢（2026-10-03）——暖色、柔焦、全部平滑 ===== */
+#app.drm-sleepy > #hud, #app.drm-sleepy > #screens, #app.drm-sleepy > #nav { filter: blur(2px) sepia(.55) brightness(.75); transition: filter 3s ease; }
+#app.drm-wakeup > #hud, #app.drm-wakeup > #screens, #app.drm-wakeup > #nav { filter: blur(var(--wb, 2.4px)) sepia(.35) brightness(.85); transition: none; }
+.drm { background: transparent; overflow: hidden; }
+.drm > * { position: absolute; }
+.drm-black { inset: 0; background: #000; opacity: 0; transition: opacity .4s ease; z-index: 1; }
+.drm.s-dark .drm-black, .drm.s-dream .drm-black { opacity: 1; transition: none; }
+.drm.s-wake .drm-black { opacity: 0; transition: none; }
+/* 眼皮：上下兩片，邊緣柔軟 */
+.drm-lid { left: -10%; right: -10%; height: 0; background: #000; z-index: 3; }
+.drm-lid.top { top: 0; box-shadow: 0 18px 30px 14px #000; border-radius: 0 0 50% 50% / 0 0 28px 28px; }
+.drm-lid.bot { bottom: 0; box-shadow: 0 -18px 30px 14px #000; border-radius: 50% 50% 0 0 / 28px 28px 0 0; }
+.drm.lid-ease .drm-lid { transition: height 1.1s cubic-bezier(.4,0,.2,1); }
+.drm.s-drowse .drm-lid { animation: drmDrowse 4s cubic-bezier(.45,0,.35,1) forwards; }
+@keyframes drmDrowse { 0% { height: 0; } 22% { height: 30%; } 34% { height: 4%; } 58% { height: 40%; } 68% { height: 16%; } 100% { height: 51%; } }
+/* 夢境底與光點 */
+.drm-dream { inset: 0; z-index: 2; opacity: 0; transition: opacity 1.6s ease;
+  background: radial-gradient(ellipse at 50% 85%, #5a3313 0%, #24150b 50%, #0b0705 100%); }
+.drm.s-dream .drm-dream { opacity: 1; }
+.drm.s-fade .drm-dream { opacity: 0; filter: blur(8px); transition: opacity 2.2s ease, filter 2.2s ease; }
+.drm-bokeh { position: absolute; inset: 0; }
+.drm-b { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(255,214,140,.9), rgba(255,170,80,0) 70%);
+  animation: drmFloat var(--d) ease-in-out infinite alternate, drmTw var(--t) ease-in-out infinite; }
+@keyframes drmFloat { from { transform: translate(0, 0); } to { transform: translate(14px, -40px); } }
+@keyframes drmTw { 50% { opacity: .25; } }
+.drm-title { position: absolute; left: 0; right: 0; top: 42%; text-align: center; color: #ffe2b0; font-size: 1.5em;
+  letter-spacing: .3em; text-shadow: 0 0 18px rgba(255,190,100,.7); opacity: 0; transition: opacity 1.2s ease, letter-spacing 2.2s ease; }
+.drm.s-title .drm-title { opacity: 1; letter-spacing: .6em; }
+/* 路邊攤：燈泡串、對話、燒烤架 */
+.drm-scene { position: absolute; inset: 0; opacity: 0; transition: opacity 1.4s ease; }
+.drm.s-scene .drm-scene { opacity: 1; }
+.drm-lights { position: absolute; left: -4%; right: -4%; top: 4%; height: 40px; transform: translateY(-24px); transition: transform 1.6s cubic-bezier(.2,.8,.3,1); }
+.drm.s-scene .drm-lights { transform: none; }
+.drm-lights svg { position: absolute; inset: 0; width: 100%; height: 100%; fill: none; stroke: #3d2a18; stroke-width: 1.2; vector-effect: non-scaling-stroke; }
+.drm-bulb { position: absolute; width: 8px; height: 11px; margin-left: -4px; border-radius: 3px 3px 4px 4px; background: #ffd27a;
+  box-shadow: 0 0 10px 3px rgba(255,190,90,.65), 0 0 26px 8px rgba(255,160,60,.25); animation: drmBulb var(--t) ease-in-out infinite; }
+@keyframes drmBulb { 50% { opacity: .7; box-shadow: 0 0 6px 2px rgba(255,190,90,.5), 0 0 16px 4px rgba(255,160,60,.15); } }
+.drm-log { position: absolute; left: 18px; right: 18px; top: 13%; bottom: 31%; display: flex; flex-direction: column; justify-content: flex-end; gap: 12px;
+  overflow: hidden; -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 30%); mask-image: linear-gradient(to bottom, transparent 0, #000 30%); }
+.drm-line { flex: none; animation: drmIn .7s cubic-bezier(.2,.8,.3,1) both; transition: opacity .8s ease; }
+.drm-line.old { opacity: .45; }
+@keyframes drmIn { from { opacity: 0; transform: translateY(14px); } }
+.drm-nar { text-align: center; color: #d9c3a3; font-size: .9375em; line-height: 1.6; }
+.drm-say { display: flex; gap: 10px; align-items: flex-start; }
+.drm-name { flex: none; padding: 1px 6px; border: 2px solid currentColor; font-size: .8125em; line-height: 1.5; background: rgba(0,0,0,.35); }
+.drm-txt { color: #f6ead6; line-height: 1.65; min-width: 0; }
+.drm-grill { position: absolute; left: 50%; bottom: 7%; width: 210px; height: 120px; margin-left: -105px; }
+.drm-grate { position: absolute; left: 0; right: 0; bottom: 18px; height: 10px; border-radius: 2px;
+  background: repeating-linear-gradient(90deg, #2a2420 0 6px, #0d0b0a 6px 12px); box-shadow: 0 2px 0 #000; }
+.drm-coals { position: absolute; left: 8px; right: 8px; bottom: 0; height: 20px; border-radius: 3px;
+  background: radial-gradient(ellipse at 25% 40%, #ffb347 0, #e0461a 35%, transparent 60%), radial-gradient(ellipse at 70% 55%, #ffcf6a 0, #d1401a 30%, transparent 60%), #2b120a;
+  box-shadow: 0 -6px 26px 6px rgba(255,110,40,.35); animation: drmEmber 1.8s ease-in-out infinite; }
+@keyframes drmEmber { 50% { filter: brightness(1.35); box-shadow: 0 -8px 34px 10px rgba(255,120,40,.5); } }
+.drm-stick { position: absolute; bottom: 30px; width: 46px; height: 6px; margin-left: -23px; background: #b38a5a; border-radius: 3px;
+  display: flex; justify-content: space-around; align-items: center; animation: drmBob 3s ease-in-out infinite; }
+.drm-stick b { width: 11px; height: 11px; border-radius: 3px; background: #8a3b1e; box-shadow: inset -2px -2px 0 #5a2412, inset 2px 2px 0 #c0663a; }
+@keyframes drmBob { 50% { transform: translateY(-2px) rotate(-2deg); } }
+.drm-smoke { position: absolute; bottom: 34px; width: 22px; height: 22px; border-radius: 50%; background: rgba(230,225,215,.22); filter: blur(5px);
+  animation: drmSmoke 4.2s ease-out infinite; }
+@keyframes drmSmoke { 0% { transform: translate(0, 0) scale(.6); opacity: 0; } 15% { opacity: .9; } 100% { transform: translate(-16px, -110px) scale(2.4); opacity: 0; } }
+.drm-burst { position: absolute; left: 50%; top: 72%; width: 0; height: 0; }   /* 乾杯在桌上：放在對話下面、烤架上面，不蓋住字 */
+.drm-burst::before { content: ""; position: absolute; left: -140px; top: -140px; width: 280px; height: 280px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,238,180,.95) 0, rgba(255,200,110,.55) 30%, rgba(255,170,80,0) 66%); opacity: 0; }
+.drm-burst.on::before { animation: drmPop 1.4s ease-out; }
+@keyframes drmPop { 0% { opacity: 0; transform: scale(.3); } 20% { opacity: 1; } 100% { opacity: 0; transform: scale(1.6); } }
+.drm-burst i { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; background: #ffe2a0; box-shadow: 0 0 10px 2px #ffb347; opacity: 0; }
+.drm-burst.on i { animation: drmSpark 1.4s cubic-bezier(.12,.8,.3,1); }
+@keyframes drmSpark { 0% { opacity: 1; transform: translate(0, 0) scale(1.2); } 70% { opacity: .9; }
+  100% { opacity: 0; transform: translate(var(--x), calc(var(--y) + 40px)) scale(.3); } }   /* 飛出去後微微往下掉 */
+.drm.s-cheer .drm-scene { animation: drmCheer 1.4s ease-out; }
+@keyframes drmCheer { 15% { filter: brightness(1.4) saturate(1.15); } }
+.drm-skip { position: absolute; left: 0; right: 0; bottom: 2%; text-align: center; color: rgba(217,195,163,.55); font-size: .8125em; opacity: 0; transition: opacity 1s ease 2s; }
+.drm.s-scene .drm-skip { opacity: 1; }
+.drm.s-fast .drm-skip { opacity: 0; transition-delay: 0s; }
+/* 醒來＋長按 */
+.drm-wake { inset: 0; z-index: 4; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 22px; opacity: 0; transition: opacity 1s ease .3s; pointer-events: none; }
+.drm.s-wake .drm-wake { opacity: 1; }
+.drm.s-reveal .drm-wake { opacity: 0; transition-delay: 0s; transition-duration: .3s; }
+.drm-wake-t { color: #f0dcc0; font-size: 1.25em; text-shadow: 0 0 12px rgba(255,190,100,.5); }
+.drm .frz-hold { color: #ffd9a0; }
+.drm-bar i { background: linear-gradient(90deg, #ffb347, #ffe2a8); }
+.drm-bar.full { box-shadow: 0 0 18px #ffb347; }
+/* 揭曉：金光擴散 */
+.drm-reveal { inset: 0; z-index: 5; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; opacity: 0; pointer-events: none;
+  background: rgba(24,14,6,.0); transition: background 1.2s ease; }
+.drm.s-reveal .drm-reveal { opacity: 1; background: rgba(24,14,6,.72); }
+.drm-glow { position: absolute; left: 50%; top: 50%; width: 24px; height: 24px; margin: -12px; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,240,200,1), rgba(255,200,110,.45) 40%, rgba(255,170,80,0) 70%); opacity: 0; }
+.drm.s-reveal .drm-glow { animation: drmGlow 2s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes drmGlow { 0% { transform: scale(0); opacity: 1; } 35% { opacity: 1; } 100% { transform: scale(55); opacity: .18; } }
+.drm .frz-title { position: relative; }
+.drm.s-reveal .frz-title { animation: frzZoom 1s cubic-bezier(.2,1.3,.4,1) .35s both, frzRainbow 2.4s linear infinite; }
+.drm-greet { position: relative; display: flex; gap: 10px; align-items: flex-start; max-width: 300px; padding: 0 18px; color: #f6ead6; line-height: 1.65;
+  opacity: 0; transform: translateY(10px); transition: opacity .8s ease 1.1s, transform .8s ease 1.1s; }
+.drm.s-reveal .drm-greet { opacity: 1; transform: none; }
+.drm .frz-tap { position: relative; transition-delay: 1.8s; }
+.drm.s-out { opacity: 0; transition: opacity .6s ease; }
+@media (prefers-reduced-motion: reduce) { .drm *, .drm { animation-duration: .01s !important; animation-iteration-count: 1 !important; transition-duration: .01s !important; } }
+
 /* ===== 提示 / 對話框 ===== */
 .toast {
   position: absolute; left: 50%; top: 60px; transform: translateX(-50%); z-index: 50;

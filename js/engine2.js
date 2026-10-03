@@ -87,6 +87,26 @@
     if (st.state === "normal") {
       res.free = false;
       st.sinceAt++;
+      /* 地底凍結（2026-10-03）：三人好感度 100%（不消耗，結束後仍全滿）、隨機一人帶你進（照常算一次認同）、第一關起就是上位。
+         st.forceFreeze＝本機測試用。 */
+      const FZ = R.freeze;
+      if (FZ && (st.forceFreeze || (FZ.rate > 0 && roll(res, rng, "地底凍結", FZ.rate, true)))) {
+        st.forceFreeze = false;
+        const boss = ["a", "b", "c"][Math.floor(rng() * 3)];
+        res.cat = "rubble"; res.pay = 0;
+        st.favor = { a: 1, b: 1, c: 1 };   // 三人 100%，而且這次「不消耗」：帶你走的那位也不歸零（擁有者 2026-10-03）
+        st.dateQueue = [];
+        // 以下同「約會成功」：這一輪狀態全部重算
+        st.state = "at"; st.atLeft = R.at.length; st.gain = 0;
+        st.stRound = 0; st.cleared = 0; st.upper = false; st.pickedBoss = null;
+        st.stBoss = null; st.stLeft = 0; st.bonusLeft = 0; st.bonusTotal = 0;
+        st.runMaxBonus = 0; st.lastStBoss = null; st.sinceAt = 0; st.dateStep = 0; st.lastRejected = null;
+        st.freezeUpper = true;   // 第一次進 ST 前直接變上位
+        res.events.push({ t: "freeze", boss });
+        res.events.push({ t: "dateWin", boss, scene: "normal" });
+        res.stateAfter = st.state;
+        return res;
+      }
       res.cat = rollCat(res, rng, "挖到", R.itemTable, s, false, forced);
       res.pay = payOf(R, res.cat, "normal");
       const F = R.favor;
@@ -179,6 +199,10 @@
     /* ===== ST 前的演出：三位前輩走出來，隨機一位（上位時由玩家選） ===== */
     if (st.state === "stIntro") {
       // 上位抽選：通關第 N 關「之後」才抽（所以第一關不會直接上位）
+      if (st.freezeUpper) {   // 地底凍結：第一關起就是上位
+        st.freezeUpper = false; st.upper = true;
+        res.events.push({ t: "upperStart", round: st.stRound + 1, cleared: st.cleared });
+      }
       if (!st.upper && st.cleared > 0) {
         const up = R.upper.rounds[String(st.cleared)];
         if (up !== undefined && roll(res, rng, `已通關${st.cleared}關 → 上位抽選`, up[s] !== undefined ? up[s] : up, true)) {

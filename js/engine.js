@@ -280,6 +280,21 @@
     }
 
     /* ================= 通常 / 高確 / 連續演出 / 前兆 ================= */
+    /* 地底凍結（2026-10-03）：通常／高確時每揮抽一次 → 星辰礦脈開場＋庫存星辰；這一揮本身什麼都沒挖到。
+       st.forceFreeze＝本機測試用（下一次通常揮必定凍結）。 */
+    const FZ = rules.freeze;
+    if ((st.state === "normal" || st.state === "koukaku") && FZ && (st.forceFreeze || (FZ.rate > 0 && roll(res, rng, "地底凍結", FZ.rate, true)))) {
+      st.forceFreeze = false;
+      res.cat = "rubble"; res.toolDrop = false;
+      st.chain = 1; st.sinceHit = 0; st.fakeLeft = 0; st.pending = null; st.rbOn = false; st.rbLeft = -1;
+      st.stock = Array.from({ length: FZ.stock || 0 }, () => ({ type: "SBB", announced: true }));
+      res.events.push({ t: "freeze", stock: st.stock.length });
+      res.events.push({ t: "bonusStart", type: "SBB", from: "freeze" });
+      startBonus(rules, st, "SBB");
+      res.omen = 5; res.omenKey = "zencho"; res.win = true;
+      res.stateAfter = st.state;
+      return res;
+    }
     res.cat = rollCat(res, rng, "挖到", rules.itemTable, s, false);
     res.toolDrop = rng() < rules.toolDrop.normal;
     const C = rules.chance;
