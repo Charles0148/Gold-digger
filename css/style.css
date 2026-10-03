@@ -199,8 +199,6 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 /* ===== 2026-10-03 分頁整理 ===== */
 .boss-group { color: var(--sub); font-size: .8125em; margin: 6px 2px -2px; }
 .boss-group:first-child { margin-top: 0; }
-.map-btns { display: flex; flex-direction: column; gap: 6px; align-items: stretch; flex: none; }
-.map-btns > .sub { text-align: center; }
 .dex-tabs { margin-bottom: 10px; }
 .acct-name { display: flex; align-items: center; gap: 8px; }
 .acct-name #acctName { flex: 1; color: var(--gold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -251,6 +249,22 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .sp-dots::before { content: "……"; }
 @keyframes spDots { to { width: 2.6em; } }
 @media (prefers-reduced-motion: reduce) { .sp-rock, .sp-rock::after, .sp-pick, .sp-dots { animation: none; } .sp-dots { width: auto; } }
+
+.leave-warn { margin: 10px 0 4px; padding: 8px 10px; text-align: left; line-height: 1.6;
+  color: #ffd0c4; background: #2a0f0c; border: 3px solid var(--orange); animation: goldBlink .5s steps(2) 2; }
+
+/* 地圖：一行卡片＋點開的資料框 */
+.map-card { width: 100%; font: inherit; color: inherit; text-align: left; cursor: pointer; min-height: 48px; }
+.map-card:active { transform: translateY(1px); }
+.map-card.locked { opacity: .75; }
+.map-here { color: var(--gold); font-size: .875em; }
+.map-can { color: var(--gold); }
+.mi-title { font-size: 1.125em; margin-bottom: 8px; }
+.mi-body { text-align: left; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 8px 2px; margin-bottom: 4px; }
+.mi-row { display: flex; gap: 10px; padding: 3px 0; line-height: 1.5; }
+.mi-k { flex: none; width: 4.5em; color: var(--sub); font-size: .875em; padding-top: 1px; }
+.mi-v { flex: 1; min-width: 0; }
+.modal-box .btns { flex-wrap: wrap; align-items: center; }
 
 /* ===== 提示 / 對話框 ===== */
 .toast {
@@ -353,9 +367,6 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .boon-rules { margin-top: 8px; padding: 6px 8px; border: 2px dashed #7a5a32; line-height: 1.6; }
 .boon-rules b { color: var(--gold-lt); }
 
-/* 地圖：探索保障說明獨立一行 */
-.nowrap { white-space: nowrap; }
-.map-guard { color: var(--sub); font-size: .75em; line-height: 1.5; margin: 2px 0; }
 
 /* 版本編號 */
 .ver-tag { position: absolute; right: 6px; bottom: 4px; font-size: .75em; color: var(--sub); opacity: .7; pointer-events: none; }

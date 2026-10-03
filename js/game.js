@@ -819,7 +819,7 @@
   const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() { renderMineBase(); storySync(); }
   /* 資訊列中間的「礦脈」「紫」：第一台顯示，第二台不顯示 */
-  function mbExtra(show) { ["mbHits", "mbEpic"].forEach(id => $(id).parentElement.classList.toggle("hidden", !show)); }
+  function mbExtra(show) { ["mbHits"].forEach(id => $(id).parentElement.classList.toggle("hidden", !show)); }
   function renderMineBase() {
     checkDay();
     if (isM2()) return renderMine2();
@@ -833,7 +833,6 @@
     $("mbState").innerHTML = stateTxt;
     $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits;
-    $("mbEpic").textContent = ms.epic;
     $("mbSinceL").textContent = "距上次礦脈";       // sinceHit：上次礦脈結束（或進坑）後的揮數，礦脈中顯示 —
     $("mbSince").textContent = st.state === "bonus" ? "—" : fmt(st.sinceHit) + " 揮";
     mbExtra(true); $("mbSince").parentElement.classList.remove("hidden");
@@ -880,10 +879,9 @@
     $("mbState").innerHTML = txt;
     $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits || 0;
-    $("mbEpic").textContent = ms.dates || 0;
     $("mbSinceL").textContent = "距上次談話";       // sinceAt：上次前輩找你談話（或進坑）後的揮數
     $("mbSince").textContent = fmt(st.sinceAt) + " 揮";
-    mbExtra(false);                  // 第二台只留「本日」「累計」，礦脈／紫不顯示
+    mbExtra(false);                  // 第二台只留「本日」「累計」，礦脈不顯示（紫已於 2026-10-03 全部拿掉）
     const inRun = ["at", "st", "reward", "pick", "dig", "bonus", "stIntro"].includes(st.state);
     $("mbSince").parentElement.classList.toggle("hidden", inRun);   // 談話成功後的各階段不顯示「距上次談話」（原本的「累計」隱藏規則）
     $("veinBanner").classList.toggle("hidden", !inRun);
@@ -954,7 +952,22 @@
       if (t < 8000 && !todayKey() && !clock.failKind) return;
       clearInterval(dep); clearInterval(chk);
       sp.classList.add("out"); setTimeout(() => sp.remove(), 400);
+      playWelcome();
     }, 100);
+  }
+  /* 歡迎字條（2026-10-03 擁有者）：每次打開遊戲、開場動畫收起後，在敘述框逐字播放一句（config.texts.welcome 隨機）。
+     日期沒確認（顯示連線提示）、不在挖礦畫面、回憶播放中都不播；玩家一揮鎬就被正常內容蓋掉。 */
+  function playWelcome() {
+    const list = config.texts.welcome || [];
+    if (!list.length || !todayKey() || currentScreen !== "mine" || save.senpai.story) return;
+    const txt = pickOne(list).replace(/\{name\}/g, save.name || "礦工");
+    setTextbox([`<span id="tbWelcome" style="color:${config.theme.text}"></span>`], 0);
+    let i = 0;
+    const tick = setInterval(() => {
+      const el = $("tbWelcome");
+      if (!el || i >= txt.length) { clearInterval(tick); return; }   // 播完，或已經被別的內容蓋掉
+      el.textContent = txt.slice(0, ++i);
+    }, 70);
   }
   function clockChanged() {   // 時鐘變成有效／無效時，重畫受影響的畫面
     if (currentScreen === "mine" && !save.senpai.story) {
@@ -1570,22 +1583,41 @@
   const cssQ = s => String(s).replace(/["\\]/g, "\\$&");
 
   /* ---------------- 地圖 ---------------- */
+  /* 地圖（2026-10-03 擁有者：一打開不要密密麻麻）：清單每座只留一行（名稱、倍率、狀態）；
+     點卡片跳出詳細資料框（建議工具、探索保障、今日紀錄、觀測結果、前往／觀測／解鎖）。 */
   function renderMap() {
     checkDay();
     $("mapList").innerHTML = config.mines.map(m => {
-      const unlocked = save.unlocked.includes(m.id), ms = mineStats(m.id);
-      const need = stdOfTier(m.tier);
-      const here = m.id === save.mineId;
-      const epicRate = ms.epic ? `1/${Math.round(ms.normalSwings / ms.epic)}` : "—";
-      const btn = here ? '<span class="sub">所在地</span>'
-        : unlocked ? `<button class="px-btn small" data-go-mine="${m.id}">${locked(m.id) ? "🔒 " : ""}前往</button>`
-        : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
-      const side = unlocked ? `<div class="map-btns">${btn}<button class="px-btn small" data-scope-at="${m.id}">觀測 ▶</button></div>` : btn;
-      return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
-        <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
-        <div class="sub map-guard">${guardText(m)}</div>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}建議 ${need ? need.name : "?"}${unlocked ? `｜<span class="nowrap">今日此坑 ${fmt(ms.swings)} 揮</span>` + (m.engine === 2 ? "" : ` <span class="nowrap">礦脈${ms.hits} 紫${epicRate}</span>`) : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${side}</div>`;
+      const unlocked = save.unlocked.includes(m.id), here = m.id === save.mineId;
+      const state = here ? '<span class="map-here">所在地</span>'
+        : unlocked ? '<span class="sub">前往 ▶</span>'
+        : `<span class="sub ${save.coins < m.unlock ? "" : "map-can"}">🔒 $${fmt(m.unlock)}</span>`;
+      return `<button class="row map-card ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}" data-mine-info="${m.id}">
+        <span class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span></span>${state}</button>`;
     }).join("");
+  }
+  function openMineInfo(id) {
+    const m = mineDef(id); if (!m) return;
+    const unlocked = save.unlocked.includes(m.id), ms = mineStats(m.id), here = m.id === save.mineId;
+    const need = stdOfTier(m.tier);   // 「今日此坑」不顯示紫（機會牌）次數——擁有者 2026-10-03：不用記數
+    const seen = unlocked ? glassSeen(m.id) : [];
+    const marks = seen.map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ");
+    const line = (k, v) => `<div class="mi-row"><span class="mi-k">${k}</span><span class="mi-v">${v}</span></div>`;
+    const btns = here ? `<span class="map-here">所在地</span>${unlocked ? `<button class="px-btn" data-scope-at="${m.id}">觀測 ▶</button>` : ""}`
+      : unlocked ? `<button class="px-btn gold" data-go-mine="${m.id}">${locked(m.id) ? "🔒 " : ""}前往</button><button class="px-btn" data-scope-at="${m.id}">觀測 ▶</button>`
+      : `<button class="px-btn gold" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
+    $("modalBox").innerHTML = `<div class="mi-title"><span style="color:${rarityColor(m.tier)}">${esc(m.name)}</span> <span class="sub">×${m.mult}</span></div>
+      <div class="mi-body">
+        ${m.engine === 2 ? line("玩法", "跟其他礦坑不同") : ""}
+        ${line("建議工具", need ? need.name : "?")}
+        ${line("探索保障", guardText(m).replace(/^探索保障 /, ""))}
+        ${unlocked ? line("今日此坑", `${fmt(ms.swings)} 揮` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
+        ${unlocked ? line("今日觀測", marks || '<span class="sub">還沒觀測</span>') : ""}
+        ${dbg("showSetting") ? line("設定", `<span style="color:#ff4fd8">${todaySetting(m.id)}</span>`) : ""}
+      </div>
+      <div class="btns">${btns}<button class="px-btn" id="miClose">關閉</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("miClose").onclick = () => $("modal").classList.add("hidden");
   }
   /* 帳號（2026-10-03）：點頂部名字進來；名字＋雲端存檔／玩家 ID（原本放在地圖頁最下面） */
   let acctBack = "mine";
@@ -2884,25 +2916,52 @@
     $("pwNo").onclick = () => $("modal").classList.add("hidden");
   }
 
+  /* 離開礦坑的醒目提醒（2026-10-03 擁有者）：只看玩家畫面上本來就看得到的狀態，不洩漏隱藏資訊——
+     假前兆跟真前兆一樣提醒；高確、「先演失敗→復活」這類看不出來的狀態不提醒。 */
+  function leaveWarn(mine) {
+    if (mine.engine === 2) {
+      const st = save.plays2[mine.id];
+      return st && st.state && st.state !== "normal" ? "前輩的考驗正在進行中！離開的話，這一輪的進度會全部消失。" : "";
+    }
+    const st = save.plays[mine.id];
+    if (!st) return "";
+    if (st.state === "bonus") return `你正在礦脈中！還剩 ${st.bonusLeft} 揮，離開的話這條礦脈會消失。`;
+    if (st.state === "chance") return "連續演出進行中！離開的話，這次的演出會作廢。";
+    if (st.state === "zencho" || st.fakeLeft > 0) return "現在出現前兆了！離開的話，這次的前兆會跟著消失。";
+    return "";
+  }
+  function askLeave(mine, note, onOk) {
+    const warn = leaveWarn(mine), box = $("modalBox");
+    box.innerHTML = `<div style="line-height:1.7">真的要離開「${esc(mine.name)}」嗎？</div>
+      ${warn ? `<div class="leave-warn">⚠ ${warn}</div>` : ""}
+      <div class="sub" style="line-height:1.6;margin-top:6px">${note}</div>
+      <div class="btns">${warn ? `<button class="px-btn gold" id="lvNo">留下</button><button class="px-btn" id="lvOk">還是要離開</button>`
+        : `<button class="px-btn" id="lvOk">離開</button><button class="px-btn" id="lvNo">留下</button>`}</div>`;
+    $("modal").classList.remove("hidden");
+    $("lvNo").onclick = () => $("modal").classList.add("hidden");
+    $("lvOk").onclick = () => { $("modal").classList.add("hidden"); onOk(); };
+  }
+  /* 換礦坑／離開後：敘述框、中央大字、挖出的數字都清掉，不留上一座礦坑的內容 */
+  function resetMineView() {
+    clearM2UI();
+    $("sceneBig").textContent = "⛏"; $("sceneSub").textContent = "點擊下方敘述框開始挖礦";
+    document.querySelectorAll("#scene .dig-num").forEach(e => e.remove());
+    setTextbox([colored(pickOne(["點擊這裡揮鎬", "準備好了嗎？"]), config.theme.sub)], 0);
+  }
   function leaveMine() {
     if (save.senpai.story) { toast("先把回憶看完"); return; }
     const mine = curMine();
-    const box = $("modalBox");
-    box.innerHTML = `<div style="line-height:1.7">真的要離開嗎<br><span class="sub">離開了礦坑之後，坑洞將會坍塌，搜尋的結果也將重置喔…</span></div>
-      <div class="btns"><button class="px-btn" id="lvOk">離開</button><button class="px-btn" id="lvNo">留下</button></div>`;
-    $("modal").classList.remove("hidden");
-    $("lvNo").onclick = () => $("modal").classList.add("hidden");
-    $("lvOk").onclick = () => {
+    askLeave(mine, "離開了礦坑之後，坑洞將會坍塌，搜尋的結果也將重置喔…", () => {
       stopAuto(); clearM2UI();
       if (mine.engine === 2) senpaiTripEnd();          // 確實從前輩礦坑離開
-      $("modal").classList.add("hidden");
+      resetMineView();
       go("map");
       delete save.plays[mine.id];
       delete save.plays2[mine.id];
       save.today.stats[mine.id] = { swings: 0, hits: 0, epic: 0, normalSwings: 0 };
       toast("坑洞坍塌了，" + mine.name + " 的搜尋結果已重置");
       persist(true); renderMap();
-    };
+    });
   }
 
   let currentScreen = "mine";
@@ -2985,6 +3044,8 @@
     if (t.id === "hudRuby") { if (!RUBY_PREVIEW) { toast("紅晶商店準備中，敬請期待"); return; } go("shop"); bossView = "ruby"; renderShop(); return; }
     if (t.id === "acctBack") { go(acctBack === "acct" ? "mine" : acctBack); return; }
     if (d.jump) { go("shop"); bossView = d.jump; renderShop(); return; }   // 背包 → 老闆的收購／買鎬子
+    if (d.mineInfo) { openMineInfo(d.mineInfo); return; }
+    if (d.goMine || d.unlock || d.scopeAt) $("modal").classList.add("hidden");   // 地圖資料框裡的按鈕：先關框
     if (d.scopeAt) { if (!dailyOK()) { toast("確認日期後可使用"); return; } openScope(d.scopeAt); return; }   // 地圖 → 觀測鏡（選好礦坑）
     if (t.id === "btnBoonPick") { offerPick(true); return; }
     if (t.id === "btnSellAll") {
@@ -3003,15 +3064,21 @@
     if (d.goMine) {
       if (save.senpai.story) { toast("先把回憶看完再出發"); go("mine"); return; }
       if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
-      const from = curMine();
-      if (from.engine === 2 && from.id !== d.goMine) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
-      if (from.engine === 2 && from.id !== d.goMine) senpaiTripEnd();        // 從前輩礦坑換到別座＝離開
-      if (mineDef(d.goMine).engine === 2 && from.id !== d.goMine) senpaiTripStart();   // 走進前輩礦坑＝新的一趟
-      save.mineId = d.goMine; save.equipped = null; clearM2UI(); persist();
-      if (!(from.engine === 2 && from.id !== d.goMine)) toast("前往 " + mineDef(d.goMine).name);
-      go("mine");
+      const from = curMine(), to = d.goMine;
+      const doGo = () => {
+        if (from.engine === 2 && from.id !== to) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
+        if (from.engine === 2 && from.id !== to) senpaiTripEnd();        // 從前輩礦坑換到別座＝離開
+        if (mineDef(to).engine === 2 && from.id !== to) senpaiTripStart();   // 走進前輩礦坑＝新的一趟
+        save.mineId = to; save.equipped = null; clearM2UI(); persist();
+        if (!(from.engine === 2 && from.id !== to)) toast("前往 " + mineDef(to).name);
+        if (from.id !== to) resetMineView();
+        go("mine");
+      };
+      // 前輩礦坑換到別座會清掉累積 → 先醒目確認（第一台換礦坑會保留進度，不用確認）
+      if (from.engine === 2 && from.id !== to) { askLeave(from, "換到別的礦坑，這裡累積的進度會全部歸零。", doGo); return; }
+      doGo();
     }
-    if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); } }
+    if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); openMineInfo(m.id); } }   // 解鎖後直接顯示可以「前往」的資料框
     if (d.buy) { const tl = toolDef(d.buy); if (!tl || !isStd(tl.id)) return; /* 只有標準鎬子能用金幣買 */ const pr = toolPrice(tl); if (save.coins >= pr) { save.coins -= pr; addTool(tl.id, 1); const t = talk(); bossLine = t.dealAt ? TK().boughtAfterDeliver : TK().bought; t.dealAt = 0; persist(); toast("購買 " + tl.name); renderShop(); } }
   });
   let clockSeenDay = todayKey();
