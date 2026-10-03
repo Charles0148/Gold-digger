@@ -220,6 +220,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
   display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; }
 .splash.out { animation: spOut .36s steps(3) forwards; pointer-events: none; }
 @keyframes spOut { to { opacity: 0; } }
+.sp-copy { position: absolute; bottom: 14px; left: 0; right: 0; text-align: center; font-size: .75em; color: var(--sub); }
 .sp-title { font-size: 2.5em; color: var(--gold); letter-spacing: .12em; text-shadow: 4px 4px 0 #000; }
 .sp-shaft { position: relative; width: 144px; height: 168px; overflow: hidden; background: #1a1a1e;
   border: 4px solid #0d0d10; box-shadow: 0 0 0 3px #3a3a42; }
