@@ -8,6 +8,11 @@
      存檔、設定、備份全部換成另一組 key，雲端模組同時關閉（見 cloud.js），不會碰到正常存檔或正式帳號。 */
   const SANDBOX = (/^(localhost|127\.0\.0\.1)$/.test(location.hostname) && (location.search.match(/[?&]sandbox=([\w-]{1,32})/) || [])[1]) || "";
   const SB = SANDBOX ? "__sandbox_" + SANDBOX : "";
+  /* 紅晶（儲值貨幣，2026-10-03 由鉍晶改名）。擁有者 2026-10-03「紅晶的欄位留著，商店的部分鎖起來」：
+     正式版：頂部顯示紅晶 0（還沒有雲端錢包）、老闆選單的紅晶商店上鎖（準備中）。
+     本機 sandbox：照舊是示意商店（假數字、不寫存檔、不連雲端、按了不會買）。正式開放要等雲端錢包（伺服器把關）做好。 */
+  const RUBY_PREVIEW = !!SANDBOX, RUBY_MOCK = 120;
+  const RUBY_ICO = '<svg class="ruby-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-ruby"/></svg>';
   const CFG_KEY = "mine_config_v4" + SB;
   const SAVE_KEY = "mine_save_v1" + SB;
   /* 恩惠 v2 第一次遷移前的整份存檔。集合：{ entries: { 備份id: { at, src, save } } }。
@@ -551,7 +556,7 @@
      流程：選礦坑 → 按「開始觀測」扣款 → 轉動鏡片（點 3 下，也會自動推進）→ 揭曉 → 進今日紀錄。
      scopeMine：目前看的礦坑；scopePhase："idle" | "focus" | "done" */
   let scopeMine = null, scopePhase = "idle", scopeTurns = 0, scopePending = null, scopeTimer = null, scopeFrame = 0;
-  const SCOPE_FRAMES = ["◌", "◍", "◎", "◉", "◎", "◍"];
+  const SCOPE_FRAMES = ["◍", "◎", "◉", "◎"];
   const SCOPE_TURNS = 3;
 
   function scopeMines() { return config.mines.filter(m => save.unlocked.includes(m.id)); }
@@ -588,6 +593,7 @@
     const ring = $("scopeRing"), icon = $("scopeIcon");
     ring.className = "scope-ring" + (scopePhase === "focus" ? " focus" : "");
     if (scopePhase === "focus") {
+      ring.style.color = "";   // 讓 .focus 的青色生效（上一次結果的顏色不要殘留）
       icon.textContent = SCOPE_FRAMES[scopeFrame % SCOPE_FRAMES.length];
       icon.style.color = "#7fe3ff";
       $("scopeName").textContent = (g.stages || [])[n] || "觀測中";
@@ -596,14 +602,14 @@
     } else if (scopePhase === "done" && scopePending) {
       const r = glassResult(scopePending.e);
       ring.className = "scope-ring done" + (r.badge ? " badge" : "");
-      ring.style.borderColor = r.color;
+      ring.style.color = r.color;
       icon.textContent = r.icon; icon.style.color = r.color;
       icon.style.textShadow = r.badge ? "0 0 14px " + r.color : "none";
       $("scopeName").textContent = `${r.name}`;
       $("scopeName").style.color = r.color;
       $("scopeSay").textContent = r.line;
     } else {
-      ring.style.borderColor = ""; icon.style.textShadow = "none";
+      ring.style.color = ""; icon.style.textShadow = "none";
       icon.textContent = "◎"; icon.style.color = "#6a6a78";
       const last = n ? glassResult(seen[n - 1]) : null;
       $("scopeName").textContent = m.name;
@@ -615,7 +621,7 @@
     // 控制列
     $("scopeCtrl").innerHTML = scopePhase === "focus"
       ? `<button class="px-btn" id="scopeSkip">直接看結果</button>`
-      : `<button class="px-btn" id="scopeGo" ${full || save.coins < pr || scopePhase === "done" || !dailyOK() ? "disabled" : ""}>
+      : `<button class="px-btn gold" id="scopeGo" ${full || save.coins < pr || scopePhase === "done" || !dailyOK() ? "disabled" : ""}>
            ${!dailyOK() ? "確認日期後可使用" : full ? "已到極限" : `${(g.stages || [])[n] || "觀測"}　$${fmt(pr)}`}</button>
          <button class="px-btn" id="scopeBack">回老闆那裡</button>`;
 
@@ -752,6 +758,7 @@
     document.body.style.backgroundImage = img.bg ? `url(${img.bg})` : "";
     const mineImg = img["mine_" + save.mineId] || img.scene;
     $("scene").style.backgroundImage = mineImg ? `url(${mineImg})` : "";
+    $("mbName").style.color = rarityColor(curMine().tier);   // 礦坑名稱用礦坑代表色（同地圖）
     $("textbox").style.backgroundImage = img.textbox ? `url(${img.textbox})` : "";
     $("hud").style.backgroundImage = img.hud ? `url(${img.hud})` : "";
     $("nav").style.backgroundImage = img.nav ? `url(${img.nav})` : "";
@@ -781,6 +788,8 @@
     $("hudName").textContent = save.name || "玩家";
     $("hudCoins").textContent = fmt(save.coins);
     $("hudPlays").textContent = fmt(totalPlays());
+    $("hudRuby").classList.remove("hidden");
+    $("hudRubyN").textContent = fmt(RUBY_PREVIEW ? RUBY_MOCK : 0);
   }
 
   /* ---------------- 第二台機台（三位前輩的考驗） ---------------- */
@@ -805,6 +814,7 @@
 
   /* ---------------- 挖礦畫面 ---------------- */
   let veinGain = 0;
+  let veinRun = null;   // 這一趟礦脈的結算資料（第一台）：揮數、各種礦脈次數、是否進入核心層
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() { renderMineBase(); storySync(); }
@@ -815,7 +825,7 @@
     if (isM2()) return renderMine2();
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
-    let stateTxt = st.state === "bonus" ? colored(veinName(st.bonusType), TYPE_COLOR[st.bonusType]) : "";
+    let stateTxt = "";   // 礦脈中名稱已顯示在礦脈看板，右上角不重複（2026-10-03）
     if (dbg("showSetting")) {
       const nm = { normal: "通常", koukaku: "高確", chance: "連續演出", revive: "復活", zencho: "前兆", bonus: "AT" }[st.state];
       stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.state === "chance" ? `｜${st.chanceIdx}/${st.chanceRounds}回合 ${st.chanceWin ? "會過" + (st.chanceFake ? "(先演失敗)" : "") : "不會過"}` : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
@@ -931,6 +941,20 @@
     renderMineBase(); showClockMsg();
     if (!clock.syncing) clockSync();
     return true;
+  }
+  /* 開場動畫（2026-10-03 擁有者：用開場動畫取代「確認日期」畫面）：往下挖的像素動畫蓋住整個遊戲，
+     日期確認好就收起；確認失敗（沒網路等）也收起，露出原本的「需要連上網路＋重試」。最少 1.4 秒、最多 8 秒。 */
+  function splashRun() {
+    const sp = $("splash"); if (!sp) return;
+    const t0 = Date.now(); let depth = 0;
+    const dep = setInterval(() => { depth += 3; $("spDepth").textContent = depth; }, 100);
+    const chk = setInterval(() => {
+      const t = Date.now() - t0;
+      if (t < 1400 && t < 8000) return;
+      if (t < 8000 && !todayKey() && !clock.failKind) return;
+      clearInterval(dep); clearInterval(chk);
+      sp.classList.add("out"); setTimeout(() => sp.remove(), 400);
+    }, 100);
   }
   function clockChanged() {   // 時鐘變成有效／無效時，重畫受影響的畫面
     if (currentScreen === "mine" && !save.senpai.story) {
@@ -1051,7 +1075,7 @@
         choices = [{ v: "drill", label: T.drill }, { v: "shovel", label: T.shovel }];
       }
       if (e.t === "digStart") { clearDigNums(); lines.push(colored(T.digTap, config.theme.accent)); }
-      if (e.t === "dig") { addDigNum(e.inc); lines.push(colored(`挖出 +${e.inc}`, e.inc >= 5 ? "#ffcc33" : e.inc >= 3 ? "#4cff6a" : sub)); skipBig = true; }
+      if (e.t === "dig") { addDigNum(e.inc); lines.push(colored(`挖出 +${e.inc}`, e.inc >= 5 ? "#ffcc33" : e.inc >= 3 ? "#55ff55" : sub)); skipBig = true; }
       if (e.t === "announce") {
         lines.push(colored(`${T.announce} ${e.total} 轉！`, "rainbow"));
         if (e.how === "shovel") setTimeout(clearDigNums, 1500);
@@ -1113,7 +1137,7 @@
     el.textContent = "+" + inc;
     el.style.left = (8 + col * (84 / cols) + Math.random() * 6) + "%";
     el.style.top = (8 + row * (84 / rows) + Math.random() * 4) + "%";
-    el.style.color = inc >= 5 ? "#ffcc33" : inc >= 3 ? "#4cff6a" : "#e8e8e8";
+    el.style.color = inc >= 5 ? "#ffcc33" : inc >= 3 ? "#55ff55" : "#e8e8e8";
     el.style.fontSize = inc >= 5 ? "1.6em" : inc >= 3 ? "1.3em" : "1.05em";
     sc.appendChild(el);
   }
@@ -1127,6 +1151,22 @@
         本輪總收穫　<b style="color:${config.theme.accent}">$${money((e.gain || 0) * mult)}</b><br>
         ${e.upper ? '<span style="color:#ffcc33">※ 這一輪獲得過最終認可</span><br>' : ""}
         <span class="sub">最後倒在 ${bossName2(e.boss)} 手上</span>
+      </div>
+      <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
+    $("modal").classList.remove("hidden");
+    $("sumOk").onclick = () => $("modal").classList.add("hidden");
+  }
+  // 第一台：一趟礦脈結束的結算畫面（樣式同三位前輩台）
+  function showVeinSummary(e, run, gain) {
+    const box = $("modalBox"), types = (run && run.types) || {};
+    const kinds = ["SBB", "BB", "RB"].filter(t => types[t]).map(t => colored(`${veinName(t)}×${types[t]}`, TYPE_COLOR[t])).join("・");
+    box.innerHTML = `<div class="boss-name">結算</div>
+      <div style="margin:10px 0;line-height:1.9;text-align:left">
+        共 <b>${e.chain || 1}</b> 脈${kinds ? `<br><span class="sub">${kinds}</span>` : ""}<br>
+        ${run ? `礦脈中揮了　<b>${fmt(run.swings)}</b> 揮<br>` : ""}
+        這趟總收穫　<b style="color:${config.theme.accent}">$${money(gain)}</b><br>
+        ${run && run.core ? '<span style="color:#ffcc33">※ 這一趟礦脈進入過核心層</span><br>' : ""}
+        <span class="sub">${esc(curMine().name)}</span>
       </div>
       <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
     $("modal").classList.remove("hidden");
@@ -1163,7 +1203,8 @@
     ms.swings++;
     if (r.stateBefore !== "bonus") { ms.normalSwings++; if (r.cat === "epic") ms.epic++; if (r.cat === "legend") ms.legend = (ms.legend || 0) + 1; }
     const ev = t => r.events.find(e => e.t === t);
-    if (ev("bonusStart")) { ms.hits++; veinGain = 0; }
+    if (ev("bonusStart")) { ms.hits++; veinGain = 0; veinRun = { swings: 0, types: {}, core: false }; }
+    if (r.stateBefore === "bonus" && veinRun) veinRun.swings++;
 
     const lines = [];
     const cat = catDef(r.cat);
@@ -1209,7 +1250,7 @@
     else if (st.state === "koukaku" && Math.random() < 0.25) lines.push(colored(T.koukakuHint, sub));
     if (r.atHigh && !r.events.some(e => e.t === "atHighStart") && Math.random() < 0.3) lines.push(colored(T.atHighHint, oc[6] || "#ffcc33"));
     if (r.hint === "drip") lines.push(colored(T.hintDrip, sub));
-    if (r.hint === "glow") lines.push(colored(T.hintGlow, "#ffe08a"));
+    if (r.hint === "glow") lines.push(colored(T.hintGlow, "#ffe0a0"));
 
     // 事件文字（不直接說出前兆／AT 等術語）
     const enter = ["chanceStart", "fakeStart", "tenjou"];
@@ -1228,6 +1269,12 @@
       if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
       if (e.t === "veinCap") lines.push(colored(T.veinCap, "#ff7755"));
       if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　共${e.chain}脈　收穫 $${money(veinGain)}`, config.theme.accent));
+      if (veinRun) {   // 結算用：記下這一趟出現過的礦脈種類
+        if (e.t === "bonusStart" || e.t === "bonusChain") veinRun.types[e.type] = (veinRun.types[e.type] || 0) + 1;
+        if (e.t === "upgrade" && e.shown) { veinRun.types[e.from] = Math.max(0, (veinRun.types[e.from] || 0) - 1); veinRun.types[e.to] = (veinRun.types[e.to] || 0) + 1; }
+        if (e.t === "upperStart") veinRun.core = true;
+      }
+      if (e.t === "bonusEnd") { const run = veinRun, gain = veinGain; veinRun = null; setTimeout(() => showVeinSummary(e, run, gain), 400); }
     }
 
     // 工具掉落：恩惠加成另外補抽；工具太弱時也會打折
@@ -1429,7 +1476,7 @@
       const d = toolDef(t.id), eq = act && act.uid === t.uid, f = toolFactor(t, mine);
       return `<div class="row ${eq ? "equipped" : ""}">${icon(t.id)}
         <div class="grow"><span style="color:${rarityColor(d.rarity)}">${d.name}</span> <span class="sub">${t.dur}/${t.max}</span>${f < 1 ? ` <span style="color:#ff7755;font-size:.8em">此礦坑收益${Math.round(f * 100)}%</span>` : ""}
-        <div class="bar"><div class="bar-fill" style="width:${t.dur / t.max * 100}%"></div></div></div>
+        <div class="bar"><div class="bar-fill" style="width:${t.dur / t.max * 100}%;background:${t.dur / t.max > .5 ? "#55ff55" : t.dur / t.max > .2 ? "#ffcc33" : "#ff5555"}"></div></div></div>
         ${eq ? '<span class="sub">使用中</span>' : `<button class="px-btn small" data-equip="${t.uid}">裝備</button>`}</div>`;
     }).join("") : '<div class="sub">沒有工具</div>';
 
@@ -1441,7 +1488,7 @@
       return `<div class="row"><div class="grow"><span style="color:${rarityColor(idx[n].cat.rarity)}">${n}</span> ×${c}
         <div class="sub">單價 $${money2(p)}</div></div></div>`;
     }).join("") : '<div class="sub">背包是空的</div>';
-    $("bagOreTotal").textContent = names.length ? `總價值 $${money(total)}｜要賣礦石請找${config.boss.name}` : "";
+    $("bagOreTotal").textContent = names.length ? `總價值 $${money(total)}` : "";
     renderHud();
   }
   /* 前輩信賴＋珍貴回憶（收藏品，不是礦石：不進 save.ores、不能賣、不算圖鑑） */
@@ -1514,7 +1561,7 @@
     if (num) num.value = q;
     if (info) {
       info.textContent = `本次出售 ×${q}｜出售後剩餘 ×${have - q}｜可得 $${money(sellTotal([[name, q]]))}`;
-      info.style.color = fixed ? "#ffd76a" : "";
+      info.style.color = fixed ? "#ffcc33" : "";
       if (fixed) setTimeout(() => { if (info) info.style.color = ""; }, 900);
     }
     if (btn) btn.textContent = `賣出 ${q} 個`;
@@ -1533,13 +1580,16 @@
       const btn = here ? '<span class="sub">所在地</span>'
         : unlocked ? `<button class="px-btn small" data-go-mine="${m.id}">${locked(m.id) ? "🔒 " : ""}前往</button>`
         : `<button class="px-btn small" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
+      const side = unlocked ? `<div class="map-btns">${btn}<button class="px-btn small" data-scope-at="${m.id}">觀測 ▶</button></div>` : btn;
       return `<div class="row ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}">
         <div class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span>
         <div class="sub map-guard">${guardText(m)}</div>
-        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}建議 ${need ? need.name : "?"}${unlocked ? `｜<span class="nowrap">今日此坑 ${fmt(ms.swings)} 揮</span>` + (m.engine === 2 ? "" : ` <span class="nowrap">礦脈${ms.hits} 紫${epicRate}</span>`) : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";border-radius:5px;padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${btn}</div>`;
+        <div class="sub">${m.engine === 2 ? "玩法不同｜" : ""}建議 ${need ? need.name : "?"}${unlocked ? `｜<span class="nowrap">今日此坑 ${fmt(ms.swings)} 揮</span>` + (m.engine === 2 ? "" : ` <span class="nowrap">礦脈${ms.hits} 紫${epicRate}</span>`) : ""}${unlocked && glassSeen(m.id).length ? "｜" + glassSeen(m.id).map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ") : ""}${dbg("showSetting") ? `｜<span style="color:#ff4fd8">設定${todaySetting(m.id)}</span>` : ""}</div></div>${side}</div>`;
     }).join("");
-    renderCloud();
   }
+  /* 帳號（2026-10-03）：點頂部名字進來；名字＋雲端存檔／玩家 ID（原本放在地圖頁最下面） */
+  let acctBack = "mine";
+  function renderAcct() { $("acctName").textContent = save.name || "玩家"; renderCloud(); }
 
   /* 探索保障（內部叫天井）：顯示的揮數必須跟引擎真正用的門檻一致
      第一種：engine.js 用 mine.tenjou 比 sinceHit → 到達後進入「礦脈前兆」，前兆結束才開礦脈
@@ -1560,7 +1610,7 @@
     }
     const st = Cloud.status(), u = Cloud.user();
     pidAccount(u);
-    const dot = st === "in" || st === "busy" ? "#43d17a" : st === "error" ? "#ff5555" : "#888";
+    const dot = st === "in" || st === "busy" ? "#55ff55" : st === "error" ? "#ff5555" : "#888";
     box.innerHTML = `<div class="panel-title">雲端存檔
         <span class="sub"><span style="color:${dot}">●</span> ${CLOUD_TXT[st] || st}</span></div>
       <div class="sub">${u ? u.email : "登入之後，存檔會自動同步，換手機也接得回來。"}</div>
@@ -1885,7 +1935,7 @@
             <input id="admBoardResets" type="number" inputmode="numeric" min="0" max="99" step="1" value="${ADM.boardResets}"></div>
         </div>
         <div class="adm-preview">${admPreview()}</div>
-        ${ADM.lastMailId ? `<div class="sub" style="color:#43d17a;margin-top:6px">上一封已寄出，mail ID = <b>${ADM.lastMailId}</b>。要再寄一封請按「再寄一封」。</div>` : ""}
+        ${ADM.lastMailId ? `<div class="sub" style="color:#55ff55;margin-top:6px">上一封已寄出，mail ID = <b>${ADM.lastMailId}</b>。要再寄一封請按「再寄一封」。</div>` : ""}
         <div class="btns" style="margin-top:10px">
           ${ADM.sentKey === admFormKey()
             ? '<button class="px-btn" id="admAgain">再寄一封</button>'
@@ -1929,7 +1979,7 @@
             return `<div class="adm-mail">
               <div><b>#${r.id}</b> ${esc(r.title)}</div>
               <div class="sub">${esc(r.target)}${r.player_id ? "（" + esc(r.player_id) + "）" : ""}｜已領 ${r.claimed} 人</div>
-              ${rw ? `<div class="sub" style="color:#ffd34d">附件：${esc(rw)}</div>` : ""}
+              ${rw ? `<div class="sub" style="color:#ffcc33">附件：${esc(rw)}</div>` : ""}
               <div class="sub">寄出 ${fmtTime(r.sent_at)}｜到期 ${fmtTime(r.expires_at)}</div>
               <button class="px-btn small" data-adm-unsend="${r.id}" style="margin-top:4px">收回</button>
             </div>`;
@@ -2134,7 +2184,7 @@
     box.innerHTML = `<div>全部賣出？</div>
       <div class="sub" style="margin-top:8px;line-height:1.7">
         會賣掉 <b>${kinds}</b> 種礦石、共 <b>${cnt}</b> 個，可得 <b>$${money(sum)}</b>。<br>
-        <span style="color:#ff8a4c">這裡面可能包含委託板需要的礦石，賣掉就要重挖。</span>
+        <span style="color:#ff7755">這裡面可能包含委託板需要的礦石，賣掉就要重挖。</span>
       </div>
       <div class="btns" style="margin-top:12px">
         <button class="px-btn" id="saYes">確定全部賣出</button>
@@ -2153,16 +2203,24 @@
   }
 
   /* ---------------- 圖鑑 ---------------- */
+  let dexMine = null;   // 圖鑑目前看的礦坑（2026-10-03：一次一座，不再整串往下滑）
   function renderDex() {
     let got = 0, all = 0;
-    $("dexList").innerHTML = config.mines.map(m => {
+    if (!config.mines.some(m => m.id === dexMine)) dexMine = save.mineId;
+    const per = {};
+    const html = config.mines.map(m => {
+      let g = 0, a = 0;
       const cells = config.categories.filter(c => c.id !== "rubble").flatMap(c => (m.items[c.id] || []).concat((m.veinItems || {})[c.id] || []).map(n => {
-        all++; const d = save.dex[n]; if (d) got++;
+        all++; a++; const d = save.dex[n]; if (d) { got++; g++; }
         return d ? `<div class="dex-cell"><div style="color:${rarityColor(c.rarity)}">${n}</div><div class="n">×${d.count}</div></div>`
-                 : `<div class="dex-cell"><div style="color:${rarityColor(0)}">？？？</div><div class="n">${config.rarities[c.rarity].name}</div></div>`;
+                 : `<div class="dex-cell"><div style="color:${rarityColor(0)}">？？？</div><div class="n" style="color:${rarityColor(c.rarity)}">${config.rarities[c.rarity].name}</div></div>`;
       })).join("");
-      return `<div class="dex-mine"><h4>${m.name}</h4><div class="dex-grid">${cells}</div></div>`;
+      per[m.id] = `${g}/${a}`;
+      return m.id === dexMine ? `<div class="dex-mine"><div class="dex-grid">${cells}</div></div>` : "";
     }).join("");
+    $("dexTabs").innerHTML = config.mines.map(m =>
+      `<button data-dex-mine="${m.id}" class="${m.id === dexMine ? "on" : ""}">${esc(m.name)} <span class="sub">${per[m.id]}</span></button>`).join("");
+    $("dexList").innerHTML = html;
     $("dexCount").textContent = `${got}/${all}`;
   }
 
@@ -2257,6 +2315,7 @@
       const broke = t.broke; if (broke) { t.broke = false; persist(); }   // 提過一次就清掉，不留到以後
       return broke && s >= 1 ? tline("buy") : tline("buy", 0);
     }
+    if (view === "ruby") return "深處偶爾才挖得到的紅晶。……紅成這樣的，我這輩子也沒見過幾顆。想要什麼，拿它來換。";
     if (view === "boons") return (v2() ? BV.filled(save.boss, config) + pendingN() > 0 : save.boss.boons.length) ? tline("boons") : B().lines.noBoon;
     return "";
   }
@@ -2342,7 +2401,7 @@
     if (!left) { go(); return; }
     const box = $("modalBox");
     box.innerHTML = `<div class="boss-name">換一張委託</div>
-      <div style="margin:10px 0;line-height:1.7">這張還有 <b>${left}</b> 項沒交付。<br><span style="color:#ff8a4c">換板後，未完成的委託會消失。</span></div>
+      <div style="margin:10px 0;line-height:1.7">這張還有 <b>${left}</b> 項沒交付。<br><span style="color:#ff7755">換板後，未完成的委託會消失。</span></div>
       <div class="btns"><button class="px-btn" id="brYes">${free ? `免費換板（剩 ${boardCredits()} 次）` : "看廣告換板"}</button><button class="px-btn" id="brNo">取消</button></div>`;
     $("modal").classList.remove("hidden");
     $("brNo").onclick = () => $("modal").classList.add("hidden");
@@ -2648,13 +2707,18 @@
       const req = checkRequest(), left = req.lines.filter(l => !l.done).length;
       const adLeft = config.rules.adDailyLimit - save.ads.count;
       body = `<div class="boss-opts">
+        <div class="boss-group">委託</div>
         <button class="px-btn wide boss-opt" data-boss="board" ${dayOK ? "" : "disabled"}>▶ 看委託板 ${!dayOK ? wait : `<span class="sub">${left ? `剩${left}項` : "已完成"}</span>`}</button>
+        <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 ${v2() ? (pendingN() ? `<span class="boon-tag">可選 ${pendingN()}</span>` : `<span class="sub">共${BV.filled(bs, config)}／${BV.cap(config)}階</span>`) : `<span class="sub">${bs.boons.length}個</span>`}</button>
+        <div class="boss-group">買賣</div>
         <button class="px-btn wide boss-opt" data-boss="sell">▶ 賣礦石</button>
         <button class="px-btn wide boss-opt" data-boss="buy">▶ 買鎬子</button>
+        ${RUBY_PREVIEW ? `<button class="px-btn wide boss-opt" data-boss="ruby">▶ 紅晶商店 <span class="sub ruby-num">${RUBY_ICO} ${fmt(RUBY_MOCK)}</span></button>`
+          : `<button class="px-btn wide boss-opt" disabled>▶ 紅晶商店 <span class="sub">🔒 準備中</span></button>`}
+        <div class="boss-group">其他</div>
         <button class="px-btn wide boss-opt" data-boss="glass" ${dayOK ? "" : "disabled"}>▶ ${(config.glasses || {}).name || "礦脈觀測鏡"} ${dayOK ? '<span class="sub">看今天的礦脈徵兆</span>' : wait}</button>
-        <button class="px-btn wide boss-opt" data-boss="boons">▶ 我的恩惠 ${v2() ? (pendingN() ? `<span class="boon-tag">可選 ${pendingN()}</span>` : `<span class="sub">共${BV.filled(bs, config)}／${BV.cap(config)}階</span>`) : `<span class="sub">${bs.boons.length}個</span>`}</button>
         <button class="px-btn wide boss-opt" data-boss="ad" ${adLeft <= 0 || !dayOK ? "disabled" : ""}>▶ 領補給（看廣告） ${dayOK ? `<span class="sub">今日剩${adLeft}次</span>` : wait}</button>
-        <button class="px-btn wide boss-opt" data-boss="bye">▶ 離開</button></div>`;
+        <button class="px-btn wide boss-opt quiet" data-boss="bye">▶ 離開</button></div>`;
     }
     if (view === "board" && !todayKey()) body = `<div class="board"><div class="board-head">委託板</div><div class="sub">需要連上網路確認今天的日期（台灣時間）。確認日期後可使用。</div></div>` + back;
     else if (view === "board") {
@@ -2668,8 +2732,8 @@
             : `<span style="color:${rarityColor(0)}">？？？</span> <span class="sub">(${config.rarities[it ? it.cat.rarity : 0].name})</span>`;
           const pay = Math.round(basePrice(l.name) * need * B().deliverMul * 10) / 10;
           return `<div class="row board-line ${l.done ? "done" : ""}"><div class="grow">${nameHtml} ×${need}
-            <div class="sub">酬勞 $${money(pay)}＋恩惠${B().points[l.cat]}點</div></div>
-            ${l.done ? '<span class="sub">✔ 已交付</span>' : `<button class="px-btn small" data-deliver="${i}" ${have >= need ? "" : "disabled"}>交付<br><span class="sub">包包 ${have}/${need}</span></button>`}</div>`;
+            <div class="sub">酬勞 $${money(pay)}＋恩惠${B().points[l.cat]}點${l.done ? "" : `｜包包 <span style="color:${have >= need ? "#55ff55" : "inherit"}">${have}/${need}</span>`}</div></div>
+            ${l.done ? '<span class="sub">✔ 已交付</span>' : `<button class="px-btn small" data-deliver="${i}" ${have >= need ? "" : "disabled"}>交付</button>`}</div>`;
         }).join("") + `<div class="sub" style="margin-top:6px">全部完成再加 ${B().completeBonus} 點｜點礦石名稱可查產地</div>
         <button class="px-btn wide" id="btnBoardReset" style="margin-top:8px;min-height:48px" ${(fc > 0 || rl > 0) && dayOK ? "" : "disabled"}>${!dayOK ? "確認日期後可使用" : fc > 0 ? `▶ 免費重置委託板（剩 ${fc} 次）` : rl > 0 ? `▶ 看廣告換一張新委託（今日剩 ${rl} 次）` : "今日的委託板重置次數已用完"}</button></div>` + back;
     }
@@ -2709,6 +2773,21 @@
         <div class="sub">耐久 ${toolMax(t.id)}｜每揮 $${(pr / toolMax(t.id)).toFixed(1)}｜適合 ${config.mines.filter(m => m.tier === t.tier).map(m => m.name).join("、")}</div></div>
         <button class="px-btn small" data-buy="${t.id}" ${save.coins < pr ? "disabled" : ""}>$${fmt(pr)}</button></div>`;
       }).join("") + `</div></div>` + back;
+    }
+    if (view === "ruby" && RUBY_PREVIEW) {
+      // 示意：商品與價格都是暫定，按鈕只跳提示，不會扣任何東西
+      const item = (name, note, price) => `<div class="row"><div class="grow">${name}<div class="sub">${note}</div></div>
+        <button class="px-btn small ruby-buy" data-ruby-mock="1">${RUBY_ICO} ${price}</button></div>`;
+      const pack = (n, bonus, nt) => `<div class="row"><div class="grow">${RUBY_ICO} <b class="ruby-n">${fmt(n)}</b>${bonus ? ` <span class="boon-tag ruby-tag">多送 ${bonus}</span>` : ""}</div>
+        <button class="px-btn small ruby" data-ruby-mock="1">NT$${nt}</button></div>`;
+      const sec = t => `<div class="ruby-sec">${t}</div>`;
+      body = `<div class="board ruby-board"><div class="board-head">紅晶商店 <span class="sub ruby-num">持有 ${RUBY_ICO} ${fmt(RUBY_MOCK)}</span></div>
+        <div class="ruby-note">示意畫面：商品、價格都還沒定，按了不會扣東西。</div>
+        ${sec("儲值")}${pack(60, 0, 30)}${pack(330, 30, 150)}${pack(1090, 110, 490)}
+        ${sec("方便")}${item("補給券", "領補給不用看廣告，一張用一次", 20)}${item("委託板重置券", "換一張新的委託板", 30)}${item("觀測鏡加一次", "今天這座礦坑多看一次", 15)}
+        ${sec("外觀")}${item('<span class="pid-num rainbow" style="font-size:1em;letter-spacing:.05em">彩虹玩家 ID</span>', "帳號頁的 ID 變成流動彩虹", 300)}${item('<span style="color:#7fe3ff">名字顏色</span>', "頂部名字換顏色", 150)}${item("敘述框外框", "換一種像素外框", 200)}
+        ${sec("道具")}${item('<span style="color:#ff7755">紅岩鑽頭</span>', "耐久 1000 的特殊鑽頭", 680)}${item("礦脈探測器", "接下來一段揮數更容易碰到礦脈", 50)}
+      </div>` + back;
     }
     if (view === "boons" && v2()) {
       const n = pendingN();
@@ -2773,7 +2852,7 @@
     $("nameOk").onclick = () => {
       const v = $("nameInput").value.trim();
       if (!v) return;
-      save.name = v; $("modal").classList.add("hidden"); persist(true); renderHud();
+      save.name = v; $("modal").classList.add("hidden"); persist(true); renderHud(); if (currentScreen === "acct") renderAcct();
     };
   }
 
@@ -2845,12 +2924,12 @@
     if (name !== "scope") scopeReset();
     currentScreen = name;
     document.querySelectorAll(".screen").forEach(s => s.classList.toggle("active", s.id === "scr-" + name));
-    document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active", b.dataset.go === name));
+    document.querySelectorAll("#nav button").forEach(b => b.classList.toggle("active", b.dataset.go === (name === "scope" ? "shop" : name)));   // 觀測鏡屬於老闆，導覽亮「老闆」
     renderAll();
   }
   function renderAll() {
     applyLook();
-    ({ mine: renderMine, bag: renderBag, map: renderMap, rec: renderRec, shop: renderShop, scope: renderScope })[currentScreen]();
+    ({ mine: renderMine, bag: renderBag, map: renderMap, rec: renderRec, shop: renderShop, scope: renderScope, acct: renderAcct })[currentScreen]();
     renderHud();
   }
 
@@ -2893,13 +2972,20 @@
     const b = e.target.closest("[data-rec]"); if (!b || window.Editor?.isPicking()) return;
     recTab = b.dataset.rec; renderRec(); $("scr-rec").scrollTop = 0;
   });
-  $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking()) askName(false); });
+  $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking() && currentScreen !== "acct") { acctBack = currentScreen; go("acct"); } });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     const link = e.target.closest("[data-origin]"); if (link) { oreOrigin(link.dataset.origin); return; }
     const t = e.target.closest("button"); if (!t) return;
     const d = t.dataset;
     if (t.id === "btnBoardReset") { askBoardReset(); return; }
+    if (t.id === "acctRename") { askName(false); return; }
+    if (d.dexMine) { dexMine = d.dexMine; renderDex(); return; }
+    if (d.rubyMock) { toast("示意畫面：還沒開放購買"); return; }
+    if (t.id === "hudRuby") { if (!RUBY_PREVIEW) { toast("紅晶商店準備中，敬請期待"); return; } go("shop"); bossView = "ruby"; renderShop(); return; }
+    if (t.id === "acctBack") { go(acctBack === "acct" ? "mine" : acctBack); return; }
+    if (d.jump) { go("shop"); bossView = d.jump; renderShop(); return; }   // 背包 → 老闆的收購／買鎬子
+    if (d.scopeAt) { if (!dailyOK()) { toast("確認日期後可使用"); return; } openScope(d.scopeAt); return; }   // 地圖 → 觀測鏡（選好礦坑）
     if (t.id === "btnBoonPick") { offerPick(true); return; }
     if (t.id === "btnSellAll") {
       const names = oreNames(); if (!names.length) return;
@@ -3050,7 +3136,8 @@
   adLeftover();   // 上次關頁／當機留下的待完成廣告 → 取消（Q2＝A）
   renderAll();
   renderClockTag();
-  if (!todayKey()) showClockMsg();   // 還沒拿到台灣日期：先顯示確認中
+  if (!todayKey()) showClockMsg();   // 還沒拿到台灣日期：先顯示確認中（被開場動畫蓋住；失敗時動畫收起後看得到重試）
+  splashRun();
   clockSync();
   if (!save.name) askName(true);
 })();

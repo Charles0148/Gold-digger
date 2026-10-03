@@ -7,7 +7,7 @@
 <title>深層礦脈</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DotGothic16&display=swap">
-<link rel="stylesheet" href="css/style.css?v=0.10.19">
+<link rel="stylesheet" href="css/style.css?v=0.11.0">
 </head>
 <body>
 <div id="app">
@@ -16,6 +16,7 @@
   <header id="hud" data-edit="hud" data-label="頂部資訊列">
     <div class="hud-name" id="hudName">玩家</div>
     <div class="hud-stat"><span class="hud-ico">$</span><span id="hudCoins">0</span></div>
+    <button id="hudRuby" class="hud-stat hud-ruby hidden" title="紅晶"><svg class="ruby-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-ruby"/></svg><span id="hudRubyN">0</span></button>
     <div class="hud-stat"><span class="hud-ico">⛏</span><span id="hudPlays">0</span></div>
     <button id="mailBtn" class="hud-mail" title="信箱">✉<span id="mailDot" class="hud-dot hidden">0</span></button>
   </header>
@@ -74,11 +75,11 @@
     <!-- ===== 背包 ===== -->
     <section class="screen" id="scr-bag">
       <div class="px-box panel" data-edit="bagTools" data-label="背包-工具">
-        <div class="panel-title">工具 <span class="sub" id="bagPlays"></span></div>
+        <div class="panel-title">工具 <span class="sub" id="bagPlays"></span><button class="px-btn small" data-jump="buy">買鎬子 ▶</button></div>
         <div id="bagTools" class="list"></div>
       </div>
       <div class="px-box panel" data-edit="bagOres" data-label="背包-礦石">
-        <div class="panel-title">礦石</div>
+        <div class="panel-title">礦石 <button class="px-btn small" data-jump="sell">賣礦石 ▶</button></div>
         <div class="sub" id="bagOreTotal"></div>
         <div id="bagOres" class="list"></div>
       </div>
@@ -90,7 +91,17 @@
         <div class="panel-title">地圖 <span class="sub">每座礦坑的礦氣每天都會變，用觀測鏡看徵兆</span></div>
         <div id="mapList" class="list"></div>
       </div>
+    </section>
+
+    <!-- ===== 帳號（2026-10-03）：點頂部名字進來；名字＋雲端存檔／玩家 ID ===== -->
+    <section class="screen" id="scr-acct">
+      <div class="px-box panel" data-edit="acctPanel" data-label="帳號">
+        <div class="panel-title">帳號</div>
+        <div class="acct-name"><span class="sub">名字</span> <span id="acctName"></span>
+          <button class="px-btn small" id="acctRename">改名字</button></div>
+      </div>
       <div class="px-box panel" id="cloudPanel" data-edit="cloudPanel" data-label="雲端存檔"></div>
+      <button class="px-btn wide boss-opt" id="acctBack">◀ 返回</button>
     </section>
 
     <!-- ===== 紀錄（v0.10.13）：圖鑑／成就 兩個子分頁 ===== -->
@@ -102,6 +113,7 @@
       <div id="recDex" class="rec-pane">
         <div class="px-box panel" data-edit="dexPanel" data-label="圖鑑">
           <div class="panel-title">圖鑑 <span class="sub" id="dexCount"></span></div>
+          <div id="dexTabs" class="scope-mines dex-tabs"></div>
           <div id="dexList"></div>
         </div>
       </div>
@@ -114,7 +126,7 @@
           <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
           <div id="bagMemory" class="list"></div>
         </div>
-        <div class="px-box panel" data-edit="achRecord" data-label="成就-挖礦紀錄">
+        <div class="px-box panel hidden" data-edit="achRecord" data-label="成就-挖礦紀錄">   <!-- 2026-10-03：成就做好前先藏起來 -->
           <div class="panel-title">其他成就 <span class="sub">準備中</span></div>
           <div class="sub">之後會在這裡加入挖礦、圖鑑、礦坑與老闆相關的成就。</div>
         </div>
@@ -167,23 +179,41 @@
     <symbol id="ico-bag" viewBox="0 0 10 10"><path fill-rule="evenodd" d="M3 0h4v1H3zM2 1h1v2H2zM7 1h1v2H7zM1 3h8v7H1zM4 5h2v2H4z"/></symbol>
     <symbol id="ico-map" viewBox="0 0 10 10"><path d="M0 1h3v8H0zM4 2h2v8H4zM7 1h3v8H7z"/></symbol>
     <symbol id="ico-boss" viewBox="0 0 10 10"><path d="M2 0h6v1H2zM3 1h4v3H3zM1 5h8v5H1z"/></symbol>
+    <!-- 紅晶：像素紅寶石，左上切面打亮 -->
+    <symbol id="ico-ruby" viewBox="0 0 10 10">
+      <path fill="#4f0d16" d="M2 1h6v1H2zM1 2h8v1H1zM0 3h10v1H0zM0 4h10v1H0zM1 5h8v1H1zM2 6h6v1H2zM3 7h4v1H3zM4 8h2v1H4z"/>
+      <path fill="#8f1a28" d="M2 1h6v1H2zM1 2h8v1H1zM0 3h10v1H0zM1 4h6v1H1zM2 5h4v1H2zM3 6h2v1H3z"/>
+      <path fill="#c23a48" d="M3 1h3v1H3zM2 2h3v1H2zM1 3h2v1H1z"/>
+      <path fill="#e8a7ae" d="M3 1h1v1H3zM2 2h1v1H2z"/>
+    </symbol>
     <symbol id="ico-rec" viewBox="0 0 10 10"><path fill-rule="evenodd" d="M1 0h8v10H1zM3 2h4v1H3zM3 4h4v1H3zM3 6h3v1H3z"/></symbol>
   </svg>
 
   <button id="editFab" class="hidden" title="編輯模式">✎</button>
   <div id="toast" class="toast hidden"></div>
   <div id="modal" class="modal hidden"><div class="px-box modal-box" id="modalBox"></div></div>
+
+  <!-- 開場動畫（2026-10-03）：一路往下挖，日期確認好就收起 -->
+  <div id="splash" class="splash" aria-hidden="true">
+    <div class="sp-title">深層礦脈</div>
+    <div class="sp-shaft">
+      <div class="sp-rock"></div>
+      <svg class="sp-pick" viewBox="0 0 10 10"><use href="#ico-mine"/></svg>
+    </div>
+    <div class="sp-depth">深度 <b id="spDepth">0</b> m</div>
+    <div class="sp-tip">往下挖<span class="sp-dots"></span></div>
+  </div>
 </div>
 
 <div id="editor" class="hidden"></div>
 
-<script src="js/version.js?v=0.10.19"></script>
-<script src="js/cloud-config.js?v=0.10.19"></script>
-<script src="js/cloud.js?v=0.10.19"></script>
-<script src="js/config.js?v=0.10.19"></script>
-<script src="js/engine.js?v=0.10.19"></script>
-<script src="js/engine2.js?v=0.10.19"></script>
-<script src="js/boons.js?v=0.10.19"></script>
-<script src="js/game.js?v=0.10.19"></script>
+<script src="js/version.js?v=0.11.0"></script>
+<script src="js/cloud-config.js?v=0.11.0"></script>
+<script src="js/cloud.js?v=0.11.0"></script>
+<script src="js/config.js?v=0.11.0"></script>
+<script src="js/engine.js?v=0.11.0"></script>
+<script src="js/engine2.js?v=0.11.0"></script>
+<script src="js/boons.js?v=0.11.0"></script>
+<script src="js/game.js?v=0.11.0"></script>
 </body>
 </html>
