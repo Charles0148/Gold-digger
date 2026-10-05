@@ -44,17 +44,17 @@
   }
   /* 把英文錯誤換成看得懂的中文 */
   const ERR_MAP = [
-    [/failed to fetch|networkerror|load failed/i, "連不上雲端（網路斷了，或 Supabase 網址打錯）"],
+    [/failed to fetch|networkerror|load failed/i, "連不上雲端，請確認網路後再試"],
     [/invalid login credentials/i, "Email 或密碼不對"],
     [/user already registered|already been registered/i, "這個 Email 已經註冊過了，直接登入就好"],
     [/email not confirmed/i, "還沒點驗證信，去收信確認後再登入"],
     [/password should be at least/i, "密碼太短"],
     [/invalid email/i, "Email 格式不對"],
     [/rate limit|too many/i, "太頻繁了，等一下再試"],
-    [/relation .*saves.* does not exist/i, "後台還沒建 saves 資料表"],
-    [/row-level security|permission denied/i, "資料表權限規則沒設好（RLS）"],
-    [/could not find the function|function .* does not exist/i, "後台還沒執行 docs/07 的 SQL（找不到這個指令）"],
-    [/relation .*player_profiles.* does not exist/i, "後台還沒建 player_profiles 資料表（請先跑 docs/07 的 SQL）"]
+    [/relation .*saves.* does not exist/i, "雲端暫時無法使用，請稍後再試"],
+    [/row-level security|permission denied/i, "雲端拒絕了這次操作，請重新整理後再試"],
+    [/could not find the function|function .* does not exist/i, "雲端暫時無法使用，請稍後再試"],
+    [/relation .*player_profiles.* does not exist/i, "雲端暫時無法使用，請稍後再試"]
   ];
   function zh(msg) {
     const m = String(msg || "");

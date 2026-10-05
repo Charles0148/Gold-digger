@@ -1284,7 +1284,7 @@
         const ap = again || bl(e.boss, "appear", null);
         if (ap) lines.push(colored(pickOne(ap), e.same ? "#ffcc33" : sub));
       }
-      if (e.t === "stPass" && e.gold) lines.push(colored("金機會牌——直接認可！", "#ffcc33"));
+      if (e.t === "stPass" && e.gold) lines.push(colored("金色信物——直接認可！", "#ffcc33"));
       if (e.t === "stPass") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "pass", [T.stPass])) + (e.right ? "" : "（勉強認可）") + `　通關 ${e.cleared} 關`, "#ffcc33"));
       if (e.t === "stLose") setTimeout(() => showRunSummary(e, mine), 400);
       if (e.t === "stLose") lines.push(colored(`【${bossName2(e.boss)}】` + pickOne(bl(e.boss, "fail", [T.stLose])) + `　通關 ${e.cleared || 0} 關　收穫 $${money(e.gain * (mine.mult || 1))}`, sub));
@@ -1902,7 +1902,7 @@
     const box = $("cloudPanel"); if (!box) return;
     if (!window.Cloud || !Cloud.enabled()) {
       box.innerHTML = `<div class="panel-title">雲端存檔 <span class="sub">未設定</span></div>
-        <div class="sub">還沒填入 Supabase 連線資料，目前是單機存檔（換手機會不見）。</div>`;
+        <div class="sub">雲端功能還沒開啟，目前是單機存檔（換手機會不見）。</div>`;
       return;
     }
     const st = Cloud.status(), u = Cloud.user();
@@ -2535,7 +2535,7 @@
        after   剛從前輩礦坑離開的有效狀態 { boss }：離開時建立；下一次進店抽一次閒聊後就清掉，
                或者還沒去店裡就又走進前輩礦坑，也清掉（避免之後每次進店都重抽）
        chatIdx 每位前輩下一次說第幾句（兩句輪流）
-       dealAt  這次進店交付委託的時間（給「錢還沒捂熱」用，說過就清掉）
+       dealAt  這次進店交付委託的時間（給「錢還沒拿熱」用，說過就清掉）
      每次最多一句：操作結果／錯誤 ＞ 前輩閒聊與進店情境 ＞ 一般招呼。
      同一個畫面重繪不會重抽（talkView / talkText）。 */
   const TK = () => B().talk || {};
@@ -3216,7 +3216,7 @@
   function leaveMine() {
     if (save.senpai.story) { toast("先把回憶看完"); return; }
     const mine = curMine();
-    askLeave(mine, "離開了礦坑之後，坑洞將會坍塌，搜尋的結果也將重置喔…", () => {
+    askLeave(mine, "離開礦坑後，坑洞就會塌掉，這次的進度也會歸零喔…", () => {
       stopAuto(); clearM2UI();
       if (mine.engine === 2) senpaiTripEnd();          // 確實從前輩礦坑離開
       resetMineView();
@@ -3224,7 +3224,7 @@
       delete save.plays[mine.id];
       delete save.plays2[mine.id];
       save.today.stats[mine.id] = { swings: 0, hits: 0, epic: 0, normalSwings: 0 };
-      toast("坑洞坍塌了，" + mine.name + " 的搜尋結果已重置");
+      toast("坑洞塌了，" + mine.name + " 這次的進度已歸零");
       persist(true); renderMap();
     });
   }
