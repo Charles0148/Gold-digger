@@ -66,6 +66,12 @@
     return cat;
   }
   const rollType = (res, rng, label, w) => TYPES[rollPick(res, rng, label, TYPES, TYPES.map(t => w[t] || 0))];
+  /* 礦脈探測器（2026-10-05 紅晶）：只改這一揮的抽選表——keys 的機率 ×mult，多出來的自動從碎石扣（碎石＝剩下的機率），沒有保底 */
+  function boostTable(table, s, keys, mult) {
+    const out = Object.assign({}, table);
+    keys.forEach(k => { out[k] = table[k].slice(); out[k][s] = table[k][s] * mult; });
+    return out;
+  }
 
   function newPlayState() {
     return {
@@ -182,7 +188,7 @@
    * @param st playState（直接修改）
    * @param tenjou 此副本的天井揮數
    */
-  function swing(rules, setting, st, rng, tenjou) {
+  function swing(rules, setting, st, rng, tenjou, opt) {
     rng = rng || Math.random;
     tenjou = tenjou || 800;
     const s = Math.min(5, Math.max(0, setting - 1));
@@ -295,7 +301,10 @@
       res.stateAfter = st.state;
       return res;
     }
-    res.cat = rollCat(res, rng, "挖到", rules.itemTable, s, false);
+    /* 礦脈探測器：只在「通常」狀態生效並計數（高確、連續演出、前兆、復活、礦脈都暫停；凍結那一揮也不算） */
+    const pm = opt && opt.probeMult > 1 && st.state === "normal" ? opt.probeMult : 0;
+    res.cat = rollCat(res, rng, pm ? `挖到（探測器 紫・金 ×${pm}）` : "挖到", pm ? boostTable(rules.itemTable, s, ["epic", "legend"], pm) : rules.itemTable, s, false);
+    if (pm) res.probe = true;
     res.toolDrop = rng() < rules.toolDrop.normal;
     const C = rules.chance;
 
@@ -488,7 +497,7 @@
     return stat;
   }
 
-  const api = { CATS, TYPES, swing, simulate, newPlayState, pickWeighted, randInt };
+  const api = { CATS, TYPES, swing, simulate, newPlayState, pickWeighted, randInt, boostTable };
   root.MineEngine = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

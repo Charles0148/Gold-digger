@@ -169,6 +169,24 @@ function glassReport() {
   const want = [0, 0, 0, 0.5, 2];
   want.forEach((v, i) => { if ((G.badgeRate || [])[i] !== v) { console.log(`  ✗ 第${i + 1}次完整礦紋機率 ${G.badgeRate[i]}%，應為 ${v}%`); bad++; } });
   console.log(bad ? `  ⚠️ 共 ${bad} 項不合格` : `  ✓ 權重合計、等級下限不說謊、完整礦紋機率（0/0/0/0.5/2%）全部正確`);
+  // 2026-10-05 紅晶：第 6、7 次（G.ruby）同樣檢查
+  const GR = G.ruby || { weights: {}, badgeRate: [], prices: [] }, NR = GR.prices.length;
+  let badR = 0;
+  for (let s = 1; s <= 6; s++) {
+    const rows = GR.weights[s] || [];
+    if (rows.length !== NR) { console.log(`  ✗ 紅晶：內部值${s} 有 ${rows.length} 列，應為 ${NR}`); badR++; }
+    rows.forEach((r, i) => {
+      let sum = 0;
+      for (const k in r) {
+        sum += r[k];
+        if (!G.results[k]) { console.log(`  ✗ 紅晶 內部值${s} 第${6 + i}次：不認識的結果「${k}」`); badR++; }
+        else if (MIN[k] && s < MIN[k]) { console.log(`  ✗ 紅晶 內部值${s} 第${6 + i}次 會說謊：${G.results[k].name}`); badR++; }
+      }
+      if (Math.abs(sum - 100) > 1e-9) { console.log(`  ✗ 紅晶 內部值${s} 第${6 + i}次 權重合計 ${sum}`); badR++; }
+    });
+  }
+  if (NR) console.log(badR ? `  ⚠️ 紅晶第 6／7 次共 ${badR} 項不合格` : `  ✓ 紅晶第 6／7 次：權重合計、等級下限不說謊（完整礦紋 ${GR.badgeRate.join("／")}%，價格 ${GR.prices.join("／")} 紅晶）`);
+  const W = s => (G.weights[s] || []).concat(GR.weights[s] || []), BR = (G.badgeRate || []).concat(GR.badgeRate || []);
 
   // 各現象的反推分布（把五次觀測都算進去，按出現次數加權）
   const joint = {};
@@ -192,37 +210,41 @@ function glassReport() {
   // 模擬：完整觀測 n 次之後猜得多準，以及徽章實際出現率
   const pickS = () => { let x = Math.random(), a = 0; for (let i = 0; i < 6; i++) { a += d[i]; if (x < a) return i + 1; } return 1; };
   const draw = (s, stage) => {
-    if (Math.random() * 100 < (G.badgeRate[stage - 1] || 0)) return { k: "badge", g: s - 1 };
-    const t = G.weights[s][stage - 1]; let x = Math.random() * 100;
+    if (Math.random() * 100 < (BR[stage - 1] || 0)) return { k: "badge", g: s - 1 };
+    const t = W(s)[stage - 1]; let x = Math.random() * 100;
     for (const k in t) if ((x -= t[k]) < 0) return { k };
     return { k: "silent" };
   };
-  const n = 200000, maxN = G.dailyMax || 5;
+  const n = 200000, maxN = (G.dailyMax || 5) + NR;
   const badgeHit = Array(maxN).fill(0), badgeWrong = [0];
-  const acc = Array(maxN).fill(0);
+  const acc = Array(maxN).fill(0), sure = Array(maxN).fill(0);
   for (let i = 0; i < n; i++) {
     const S = pickS(), post = d.slice();
+    let known = false;
     for (let t = 1; t <= maxN; t++) {
       const e = draw(S, t);
       if (e.k === "badge") {
         badgeHit[t - 1]++;
         if (e.g + 1 !== S) badgeWrong[0]++;
+        known = true;
         for (let s = 1; s <= 6; s++) post[s - 1] *= (s === e.g + 1 ? 1 : 0);
       } else {
-        for (let s = 1; s <= 6; s++) post[s - 1] *= (G.weights[s][t - 1][e.k] || 0) / 100;
+        for (let s = 1; s <= 6; s++) post[s - 1] *= (W(s)[t - 1][e.k] || 0) / 100;
       }
+      if (known) sure[t - 1]++;
       const tot = post.reduce((a, b) => a + b, 0);
       if (tot > 0) { const p = post.map(v => v / tot); if (p.indexOf(Math.max(...p)) + 1 === S) acc[t - 1]++; }
     }
   }
   console.log(`  ——完整礦紋實際出現率（${n.toLocaleString()} 次模擬）——`);
-  badgeHit.forEach((v, i) => console.log(`  第${i + 1}次 ${(v / n * 100).toFixed(2)}%（設定值 ${G.badgeRate[i]}%）`));
+  badgeHit.forEach((v, i) => console.log(`  第${i + 1}次 ${(v / n * 100).toFixed(2)}%（設定值 ${BR[i]}%）`));
   console.log(`  徽章與真實內部值不符的次數：${badgeWrong[0]}（必須為 0）`);
   console.log(`  ——累積觀測後猜中真實內部值的機率——`);
   let cost = 0;
   acc.forEach((v, i) => {
-    cost += Math.pow(G.repeatMul, i);
-    console.log(`  觀測${i + 1}次 | 猜中 ${(v / n * 100).toFixed(1)}% | 累計花費 = 建議鎬子價 ×${(cost * G.priceMul).toFixed(0)}`);
+    if (i < (G.dailyMax || 5)) cost += Math.pow(G.repeatMul, i);
+    const rb = GR.prices.slice(0, Math.max(0, i + 1 - (G.dailyMax || 5))).reduce((a, b) => a + b, 0);
+    console.log(`  觀測${i + 1}次 | 猜中 ${(v / n * 100).toFixed(1)}% | 已完全確定 ${(sure[i] / n * 100).toFixed(1)}% | 累計花費 = 建議鎬子價 ×${(cost * G.priceMul).toFixed(0)}${rb ? `＋紅晶 ${rb}` : ""}`);
   });
 }
 glassReport();
@@ -236,4 +258,97 @@ console.log(`\n=== §8.7 依每日設定分配加權（玩家實際體感）===`
   console.log(`  settingDist = [${d.join(", ")}]`);
   console.log(`  第一台 加權機械割 ${pct(w1)}｜第二台 加權機械割 ${pct(w2)}`);
   console.log(`  ⚠️ 玩家若能操縱每日設定（見 RISK-3），實際會逼近設定6：第一台 ${pct(rtp1[5])}、第二台 ${pct(rtp2[5])}`);
+}
+
+/* ---------- §8.9 紅晶（2026-10-05 設計 v4） ----------
+   1. 挖礦紅晶：每扣 1 耐久累積 ruby.mines[礦坑].progress.perDur 點，滿 ruby.dig.need 得 1 顆 → 每顆要扣多少耐久
+   2. 紅岩鑽頭：耐久 1000，m1～m5 礦脈中不扣、m6 只在前輩的心意中不扣（每把上限 300）→ 一把實際能揮幾下
+      設定依 settingDist 抽（每 3 把換一次＝換一天）；狀態連續（上一把用完時的礦脈會接到下一把），跟實際連續玩一樣 */
+{
+  const RB = C.ruby, M = RB.mines, D = C.tools.find(t => t.id === "redrock").durability;
+  console.log(`\n=== §8.9 紅晶 ===`);
+  console.log(`  挖礦紅晶：滿 ${RB.dig.need} 點得 1 顆，每天最多 ${RB.dig.dailyCap} 顆`);
+  C.mines.forEach(m => { const p = (M[m.id] || {}).progress; if (p) console.log(`  ${m.id} ${m.name}｜每扣 1 耐久 ${p.perDur} 點｜約 ${Math.round(RB.dig.need / p.perDur)} 耐久 1 顆`); });
+  const pickS = () => { let x = Math.random(), a = 0; for (let i = 0; i < 6; i++) { a += R.settingDist[i]; if (x < a) return i + 1; } return 1; };
+  const LIVES = Math.max(200, Math.round(N / 3000));
+  console.log(`  ——紅岩鑽頭一把實際揮數（耐久 ${D}，${LIVES} 把平均，設定依 settingDist）——`);
+  C.mines.forEach((m, i) => {
+    const df = (M[m.id] || {}).drillFree; if (!df) return;
+    let swings = 0, free = 0, s = 1;
+    const st2 = E2.newState2(), st1 = E.newPlayState();
+    for (let k = 0; k < LIVES; k++) {
+      if (k % 3 === 0) s = pickS();
+      let dur = D, used = 0;
+      if (m.engine === 2) {
+        const st = st2;
+        while (dur > 0) {
+          const input = st.state === "pick" ? { choice: "drill" } : (st.state === "stIntro" && st.upper && !st.pickedBoss ? { choice: "a" } : {});
+          const res = E2.step2(C.machine2, s, st, Math.random, input);
+          if (res.free) continue;
+          swings++;
+          if (df.phases.includes(res.stateBefore) && (!df.maxPerTool || used < df.maxPerTool)) { used++; free++; } else dur--;
+        }
+      } else {
+        const st = st1;
+        while (dur > 0) {
+          const r = E.swing(R, s, st, Math.random, m.tenjou);
+          swings++;
+          if (df.phases.includes(r.stateBefore === "bonus" ? "bonus" : "normal")) free++; else dur--;
+        }
+      }
+    }
+    console.log(`  ${m.id} ${m.name}｜平均 ${Math.round(swings / LIVES)} 揮（多 ${pct(swings / LIVES / D - 1, 0)}）｜免扣 ${pct(free / swings)}${df.maxPerTool ? `｜每把上限 ${df.maxPerTool}` : ""}`);
+  });
+}
+
+/* 3. 礦脈探測器：接下來 10 次「通常狀態」挖掘，機會牌 ×mult（m1～m5 紫・金 ×8、m6 六種機會牌 ×5），沒有保底。
+      做法：先暖機到通常狀態，複製同一個狀態各跑「有探測器／沒有」兩條，比較 10 次內出牌率與之後多拿的收入。
+      收入差＝用一次多拿的期望金額；機械割影響以「每 4 週用一次、每天揮 D 下」換算（D 見下方，假設值）。 */
+{
+  const RB = C.ruby, M = RB.mines, TRIALS = Math.max(3000, Math.round(N / 300)), FOLLOW = 800, DAILY = 3000;
+  console.log(`  ——礦脈探測器（${TRIALS.toLocaleString()} 次，設定依 settingDist；之後追 ${FOLLOW} 揮算收入差；換算假設每天揮 ${DAILY} 下、4 週用一次）——`);
+  const pickS = () => { let x = Math.random(), a = 0; for (let i = 0; i < 6; i++) { a += R.settingDist[i]; if (x < a) return i + 1; } return 1; };
+  const clone = o => JSON.parse(JSON.stringify(o));
+  C.mines.forEach((m, i) => {
+    const pc = (M[m.id] || {}).probe; if (!pc) return;
+    const isM2 = m.engine === 2;
+    const tool = C.tools.find(t => t.category === "pick" && t.tier === m.tier), cps = tool.price / tool.durability;
+    let card = [0, 0], date = [0, 0], at = [0, 0], gain = 0;
+    for (let k = 0; k < TRIALS; k++) {
+      const s = pickS();
+      let base;
+      if (isM2) { base = E2.newState2(); for (let w = 0, n = 200 + Math.floor(Math.random() * 800); w < n || base.state !== "normal"; w++) { const input = base.state === "pick" ? { choice: "drill" } : (base.state === "stIntro" && base.upper && !base.pickedBoss ? { choice: "a" } : {}); E2.step2(C.machine2, s, base, Math.random, input); } }
+      else { base = E.newPlayState(); for (let w = 0, n = 200 + Math.floor(Math.random() * 800); w < n || base.state !== "normal"; w++) E.swing(R, s, base, Math.random, m.tenjou); }
+      [0, 1].forEach(withProbe => {
+        const st = clone(base); let left = 10, income = 0, gotCard = false, gotDate = false, gotAt = false, live = new Set(), paid = 0;
+        while (paid < FOLLOW) {
+          const pm = withProbe && left > 0 ? pc.mult : 0;
+          if (isM2) {
+            const input = st.state === "pick" ? { choice: "drill" } : (st.state === "stIntro" && st.upper && !st.pickedBoss ? { choice: "a" } : {});
+            input.probeMult = pm; if (pm && pc.states) input.probeBoost = pc.states;   // m6：各狀態都加成、連續 10 轉不暫停
+            const inWin = left > 0, res = E2.step2(C.machine2, s, st, Math.random, input);
+            if (!res.free) { paid++; income += res.pay * m.mult; }
+            if (res.probe || (!withProbe && inWin && !res.free && (pc.states || res.stateBefore === "normal") && !res.events.some(e => e.t === "freeze"))) left--;
+            for (const e of res.events) {
+              if (inWin && e.t === "card") gotCard = true;
+              if (inWin && e.t === "dateStart") { gotDate = true; live.add(e.boss); }
+              if (e.t === "dateWin" && live.has(e.boss)) gotAt = true;
+            }
+          } else {
+            const inWin = left > 0, r = E.swing(R, s, st, Math.random, m.tenjou, { probeMult: pm });
+            paid++;
+            const cat = C.categories.find(c => c.id === r.cat);
+            income += (r.stateBefore === "bonus" ? (cat.veinValue ?? cat.value) : cat.value) * m.mult;
+            if (r.probe || (!withProbe && inWin && r.stateBefore === "normal" && st && !r.events.some(e => e.t === "freeze"))) { if (r.cat === "epic" || r.cat === "legend") gotCard = true; left--; }
+          }
+        }
+        card[withProbe] += gotCard; date[withProbe] += gotDate; at[withProbe] += gotAt;
+        gain += withProbe ? income : -income;
+      });
+    }
+    const per = gain / TRIALS, rtpPt = per / (DAILY * 28 * cps) * 100;
+    console.log(`  ${m.id} ${m.name} ×${pc.mult}｜10 次內出機會牌 ${pct(card[0] / TRIALS)} → ${pct(card[1] / TRIALS)}` +
+      (isM2 ? `｜進談話 ${pct(date[0] / TRIALS)} → ${pct(date[1] / TRIALS)}｜進帶路 ${pct(at[0] / TRIALS)} → ${pct(at[1] / TRIALS)}` : "") +
+      `｜用一次多拿 $${per.toFixed(0)}（≈${(per / cps).toFixed(0)} 揮的鎬子錢）｜機械割 +${rtpPt.toFixed(3)} 個百分點`);
+  });
 }

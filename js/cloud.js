@@ -318,6 +318,16 @@
     return /^(ok|already|stale)$/.test(v) ? { ok: true, result: v } : { ok: false, err: "雲端回應不正確" };
   }
 
+  /* ---------- 一輩子一次的獎勵（docs/20，開帳號紅晶 'rubyWelcome'） ----------
+     回傳 { ok:true, result:"ok"|"already" }；未登入 { ok:false, out:true }；資料庫沒套用／網路錯誤 { ok:false, err } */
+  async function claimLifetime(id, sync) {
+    if (!ok() || !sess) return { ok: false, out: true };
+    const r = await rpc("claim_lifetime", { p_claim: String(id || ""), p_sync: !!sync });
+    if (!r.ok) return r;
+    const v = String(Array.isArray(r.data) ? r.data[0] : r.data || "");
+    return /^(ok|already)$/.test(v) ? { ok: true, result: v } : { ok: false, err: "雲端回應不正確" };
+  }
+
   /* ---------- 玩家 ID ---------- */
   let playerIdCache = null, playerProfileCache = null;
   async function myPlayerId(force) {
@@ -368,12 +378,16 @@
     /* 免費委託板重置（docs/14 SQL）：只有 >0 才帶參數，資料庫還沒套用 docs/14 時一般信照常能寄 */
     const br = Math.round(Number(m.boardResets) || 0);
     if (br > 0) a.p_board_resets = br;
+    /* 紅晶（docs/20 SQL）：同上，只有 >0 才帶 */
+    const rb = Math.round(Number(m.ruby) || 0);
+    if (rb > 0) a.p_ruby = rb;
     let r;
     if (m.mode === "all") r = await rpc("admin_send_all", a);
     else if (m.mode === "player") {
       if (!PID.test(String(m.playerId || ""))) return { ok: false, err: "玩家 ID 必須是六碼數字" };
       r = await rpc("admin_send_to_player", Object.assign({ p_player_id: String(m.playerId) }, a));
     } else r = await rpc("admin_send_self", a);
+    if (!r.ok && rb > 0 && /p_ruby|function|schema cache/i.test(String(r.err || ""))) return { ok: false, err: "資料庫還沒套用 docs/20 的 SQL，不能寄紅晶" };
     if (!r.ok && br > 0 && /p_board_resets|function|schema cache/i.test(String(r.err || ""))) return { ok: false, err: "資料庫還沒套用 docs/14 的 SQL，不能寄免費委託板重置" };
     return r.ok ? { ok: true, mailId: r.data } : r;
   }
@@ -401,7 +415,7 @@
 
   window.Cloud = {
     enabled: ok,
-    gameClock, claimMilestone,
+    gameClock, claimMilestone, claimLifetime,
     isAdmin, mailbox, claim,
     myPlayerId, myPlayerProfile, adminChangePlayerId, adminGetPlayer, adminSetIdStyle,
     adminSend, adminListMail, adminUnsend,

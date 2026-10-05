@@ -49,6 +49,7 @@
           <div id="sceneSub" class="scene-sub">點擊下方敘述框開始挖礦</div>
           <div id="verTag" class="ver-tag"></div>
           <div id="clockTag" class="clock-tag hidden"></div>
+          <div id="probeTag" class="probe-tag hidden"></div>
         </div>
       </div>
 
@@ -57,6 +58,7 @@
         <div id="tbLines"></div>
         <div id="tbChoice" class="tb-choice hidden"></div>
         <div id="tbTap" class="tb-tap">▼ 點擊</div>
+        <i class="fr-gem tl"></i><i class="fr-gem tr"></i><i class="fr-gem bl"></i><i class="fr-gem br"></i>   <!-- 外框的四角裝飾（裝備外框時才顯示） -->
       </div>
 
       <div id="controls" data-edit="controls" data-label="控制列">
@@ -125,6 +127,10 @@
         <div class="px-box panel ach-senpai" data-edit="achMemory" data-label="成就-珍貴回憶">
           <div class="panel-title">珍貴回憶 <span class="sub" id="bagMemCount"></span></div>
           <div id="bagMemory" class="list"></div>
+        </div>
+        <div class="px-box panel hidden" id="achLook" data-edit="achLook" data-label="成就-外觀">   <!-- 2026-10-05：外觀（名字顏色、敘述框外框） -->
+          <div class="panel-title">外觀 <span class="sub">名字顏色・敘述框外框</span></div>
+          <div id="achLookList" class="list"></div>
         </div>
         <div class="px-box panel hidden" id="achOther" data-edit="achRecord" data-label="成就-挖礦紀錄">   <!-- 2026-10-03：「其他」書籤才顯示 -->
           <div class="panel-title">其他成就 <span class="sub">準備中</span></div>
@@ -215,6 +221,7 @@
 <script src="js/engine.js?v=1.01.04"></script>
 <script src="js/engine2.js?v=1.01.04"></script>
 <script src="js/boons.js?v=1.01.04"></script>
+<script src="js/ruby.js?v=1.01.04"></script>
 <script src="js/game.js?v=1.01.04"></script>
 </body>
 </html>

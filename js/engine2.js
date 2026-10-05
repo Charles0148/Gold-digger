@@ -52,6 +52,20 @@
     return cat;
   }
 
+  const PROBE_CATS = ["goldA", "goldB", "goldC", "cardA", "cardB", "cardC"];
+  /* 礦脈探測器在通常以外的狀態（2026-10-05 擁有者選 A）：input.probeBoost = { at, st, reward, bonus } 各狀態機會牌倍數。
+     有給才生效並回報 res.probe（這一轉吃到探測器 → 遊戲端扣 1 次）；多出來的機率從碎石扣，沒有保底 */
+  function probeTable(table, s, input, key, res) {
+    const k = input.probeBoost && input.probeBoost[key];
+    if (!(k > 1)) return table;
+    res.probe = true;
+    return boostTable(table, s, PROBE_CATS, k);
+  }
+  function boostTable(table, s, keys, mult) {
+    const out = Object.assign({}, table);
+    keys.forEach(k => { out[k] = (table[k] || []).slice(); out[k][s] = ((table[k] || [])[s] || 0) * mult; });
+    return out;
+  }
   function newState2() {
     return {
       state: "normal",          // normal / date / at / stIntro / st / reward / pick / bonus / pickBoss
@@ -107,7 +121,11 @@
         res.stateAfter = st.state;
         return res;
       }
-      res.cat = rollCat(res, rng, "挖到", R.itemTable, s, false, forced);
+      /* 礦脈探測器（2026-10-05 紅晶）：六種機會牌 ×倍數，多出來的從碎石扣，沒有保底。只在「通常」生效（談話、帶路、ST、獎勵、心意、選擇都暫停；凍結那一揮不算） */
+      const pm = input.probeMult > 1 ? input.probeMult : 0;
+      const tbl = pm ? boostTable(R.itemTable, s, PROBE_CATS, pm) : R.itemTable;
+      res.cat = rollCat(res, rng, pm ? `挖到（探測器 機會牌 ×${pm}）` : "挖到", tbl, s, false, forced);
+      if (pm) res.probe = true;
       res.pay = payOf(R, res.cat, "normal");
       const F = R.favor;
       const hits = [];               // 這一轉當選的前輩（可能兩位以上）
@@ -186,7 +204,7 @@
     /* ===== AT：10 轉，只賺錢 ===== */
     if (st.state === "at") {
       res.free = false;
-      res.cat = rollCat(res, rng, `AT（剩${st.atLeft}轉）挖到`, R.atTable, s, false, forced);
+      res.cat = rollCat(res, rng, `AT（剩${st.atLeft}轉）挖到`, probeTable(R.atTable, s, input, "at", res), s, false, forced);
       res.pay = payOf(R, res.cat, "at");
       st.gain += res.pay;
       st.atLeft--;
@@ -234,7 +252,7 @@
     /* ===== ST：10 轉內抽到對應機會牌 ===== */
     if (st.state === "st") {
       res.free = false;
-      const table = st.upper ? R.stTableUpper : (R.stTable[st.stBoss] || R.stTable.a);
+      const table = probeTable(st.upper ? R.stTableUpper : (R.stTable[st.stBoss] || R.stTable.a), s, input, "st", res);
       res.cat = rollCat(res, rng, `ST（${bossName(R, st.stBoss)}・剩${st.stLeft}轉）挖到`, table, s, false, forced);
       res.pay = payOf(R, res.cat, "st");
       st.gain += res.pay;
@@ -277,7 +295,7 @@
     /* ===== 一轉定勝負：決定 BONUS 轉數 ===== */
     if (st.state === "reward") {
       res.free = false;
-      res.cat = rollCat(res, rng, "一轉定勝負 → 挖到", R.rewardTable, s, true, forced);
+      res.cat = rollCat(res, rng, "一轉定勝負 → 挖到", probeTable(R.rewardTable, s, input, "reward", res), s, true, forced);
       res.pay = payOf(R, res.cat, "st");
       st.gain += res.pay;
       const tier = GOLD_OF[res.cat] ? "gold" : BOSS_OF[res.cat] ? "card" : (res.cat === "bell" || res.cat === "replay") ? "mid" : "low";
@@ -331,7 +349,7 @@
     /* ===== BONUS：純增，只賺錢 ===== */
     if (st.state === "bonus") {
       res.free = false;
-      res.cat = rollCat(res, rng, `BONUS（剩${st.bonusLeft}轉）挖到`, R.bonusTable, s, false, forced);
+      res.cat = rollCat(res, rng, `BONUS（剩${st.bonusLeft}轉）挖到`, probeTable(R.bonusTable, s, input, "bonus", res), s, false, forced);
       const qw = R.bonusQty || [1];
       res.qty = res.cat === "rubble" ? 0 : 1 + rollPick(null, rng, "", qw.map((_, i) => String(i + 1)), qw);
       res.pay = payOf(R, res.cat, "bonus") * (res.qty || 1);

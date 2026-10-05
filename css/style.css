@@ -206,7 +206,57 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 
 /* ===== 紅晶（示意，只在 sandbox） ===== */
 .ruby-ico { width: 1em; height: 1em; vertical-align: -0.12em; shape-rendering: crispEdges; flex: none; }
-.hud-ruby { background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
+.hud-ruby { position: relative; background: none; border: 0; padding: 0; color: inherit; cursor: pointer; }
+/* 紅晶（2026-10-05）：取得時頂部飄 +N、商店「今天的紅晶」進度 */
+.ruby-gain { position: absolute; left: 50%; top: -2px; transform: translateX(-50%); color: #ff5f6d; font-size: .8125em; pointer-events: none;
+  text-shadow: 2px 2px 0 #000; animation: rubyUp 1.4s steps(7) forwards; }
+@keyframes rubyUp { 0% { opacity: 1; margin-top: 0; } 70% { opacity: 1; } 100% { opacity: 0; margin-top: -18px; } }
+.ruby-src { display: flex; align-items: center; gap: 8px; padding: 4px 2px; border-bottom: 2px solid rgba(255,255,255,.05); }
+.ruby-src > span:first-child { color: #ff9aa3; min-width: 2.5em; }
+.ruby-src .grow { flex: 1; }
+.ruby-bar { flex: 1; height: 10px; background: #1c0a0d; box-shadow: inset 0 0 0 2px #4a1219; position: relative; }
+.ruby-bar i { position: absolute; left: 2px; top: 2px; bottom: 2px; max-width: calc(100% - 4px); background: #c8323f; }
+/* ===== 外觀（2026-10-05 擁有者核准）：名字顏色 .nc-*、敘述框外框 .fr-*。只用分段色與硬陰影，動畫只用 steps，不模糊 ===== */
+.nc-g { background-clip: text; -webkit-background-clip: text; color: transparent !important; text-decoration: none !important;
+  filter: drop-shadow(1px 1px 0 #000) drop-shadow(-1px 0 0 #000); }
+.nc-name_ruby { background-image: linear-gradient(180deg,#ffb3ba 0 34%,#ff5f6d 34% 67%,#c8323f 67%); }
+.nc-name_gold { background-image: linear-gradient(180deg,#fff6c2 0 34%,#ffcc33 34% 67%,#e08a1e 67%); }
+.nc-name_star { background-image: linear-gradient(180deg,#f0d6ff 0 34%,#c08cff 34% 67%,#8a3cff 67%); }
+.nc-name_ice  { background-image: linear-gradient(180deg,#ffffff 0 34%,#7fe3ff 34% 67%,#3a9fd8 67%); }
+.nc-name_jade { background-image: linear-gradient(180deg,#d8ffd8 0 34%,#55ff55 34% 67%,#1e9e5a 67%); }
+.nc-name_dusk { background-image: linear-gradient(180deg,#ffe0a0 0 34%,#ff7755 34% 67%,#ff4fd8 67%); }
+.nc-name_moss  { color: #9fd89a !important; text-shadow: 2px 2px 0 #000; }
+.nc-name_slate { color: #a9cbe3 !important; text-shadow: 2px 2px 0 #000; }
+.nc-name_amber { color: #e3b878 !important; text-shadow: 2px 2px 0 #000; }
+.nc-spark { display: inline-block; width: 4px; height: 4px; background: #fff; margin-left: 4px; vertical-align: top; animation: ncTw 1.2s steps(2) infinite; }
+@keyframes ncTw { 50% { opacity: 0; } }
+.fr-gem { display: none; position: absolute; width: 9px; height: 9px; pointer-events: none; }
+.fr-gem.tl { left: -8px; top: -8px; } .fr-gem.tr { right: -8px; top: -8px; } .fr-gem.bl { left: -8px; bottom: -8px; } .fr-gem.br { right: -8px; bottom: -8px; }
+.textbox[class*="fr-"] { margin: 6px; }
+.textbox.fr-frame_ruby { box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo), 0 0 0 2px #ff9aa3, 0 0 0 5px #c8323f, 0 0 0 8px #3a0a10; }
+.textbox.fr-frame_ruby .fr-gem { display: block; background: #ff5f6d; box-shadow: inset 3px 3px 0 #ffd0d4, inset -3px -3px 0 #8a1f2b; outline: 3px solid #3a0a10; }
+.textbox.fr-frame_gold { box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo), 0 0 0 2px #b8892a, 0 0 0 5px #ffcc33, 0 0 0 8px #4a3410; }
+.textbox.fr-frame_gold .fr-gem { display: block; background: #ffcc33; box-shadow: inset 3px 3px 0 #fff6c2, inset -3px -3px 0 #a86a10; outline: 3px solid #4a3410; }
+.textbox.fr-frame_iron { box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo), 0 0 0 4px #7c8088, 0 0 0 6px #3c3f45; }
+.textbox.fr-frame_iron .fr-gem { display: block; width: 4px; height: 4px; background: #c3c6cc; }
+.textbox.fr-frame_iron .fr-gem.tl { left: -4px; top: -4px; } .textbox.fr-frame_iron .fr-gem.tr { right: -4px; top: -4px; }
+.textbox.fr-frame_iron .fr-gem.bl { left: -4px; bottom: -4px; } .textbox.fr-frame_iron .fr-gem.br { right: -4px; bottom: -4px; }
+.textbox.fr-frame_wood { box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo), 0 0 0 4px #8a5a32, 0 0 0 6px #2e1c0e; }
+.textbox.fr-frame_bronze { box-shadow: inset 3px 3px 0 var(--hi), inset -3px -3px 0 var(--lo), 0 0 0 3px #c27b45, 0 0 0 5px #5a3218; }
+/* 外觀頁 */
+.look-row { display: flex; align-items: center; gap: 8px; }
+.look-prev { min-width: 6.5em; padding: 4px 8px; background: #101014; font-size: 1.0625em; }
+.look-frame.textbox { width: 64px; height: 26px; min-height: 0; padding: 0; background: #101014; position: relative; margin: 8px 12px; flex: none; cursor: default; }
+.look-sec { color: var(--gold-lt); margin: 10px 2px 4px; font-size: .875em; }
+/* 紅晶小煙火：挖到紅晶時在場景中間爆一下（像素方塊，steps 動畫） */
+.ruby-burst { position: absolute; left: 50%; top: 24%; width: 0; height: 0; pointer-events: none; z-index: 3; }
+.ruby-burst .rb-core { position: absolute; left: -14px; top: -14px; width: 28px; height: 28px; animation: rbCore .9s steps(6) forwards; }
+.ruby-burst .rb-p { position: absolute; left: -3px; top: -3px; width: 6px; height: 6px; background: var(--c, #ff5f6d); animation: rbFly .9s steps(6) forwards; }
+@keyframes rbCore { 0% { transform: scale(.4); opacity: 0; } 20% { transform: scale(1.3); opacity: 1; } 70% { transform: scale(1); opacity: 1; } 100% { transform: scale(1) translateY(-8px); opacity: 0; } }
+@keyframes rbFly { 0% { transform: translate(0, 0); opacity: 1; } 80% { opacity: 1; } 100% { transform: translate(var(--dx), var(--dy)); opacity: 0; } }
+.probe-tag { position: absolute; right: 6px; top: 4px; font-size: .75em; color: #ff9aa3; pointer-events: none; text-shadow: 2px 2px 0 #000; }
+.probe-tag.paused { color: var(--sub); }
+.scope-ruby-note { width: 100%; text-align: center; margin-top: 6px; color: #ff9aa3; }
 .ruby-num { display: inline-flex; align-items: center; gap: 4px; }
 .ruby-n { color: #d0646f; font-weight: normal; }
 .ruby-sec { color: var(--gold-lt); margin: 10px 2px 4px; font-size: .875em; }
@@ -613,7 +663,7 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .scope-ring.badge .scope-icon { font-size:2.25em; font-weight:bold; }
 .scope-name { font-weight:bold; min-height:1.3em; margin-bottom:4px; }
 .scope-say { font-size:.875em; opacity:.85; line-height:1.6; min-height:2.6em; }
-.scope-ctrl { display:flex; gap:8px; margin:8px 0; }
+.scope-ctrl { display:flex; flex-wrap:wrap; gap:8px; margin:8px 0; }
 .scope-ctrl .px-btn { flex:1; }
 .scope-row { display:flex; align-items:flex-start; gap:8px; }
 .scope-row .n { font-size:.75em; opacity:.6; min-width:3.2em; padding-top:2px; }

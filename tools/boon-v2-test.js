@@ -198,7 +198,7 @@ console.log("\n=== 6. 紅岩鑽頭・試用（里程碑）＋工具分類 ===");
 {
   const RT = C.tools.find(t => t.id === "redrockTrial"), RP = C.tools.find(t => t.id === "redrock");
   ok(RT && RT.durability === 1000 && RT.category === "special" && RT.price === undefined, "試用版：耐久 1000、special、沒有金幣價格");
-  ok(RP && RP.durability === 1000 && RP.category === "paid" && RP.price === undefined, "完整版：只有識別資料（paid、無價格）");
+  ok(RP && RP.durability === 1000 && RP.category === "premium" && RP.price === undefined, "完整版：premium、沒有金幣價格（用紅晶買，價格在 ruby.shop）");
   ok(["redrockTrial", "redrock"].every(id => !BV.rewardable(C, id) && !BV.toolFlag(C, id, "boonDiscount") && !BV.toolFlag(C, id, "boonDurability")), "兩把都不進滿階謝禮、不打折、不吃耐久恩惠");
   ok(Object.values(C.boss.boonsV2.rewardTiers).every(id => C.tools.find(t => t.id === id).category === "pick"), "rewardTiers 只對應標準鎬子");
   ok([0, 5].every(t => BV.toolMax(RT.durability, BV.toolFlag(C, "redrockTrial", "boonDurability") ? BV.rate(C, "toolDur", t) : 0) === 1000), "耐久恩惠 0 階／滿階，試用到手都是 1000");

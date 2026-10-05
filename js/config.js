@@ -206,9 +206,10 @@
          ・耐久固定 1000，不吃「新鎬子耐久」與購買折扣（三個旗標 false）；沒有 price＝不能用金幣買。
          ・所有已解鎖礦坑都是正常效率（不打折、也不加成），不增加產量或稀有機率；tier 只給背包排序用，不參與效率判定。
          ・這兩把的定義固定來自程式內建值（game.js normTools），編輯器存的舊設定檔不會蓋掉或刪掉。
-         redrock（完整版，category:"paid"）本輪只有識別資料：沒有價格、沒有購買入口、不能用金幣或平台付款取得。 */
-      { id: "redrockTrial", tier: 5, name: "紅岩鑽頭・試用", durability: 1000, rarity: 5, category: "special", trial: true, rewardEligible: false, boonDiscount: false, boonDurability: false },
-      { id: "redrock", tier: 5, name: "紅岩鑽頭", durability: 1000, rarity: 5, category: "paid", rewardEligible: false, boonDiscount: false, boonDurability: false }
+         redrock（完整版）2026-10-05 起用紅晶在紅晶商店購買（價格見 ruby.shop），分類 paid 改名 premium（高級；紅晶不是用錢買的）。 */
+      /* drill：紅岩鑽頭的「礦脈中不扣耐久」（哪些狀態、每把上限見 ruby.mines[礦坑].drillFree）；crystal：用完掉 1 顆小結晶（試用版不掉）；兩把到手耐久都吃小結晶加成（擁有者 2026-10-05） */
+      { id: "redrockTrial", tier: 5, name: "紅岩鑽頭・試用", durability: 1000, rarity: 5, category: "special", trial: true, drill: true, rewardEligible: false, boonDiscount: false, boonDurability: false },
+      { id: "redrock", tier: 5, name: "紅岩鑽頭", durability: 1000, rarity: 5, category: "premium", drill: true, crystal: true, rewardEligible: false, boonDiscount: false, boonDurability: false }
     ],
     // 低階工具挖高階礦坑：收益 ×（工具每揮成本 ÷ 該礦坑對應工具每揮成本）× underMul
     toolPenalty: { underMul: 0.9 },
@@ -297,7 +298,98 @@
             { silent: 4, odd: 4, even: 18, glow: 22, reso: 34, geD: 5, geC: 4, geB: 5, geA: 4 }]
       },
       // v0.10.7：舊版「探礦眼鏡」的紀錄一律清除，不轉換（見 game.js 的 glassWipeOld）
-      dataVersion: 2
+      dataVersion: 2,
+      /* 2026-10-05 紅晶：第 6、7 次觀測（只收紅晶，第 1～5 次照舊收金幣）。表格照 Codex 實算版本（紅晶設計 v4 第五節）：
+         100 萬次模擬猜中內部值：看到第 5 次 63%、第 6 次 74%、第 7 次 88%；已因完整礦紋完全確定：2.5%／12%／34%。
+         ruby.weights[內部值][0＝第6次, 1＝第7次] 每列合計 100；geX 只出現在對應內部值以上（tools/sim.js 檢查）。
+         遊戲讀程式內建值（game.js glassRuby），編輯器存的舊設定檔不會蓋掉。 */
+      ruby: {
+        prices: [15, 30],
+        /* 2026-10-05 擁有者：玩家畫面不出現「設定」字眼，改成佐佐木用紅晶強化觀測鏡的說法（Claude＋Codex 討論，方案 2） */
+        stages: ["紅晶精調觀測", "紅晶極限觀測"],
+        notes: ["佐佐木以紅晶精調礦脈觀測鏡，下一次能看得更仔細。", "佐佐木將礦脈觀測鏡強化到極限，下一次能看見更深處的礦紋。"],   // 審查員（2026-10-05）：不承諾「更準確」
+        buyHints: ["佐佐木完成精調——這次能看得更仔細。", "佐佐木完成極限強化——這次能看見更深處的礦紋。"],
+        badgeRate: [10, 25],
+        stageLines: [
+          [ "紅晶給我。……別碰鏡片，我替你把焦距重新磨準。", "好了。這次霧會散得更開，看到的東西也更可信。" ],
+          [ "還要再往下看？行。這次連紅晶一起燒進鏡片裡。", "這已經是它的極限了。看清楚，別浪費這一下。" ]
+        ],
+        weights: {
+          1: [{ silent: 30, odd: 50, even: 5, glow: 10, reso: 5 },
+              { silent: 15, odd: 70, even: 2, glow: 8, reso: 5 }],
+          2: [{ silent: 20, odd: 5, even: 40, glow: 10, reso: 5, geD: 20 },
+              { silent: 10, odd: 2, even: 55, glow: 5, reso: 3, geD: 25 }],
+          3: [{ silent: 15, odd: 25, even: 5, glow: 15, reso: 10, geD: 15, geC: 15 },
+              { silent: 5, odd: 35, even: 2, glow: 7, reso: 6, geD: 15, geC: 30 }],
+          4: [{ silent: 10, odd: 5, even: 25, glow: 15, reso: 15, geD: 10, geC: 10, geB: 10 },
+              { silent: 4, odd: 2, even: 25, glow: 7, reso: 7, geD: 10, geC: 15, geB: 30 }],
+          5: [{ silent: 5, odd: 15, even: 5, glow: 15, reso: 20, geD: 5, geC: 10, geB: 10, geA: 15 },
+              { silent: 3, odd: 15, even: 2, glow: 7, reso: 8, geD: 5, geC: 10, geB: 15, geA: 35 }],
+          6: [{ silent: 3, odd: 3, even: 12, glow: 12, reso: 25, geD: 5, geC: 10, geB: 15, geA: 15 },
+              { silent: 2, odd: 1, even: 8, glow: 4, reso: 20, geD: 5, geC: 10, geB: 20, geA: 30 }]
+        }
+      }
+    },
+
+    /* ---------- 紅晶（免費取得的高級貨幣，2026-10-05 設計 v4 定案） ----------
+       規格：Claude outputs/紅晶高級貨幣設計草案_2026-10-04.md、docs/20_新礦坑檢查表.md。純邏輯在 js/ruby.js。
+       紅晶不能用錢買、不能換金幣、不能交易。遊戲一律讀程式內建值（game.js 的 RC），編輯器存的設定檔改不動。
+       每日以台灣遊戲日（todayKey）換日；每週從台灣時間週一 00:00 算。日期未知時不換日、不發恩惠和凍結的紅晶。 */
+    ruby: {
+      welcome: 20,                                   // 開帳號：每個帳號一輩子一次（要登入）
+      ads: { enabled: false, at: [3, 6, 10, 12] },   // 當天第 N 次「完整看完」的廣告（補給＋換板合併）各 +1；網頁示意廣告不給 → enabled:false，上架接真廣告才開
+      board: 2,                                      // 當天第 1 張委託板全部完成
+      dig: { need: 42000, dailyCap: 4 },             // 挖礦進度條：累積滿 need 點得 1 顆；每天最多 dailyCap 顆（所有礦坑合計）；換日歸零
+      boon: { per: 1, weekCap: 7 },                  // 恩惠每升 1 級
+      freeze: { per: 2, dailyTimes: 2, weekCap: 8 }, // 地底凍結
+      maxBal: 999999,
+      probe: {   // 礦脈探測器（第 3 批）：接下來 count 次「通常狀態」的挖掘，機會牌機率 ×ruby.mines[礦坑].probe.mult，沒有保底
+        count: 10,
+        desc: "使用後的十次挖掘，更容易遇到機會牌。",   // 玩家看到的說明（擁有者：刻意寫得模糊；審查員 2026-10-05：不寫「抽選」「機率」「大幅」與驚嘆號）
+        useLines: ["探測器嗡地一聲亮了起來……接下來的幾下，好好挖。", "儀器的指針開始亂跳。礦坑好像在回應什麼。"],
+        endLine: "探測器的光熄了。"
+      },
+      drill: {   // 紅岩鑽頭（第 2 批）
+        crystalDur: 10,   // 每顆小結晶：之後拿到的紅岩鑽頭耐久 +10（拿到當下決定，不設上限；試用版也吃）
+        buyLines: ["……紅岩鑽頭。礦脈裡那股勁，連鑽頭都磨不動它。", "拿好。礦脈越深，你越會知道它的好。", "用到最後別丟。它會留點東西給你。"],
+        freeLines: ["鑽頭透出紅光——礦脈裡，它一點也不會磨損。", "紅岩鑽頭在礦脈裡嗡嗡作響，刃口完好如初。"],
+        freeLines2: ["鑽頭透出紅光——跟著前輩的時候，它一點也不會磨損。", "紅岩鑽頭跟著前輩嗡嗡作響，刃口完好如初。"],   // 三位前輩的考驗
+        capLine: "紅岩鑽頭的紅光暗了下來……之後會照常磨損。",
+        crystalLine: "紅岩鑽頭碎開，留下一顆小結晶。（之後拿到的紅岩鑽頭耐久 +{dur}）",
+        trialEndLine: "試用的紅岩鑽頭用完了。"
+      },
+      shop: { redrock: 175, probe: 330, boardTicket: 25, nameColor: 120, frame: 220 },
+      /* 外觀（擁有者 2026-10-05 看圖核准；星辰框不用）。src：ruby＝紅晶商店整組購買（華麗）／ach＝成就獎勵（樸素，哪個成就送哪款討論中）。
+         id 與 docs/20 SQL 的 cosmetic_catalog 對應（只存白名單 id，不存顏色碼）。樣式在 css/style.css 的 .nc-*／.fr-* */
+      cosmetics: [
+        { id: "name_ruby",  slot: "name",  src: "ruby", label: "紅晶" },
+        { id: "name_gold",  slot: "name",  src: "ruby", label: "熔金" },
+        { id: "name_star",  slot: "name",  src: "ruby", label: "星辰紫" },
+        { id: "name_ice",   slot: "name",  src: "ruby", label: "冰晶" },
+        { id: "name_jade",  slot: "name",  src: "ruby", label: "翠脈" },
+        { id: "name_dusk",  slot: "name",  src: "ruby", label: "夕焰" },
+        { id: "name_moss",  slot: "name",  src: "ach",  label: "苔綠" },
+        { id: "name_slate", slot: "name",  src: "ach",  label: "石青" },
+        { id: "name_amber", slot: "name",  src: "ach",  label: "琥珀" },
+        { id: "frame_ruby", slot: "frame", src: "ruby", label: "紅晶框" },
+        { id: "frame_gold", slot: "frame", src: "ruby", label: "金紋框" },
+        { id: "frame_iron", slot: "frame", src: "ach",  label: "鐵框" },
+        { id: "frame_wood", slot: "frame", src: "ach",  label: "木框" },
+        { id: "frame_bronze", slot: "frame", src: "ach", label: "銅框" }
+      ],
+      /* 每座礦坑的紅晶設定（docs/20 第三、五節）。放在這裡（以礦坑 id 為 key）而不是 mines 陣列裡：
+         編輯器存的設定檔會整個蓋掉 mines 陣列，新欄位會不見。沒列出的礦坑一律「不適用」（docs/20 第四節安全預設）。
+         progress.perDur：每扣 1 點耐久累積幾點；probe.mult：探測器機率倍數；drillFree：紅岩鑽頭不扣耐久的狀態。 */
+      mines: {
+        m1: { kind: "standard", progress: { perDur: 14 }, probe: { mult: 8 }, drillFree: { phases: ["bonus"], maxPerTool: 0 }, freezeReward: true },
+        m2: { kind: "standard", progress: { perDur: 17 }, probe: { mult: 8 }, drillFree: { phases: ["bonus"], maxPerTool: 0 }, freezeReward: true },
+        m3: { kind: "standard", progress: { perDur: 21 }, probe: { mult: 8 }, drillFree: { phases: ["bonus"], maxPerTool: 0 }, freezeReward: true },
+        m4: { kind: "standard", progress: { perDur: 26 }, probe: { mult: 8 }, drillFree: { phases: ["bonus"], maxPerTool: 0 }, freezeReward: true },
+        m5: { kind: "standard", progress: { perDur: 30 }, probe: { mult: 8 }, drillFree: { phases: ["bonus"], maxPerTool: 0 }, freezeReward: true },
+        /* m6 探測器（擁有者 2026-10-05 選 A）：用下去後連續 10 次付費轉都扣次數、不暫停；通常 ×5（容易被找去談話）、
+           帶路／一轉定勝負／前輩獎賞機會牌 ×3、認可抽選（ST）機會牌 ×1.5（一般關通過率約 72%→86%） */
+        m6: { kind: "character", progress: { perDur: 35 }, probe: { mult: 5, states: { at: 3, st: 1.5, reward: 3, bonus: 3 } }, drillFree: { phases: ["at", "st", "reward", "bonus"], maxPerTool: 0 }, freezeReward: true }   // maxPerTool 0＝不限。m6 鑽頭（擁有者 2026-10-05 選 3）：帶路、認可抽選、一轉定勝負、前輩獎賞都不扣，不設上限；一把約 1760 轉
+      }
     },
 
     /* ---------- 礦坑老闆 佐佐木 ---------- */
