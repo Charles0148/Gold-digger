@@ -280,7 +280,12 @@
     return added;
   }
   function currentTitle() { return titleDef(((save.titles || {}).equipped)) || null; }
-  function titleBadge(def, big) { return def ? `<span class="tt r${def.rarity}${big ? " big" : ""}"><span>${esc(def.name)}</span></span>` : ""; }
+  /* 傳說名條每 5 秒自動掃過一次光；用全域時鐘對齊相位，畫面重畫不會讓光重新開始 */
+  function titleBadge(def, big) {
+    if (!def) return "";
+    const at = def.rarity === 3 ? ` style="--sweep-at:-${Date.now() % 5000}ms"` : "";
+    return `<span class="tt r${def.rarity}${big ? " big" : ""}"${at}><span>${esc(def.name)}</span></span>`;
+  }
   function statSwing(mineId) {
     TS.fix(save); save.stat.swings++; save.stat.mineSwings[mineId] = (save.stat.mineSwings[mineId] || 0) + 1;
   }
@@ -1899,13 +1904,6 @@
       <div class="btns"><button class="px-btn" id="titleModalClose">關閉</button></div>`;
     $("modal").classList.remove("hidden");
   }
-  /* 傳說名條的流光：平常靜止，點一下才掃過一次（播放中的連點直接忽略；動畫結束或保險計時後移除 class） */
-  function sweepTitle(tt) {
-    if (tt.classList.contains("sweep")) return;
-    tt.classList.add("sweep");
-    const off = () => { tt.classList.remove("sweep"); tt.removeEventListener("animationend", off); };
-    tt.addEventListener("animationend", off); setTimeout(off, 1200);
-  }
   function closeTitleDetail() {
     $("modal").classList.add("hidden");
     $("modalBox").className = "modal-box";
@@ -3446,7 +3444,6 @@
   });
   $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking() && currentScreen !== "acct") { acctBack = currentScreen; go("acct"); } });
   $("modal").addEventListener("click", e => { if (e.target === $("modal") && $("modalBox").classList.contains("title-modal")) closeTitleDetail(); });
-  document.addEventListener("click", e => { const tt = e.target.closest(".tt.r3"); if (tt && !window.Editor?.isPicking()) sweepTitle(tt); });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     const link = e.target.closest("[data-origin]"); if (link) { oreOrigin(link.dataset.origin); return; }

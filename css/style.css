@@ -91,9 +91,8 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .tt.r3 > span { color:#fff3c4; }
 .tt.r3::before { content:""; position:absolute; top:0; bottom:0; left:0; width:34%; pointer-events:none;
   background:linear-gradient(90deg,transparent 0 25%,rgba(255,243,196,.28) 25% 50%,rgba(255,243,196,.55) 50% 75%,transparent 75%);
-  transform:translateX(-130%) skewX(-20deg); opacity:0; }
-.tt.r3.sweep::before { opacity:1; animation:titleSweep .9s steps(24) 1 forwards; }
-@keyframes titleSweep { 0%{transform:translateX(-130%) skewX(-20deg)} 100%{transform:translateX(330%) skewX(-20deg)} }
+  transform:translateX(-130%) skewX(-20deg); animation:titleSweep 5s steps(120) infinite; animation-delay:var(--sweep-at,0s); }
+@keyframes titleSweep { 0%{transform:translateX(-130%) skewX(-20deg)} 22%,100%{transform:translateX(330%) skewX(-20deg)} }
 @media (prefers-reduced-motion:reduce) { .tt.r3::before { animation:none; opacity:0; } }
 .title-row.lock .tt.r3::before { display:none; }
 .rw0{color:var(--r0)} .rw1{color:var(--r1)} .rw2{color:var(--r2)} .rw3{color:var(--r3)}
