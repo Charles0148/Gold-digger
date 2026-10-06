@@ -88,7 +88,7 @@
     });
     save.titles.owned = [...set];
     if (save.titles.equipped && !set.has(save.titles.equipped)) save.titles.equipped = null;
-    if (!save.titles.equipped && set.has("new_miner")) save.titles.equipped = "new_miner";
+    if (save.titles.equipped == null && set.has("new_miner")) save.titles.equipped = "new_miner";
     return added;
   }
 

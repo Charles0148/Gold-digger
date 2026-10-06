@@ -1818,6 +1818,10 @@
   /* 2026-10-03 擁有者：成就分書籤（目前「三位前輩的考驗」＋「其他 準備中」）。
      前輩信賴拿到 100 次回憶後改看下一個門檻（memories.next）；珍貴回憶每位三格（100／500／1000），500、1000 內容未寫只占位。 */
   let achTab = "senpai", titleFilter = "all";
+  /* 頭銜入口模式（v1.02.01）：view＝紀錄頁的純圖鑑（不能戴上／取消）；acct＝從「帳號→換頭銜」進來才可更換。
+     只有 acctTitlePick 能把它設成 acct（走 go() 的 pendingAcctPick）；離開紀錄頁、切書籤、再點導覽「紀錄」都回到 view。 */
+  let titleMode = "view", pendingAcctPick = false;
+  const canEditTitle = () => titleMode === "acct" && currentScreen === "rec";
   function renderAch() {
     const ownedN = ((save.titles || {}).owned || []).length;
     const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["titles", "頭銜", `${ownedN}/${titleDefs().length}`], ["other", "其他", "準備中"]];
@@ -1831,7 +1835,12 @@
   }
   function renderTitles() {
     const defs = titleDefs(), owned = new Set(save.titles.owned || []), cur = currentTitle();
+    const edit = canEditTitle();
     $("titleCount").textContent = `已取得 ${owned.size}／${defs.length}`;
+    $("titlePreview").classList.toggle("hidden", !edit);
+    $("titleClear").classList.toggle("hidden", !edit);
+    $("titleBackAcct").classList.toggle("hidden", !edit);
+    $("titleFoot").textContent = edit ? "取得後永遠保留，不會收回。" : "點一下頭銜看說明。要更換頭銜，請點頂部的名字進入帳號。";
     $("titlePreviewName").textContent = save.name || "玩家";
     $("titlePreviewBadge").innerHTML = titleBadge(cur);
     const chips = [["all", "全部"], ["0", "一般"], ["1", "珍貴"], ["2", "稀有"], ["3", "傳說"]];
@@ -1841,19 +1850,23 @@
       const has = owned.has(d.id), on = save.titles.equipped === d.id, hidden = !has && d.rarity === 3;
       const p = TS.progress(d, titleContext()), cond = hidden ? "？？？" : esc(d.condition);
       const pg = !has && !hidden ? `<div class="need pg">${esc(p.text)}</div>` : "";
-      const btn = on ? '<button class="px-btn on" disabled>使用中</button>' : has ? `<button class="px-btn" data-title-wear="${d.id}">使用</button>` : '<button class="px-btn" disabled>未取得</button>';
-      return `<div class="title-row ${has ? "" : "lock"} ${on ? "equipped" : ""}" data-title-id="${d.id}"><div class="grow">${titleBadge(d)}
+      const btn = !edit ? `<span class="title-state${has ? " got" : ""}">${has ? "已取得" : "未取得"}</span>`
+        : on ? '<button class="px-btn on" disabled>使用中</button>' : has ? `<button class="px-btn" data-title-wear="${d.id}">使用</button>` : '<button class="px-btn" disabled>未取得</button>';
+      return `<div class="title-row ${has ? "" : "lock"} ${edit && on ? "equipped" : ""}" data-title-id="${d.id}"><div class="grow">${titleBadge(d)}
         <div class="need"><span class="rk rw${d.rarity}">${TITLE_RANK[d.rarity]}</span>${has ? "取得方式：" : "取得條件："}${cond}</div>${pg}</div>${btn}</div>`;
     }).join("");
   }
   function wearTitle(id) {
+    if (!canEditTitle()) return;   // 只有「帳號→換頭銜」進來才能換；紀錄頁圖鑑一律擋掉
     if (!(save.titles.owned || []).includes(id) || !titleDef(id)) return;
     save.titles.equipped = id; persist(true); renderHud(); if (currentScreen === "rec") renderAch(); if (currentScreen === "acct") renderAcct();
   }
   function clearTitle() {
-    save.titles.equipped = null; persist(true); renderHud(); if (currentScreen === "rec") renderAch(); if (currentScreen === "acct") renderAcct();
+    if (!canEditTitle()) return;
+    save.titles.equipped = ""; persist(true); renderHud(); if (currentScreen === "rec") renderAch(); if (currentScreen === "acct") renderAcct();
   }
-  function showTitleDetail(id) {
+  function showTitleDetail(id, mode) {
+    const edit = mode === "acct" && canEditTitle();
     const d = titleDef(id); if (!d) return;
     const has = (save.titles.owned || []).includes(id), on = save.titles.equipped === id, hidden = !has && d.rarity === 3;
     const p = TS.progress(d, titleContext()), cond = hidden ? "？？？" : esc(d.condition), prog = !has && !hidden ? `　<span>${esc(p.text)}</span>` : "";
@@ -1862,9 +1875,36 @@
     box.innerHTML = `<span class="rank">${TITLE_RANK[d.rarity]}</span>${titleBadge(d, true)}
       <div class="detail"><span class="key">${has ? "取得方式" : "取得條件"}</span>${cond}${prog}</div>
       <div class="detail"><span class="key">一句話</span>${esc(d.intro)}</div>
-      <div class="state">${has ? (on ? '<span style="color:var(--green)">已取得・使用中</span>' : '<span style="color:var(--green)">已取得</span>') : '<span class="sub">尚未取得</span>'}</div>
-      <div class="btns">${has && !on ? `<button class="px-btn on" data-title-wear="${d.id}">戴上</button>` : on ? '<button class="px-btn" disabled>使用中</button>' : ""}<button class="px-btn" id="titleModalClose">關閉</button></div>`;
+      <div class="state">${has ? (on && edit ? '<span style="color:var(--green)">已取得・使用中</span>' : '<span style="color:var(--green)">已取得</span>') : '<span class="sub">尚未取得</span>'}</div>
+      <div class="btns">${!edit ? "" : has && !on ? `<button class="px-btn on" data-title-wear="${d.id}">戴上</button>` : on ? '<button class="px-btn" disabled>使用中</button>' : ""}<button class="px-btn" id="titleModalClose">關閉</button></div>`;
     $("modal").classList.remove("hidden");
+  }
+  /* 珍貴回憶紀念碑（v1.02.01）：點成就頁已取得的格子才會開；日期只讀存檔，沒有就誠實寫沒紀錄 */
+  const MEM_BLURB = {
+    a: "休假的早上，岩倉帶你認識路邊的植物，還把那本畫滿小圖的筆記交給你。這是她把心裡話託付給你的證明。",
+    b: "深夜的洗衣店裡，赤井說起撐起一個家的日子，並把媽媽摺的紙鶴送給你。這是他把你當成自己人的證明。",
+    c: "黃昏的舊工寮裡，霧島說起他放下的夢，並親手削了第三枚手裏劍給你。這是他認可你的證明。"
+  };
+  function showMemoryMonument(boss, tier) {
+    const b = (M2().bosses || []).find(x => x.id === boss), d = memDef(boss), m = save.senpai.memories[boss];
+    if (!b || !d || !m) return;   // 還沒取得的不能開
+    const box = $("modalBox");
+    box.className = "modal-box title-modal mem-modal";
+    box.innerHTML = `<span class="rank">珍貴回憶</span>
+      <div class="mem-who">${esc(b.name)}</div>
+      <div class="mem-mile">${fmt(tier)} 次談話成功</div>
+      <div class="mem-item">${esc(d.item)}</div>
+      <div class="detail"><span class="key">這份回憶</span>〈${esc(d.title)}〉<br>${esc(MEM_BLURB[boss] || "")}</div>
+      <div class="detail"><span class="key">取得日期</span>${m.date ? esc(m.date) : "取得日期未留下紀錄"}</div>
+      <div class="btns"><button class="px-btn" id="titleModalClose">關閉</button></div>`;
+    $("modal").classList.remove("hidden");
+  }
+  /* 傳說名條的流光：平常靜止，點一下才掃過一次（播放中的連點直接忽略；動畫結束或保險計時後移除 class） */
+  function sweepTitle(tt) {
+    if (tt.classList.contains("sweep")) return;
+    tt.classList.add("sweep");
+    const off = () => { tt.classList.remove("sweep"); tt.removeEventListener("animationend", off); };
+    tt.addEventListener("animationend", off); setTimeout(off, 1200);
   }
   function closeTitleDetail() {
     $("modal").classList.add("hidden");
@@ -1892,7 +1932,7 @@
     $("bagMemory").innerHTML = bosses.map(b => {
       const m = S.memories[b.id], d = memDef(b.id);
       const slots = tiers.map((t, i) => i === 0 && m
-        ? `<div class="mem-slot on"><div>${colored(esc(d.item), gold)}</div><div class="sub">${esc(m.date || "")}</div></div>`
+        ? `<button class="mem-slot on" data-mem-boss="${b.id}" data-mem-tier="${t}"><div>${colored(esc(d.item), gold)}</div><div class="sub">${esc(m.date || "")}</div></button>`
         : `<div class="mem-slot"><div class="sub">？？？</div><div class="sub">${fmt(t)} 次</div></div>`).join("");
       return `<div class="row memory-row"><div class="grow"><span>${esc(b.name)}</span><div class="mem-slots">${slots}</div></div></div>`;
     }).join("") + `<div class="sub mem-foot">收藏品・不能出售</div>`;
@@ -3348,6 +3388,7 @@
   function go(name) {
     if (name === "dex" || name === "ach") { recTab = name; name = "rec"; }   // 舊的入口名稱 → 紀錄頁的子分頁
     clearM2UI();
+    titleMode = pendingAcctPick && name === "rec" ? "acct" : "view"; pendingAcctPick = false;
     if (name !== "mine") stopAuto();
     if (name === "shop" && currentScreen !== "shop") bossView = "menu";
     if (name === "shop" && currentScreen !== "shop" && currentScreen !== "scope") shopEnter();
@@ -3401,26 +3442,29 @@
   $("btnLeave").addEventListener("click", () => { if (!window.Editor?.isPicking()) leaveMine(); });
   $("scr-rec").addEventListener("click", e => {
     const b = e.target.closest("[data-rec]"); if (!b || window.Editor?.isPicking()) return;
-    recTab = b.dataset.rec; renderRec(); $("scr-rec").scrollTop = 0;
+    recTab = b.dataset.rec; titleMode = "view"; renderRec(); $("scr-rec").scrollTop = 0;
   });
   $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking() && currentScreen !== "acct") { acctBack = currentScreen; go("acct"); } });
   $("modal").addEventListener("click", e => { if (e.target === $("modal") && $("modalBox").classList.contains("title-modal")) closeTitleDetail(); });
+  document.addEventListener("click", e => { const tt = e.target.closest(".tt.r3"); if (tt && !window.Editor?.isPicking()) sweepTitle(tt); });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     const link = e.target.closest("[data-origin]"); if (link) { oreOrigin(link.dataset.origin); return; }
     const titleRow = e.target.closest("[data-title-id]");
-    if (titleRow && !e.target.closest("button")) { showTitleDetail(titleRow.dataset.titleId); return; }
+    if (titleRow && !e.target.closest("button")) { showTitleDetail(titleRow.dataset.titleId, canEditTitle() ? "acct" : "view"); return; }
+    const memSlot = e.target.closest("[data-mem-boss]"); if (memSlot) { showMemoryMonument(memSlot.dataset.memBoss, Number(memSlot.dataset.memTier) || memNeed()); return; }
     const t = e.target.closest("button"); if (!t) return;
     const d = t.dataset;
     if (t.id === "titleModalClose") { closeTitleDetail(); return; }
     if (d.titleWear) { wearTitle(d.titleWear); if (!$("modal").classList.contains("hidden")) closeTitleDetail(); return; }
     if (d.titleFilter) { titleFilter = d.titleFilter; renderTitles(); return; }
     if (t.id === "titleClear") { clearTitle(); return; }
-    if (t.id === "acctTitlePick") { recTab = "ach"; achTab = "titles"; go("rec"); return; }
+    if (t.id === "acctTitlePick") { recTab = "ach"; achTab = "titles"; pendingAcctPick = true; go("rec"); return; }
+    if (t.id === "titleBackAcct") { go("acct"); return; }
     if (t.id === "btnBoardReset") { askBoardReset(); return; }
     if (t.id === "acctRename") { askName(false); return; }
     if (d.dexMine) { dexMine = d.dexMine; renderDex(); return; }
-    if (d.achTab) { achTab = d.achTab; renderAch(); return; }
+    if (d.achTab) { achTab = d.achTab; titleMode = "view"; renderAch(); return; }
     if (d.rubyMock) { toast("示意畫面：還沒開放購買"); return; }
     if (t.id === "hudRuby") { if (!RUBY_PREVIEW) { toast("紅晶商店準備中，敬請期待"); return; } go("shop"); bossView = "ruby"; renderShop(); return; }
     if (t.id === "acctBack") { go(acctBack === "acct" ? "mine" : acctBack); return; }
