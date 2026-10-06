@@ -13,6 +13,8 @@
   /* 固定色盤（2026-10-03 UI 第二批）：新顏色先從這裡挑，不要再加相近色 */
   --gold: #ffcc33; --gold-lt: #ffe0a0; --green: #55ff55; --red: #ff5555;
   --orange: #ff7755; --cyan: #7fe3ff; --cyan-dk: #1b2a30; --pink: #ff4fd8;
+  --r0:#b8b8c2; --r0bg:#17171b; --r1:#55ff55; --r1bg:#10230f;
+  --r2:#7fe3ff; --r2bg:#10252d; --r3:#ff9a1f; --r3bg:#3d2208;
   --font: "Cubic11", "DotGothic16", ui-monospace, "Noto Sans Mono CJK TC", monospace;
   /* 閱讀字級倍率：敘述框／回憶等「要讀的內容」用（固定標準字級；2026-09-28 取消大字模式） */
   --rd: 1.125;
@@ -62,13 +64,38 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 
 /* ===== HUD ===== */
 #hud {
-  display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+  display: flex; flex-direction: column; gap: 3px; padding: 6px 10px;
   background: var(--panel-dark); border-bottom: 3px solid #000;
 }
 #app:has(#editFab:not(.hidden)) #hud { padding-left: 46px; }
-.hud-name { flex: 1; color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
-.hud-stat { display: flex; gap: 4px; align-items: center; }
+.hud-top, .hud-bottom { display:flex; align-items:center; gap:8px; min-width:0; }
+.hud-name { flex: 1; min-width:0; color: var(--accent); font-size:22px; line-height:1.2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.hud-title { flex:1 1 auto; min-width:0; min-height:20px; }
+.hud-title .tt { margin-top:0; }
+.hud-stats { display:flex; align-items:center; gap:6px; margin-left:auto; flex:none; }
+.hud-stat { display: flex; gap: 3px; align-items: center; white-space:nowrap; }
 .hud-ico { color: var(--sub); }
+
+/* ===== 稱號徽章（B 版定稿） ===== */
+.tt { position:relative; display:block; width:max-content; max-width:100%; margin-top:3px; padding:1px 5px;
+  font-size:13px; line-height:16px; white-space:nowrap; overflow:visible; color:var(--rc); background:var(--bgc);
+  border:2px solid var(--rc); border-radius:0; box-shadow:inset 0 0 0 1px #000; }
+.tt > span { position:relative; display:block; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.tt.r0, .title-modal.r0 { --rc:var(--r0); --bgc:var(--r0bg); }
+.tt.r1, .title-modal.r1 { --rc:var(--r1); --bgc:var(--r1bg); }
+.tt.r1 { box-shadow:inset 0 0 0 1px #000, inset 0 -2px 0 rgba(85,255,85,.38); }
+.tt.r2, .title-modal.r2 { --rc:var(--r2); --bgc:var(--r2bg); }
+.tt.r2 { box-shadow:inset 0 0 0 1px #000, inset 0 0 0 2px rgba(127,227,255,.55); }
+.tt.r3, .title-modal.r3 { --rc:var(--r3); --bgc:var(--r3bg); }
+.tt.r3 { overflow:hidden; box-shadow:inset 0 0 0 1px #000; }
+.tt.r3 > span { color:#fff3c4; }
+.tt.r3::before { content:""; position:absolute; top:0; bottom:0; left:0; width:34%; pointer-events:none;
+  background:linear-gradient(90deg,transparent 0 25%,rgba(255,243,196,.28) 25% 50%,rgba(255,243,196,.55) 50% 75%,transparent 75%);
+  transform:translateX(-130%) skewX(-20deg); will-change:transform; animation:titleSweep 4s steps(24) infinite; }
+@keyframes titleSweep { 0%{transform:translateX(-130%) skewX(-20deg)} 45%,100%{transform:translateX(330%) skewX(-20deg)} }
+@media (prefers-reduced-motion:reduce) { .tt.r3::before { animation:none; opacity:0; } }
+.title-row.lock .tt.r3::before { display:none; }
+.rw0{color:var(--r0)} .rw1{color:var(--r1)} .rw2{color:var(--r2)} .rw3{color:var(--r3)}
 
 /* ===== 畫面切換 ===== */
 #screens { flex: 1; overflow: hidden; position: relative; }
@@ -203,6 +230,40 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .acct-name { display: flex; align-items: center; gap: 8px; }
 .acct-name #acctName { flex: 1; color: var(--gold); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hud-name { text-decoration: underline dotted rgba(255,204,51,.45); text-underline-offset: 4px; }
+.acct2 { display:grid; grid-template-columns:minmax(0,1fr) 76px; column-gap:8px; row-gap:6px; align-items:center; }
+.acct2 .cell { min-height:34px; display:flex; align-items:center; min-width:0; }
+.acct2 .cell > * { min-width:0; }
+.acct2 .px-btn { width:76px; padding:3px 0; text-align:center; }
+.acct-player-name { color:var(--gold); font-size:22px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.acct2 .tt { margin-top:0; }
+
+/* ===== 成就頁：稱號 ===== */
+.title-preview { background:#101014; padding:8px 10px; margin-bottom:8px; box-shadow:inset 0 0 0 2px #000; }
+.title-preview-name { display:block; color:var(--accent); font-size:22px; line-height:1.2; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.title-chips { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:8px; }
+.title-chips button { font:inherit; font-size:13px; padding:4px 8px; background:#24242b; color:#ddd; border:2px solid #3a3a45; border-radius:0; }
+.title-chips button.on { border-color:var(--cyan); color:var(--cyan); background:var(--cyan-dk); }
+.title-list { display:flex; flex-direction:column; gap:6px; }
+.title-row { cursor:pointer; display:flex; align-items:center; gap:8px; padding:6px 8px; min-height:56px; background:rgba(0,0,0,.28); border:2px solid rgba(0,0,0,.5); }
+.title-row.equipped { border-color:var(--accent); }
+.title-row .grow { flex:1; min-width:0; }
+.title-row .tt { margin-top:0; margin-bottom:3px; }
+.title-row .need { color:var(--sub); font-size:13px; line-height:1.4; }
+.title-row .need .rk { margin-right:6px; }
+.title-row .need.pg { color:var(--text); white-space:nowrap; }
+.title-row .px-btn { flex:none; width:72px; min-height:44px; padding:4px 0; text-align:center; font-size:13px; }
+.title-row.lock .tt { opacity:.5; }
+.title-row.lock .px-btn { background:#3a3a42; color:#8a8a95; box-shadow:none; }
+.title-foot { margin:8px 0; }
+.title-modal { position:relative; width:100%; max-width:340px; padding:14px 14px 12px; background:var(--panel); border:3px solid var(--rc); text-align:center;
+  box-shadow:inset 3px 3px 0 var(--hi),inset -3px -3px 0 var(--lo),0 0 0 3px #000; }
+.title-modal .rank { display:inline-block; padding:0 8px; font-size:13px; line-height:20px; color:#000; background:var(--rc); }
+.title-modal .tt.big { display:block; margin:10px auto 8px; font-size:18px; line-height:22px; padding:3px 12px; }
+.title-modal .detail { text-align:left; margin-top:8px; padding:6px 8px; background:#101014; font-size:13px; line-height:1.55; }
+.title-modal .detail .key { color:var(--sub); display:block; }
+.title-modal .state { margin-top:8px; font-size:13px; }
+.title-modal .btns { display:flex; gap:8px; justify-content:center; margin-top:12px; }
+.title-modal .btns .px-btn { min-width:100px; min-height:44px; }
 
 /* ===== 紅晶（示意，只在 sandbox） ===== */
 .ruby-ico { width: 1em; height: 1em; vertical-align: -0.12em; shape-rendering: crispEdges; flex: none; }

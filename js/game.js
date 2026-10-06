@@ -170,6 +170,7 @@
       glass: { date: todayKey() || "", byMine: {} },
       adPending: null, adDone: [], boardCredits: 0,
       senpai: newSenpai(),
+      stat: window.TitleSystem.freshStat(), titles: { owned: [], equipped: null, grantVersion: 1 },
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
   }
@@ -256,6 +257,43 @@
     if (S.since === undefined) S.since = window.GAME_VERSION || "";
     return S;
   }
+  const TS = window.TitleSystem;
+  const TITLE_RANK = ["一般", "珍貴", "稀有", "傳說"];
+  let titleBooting = true, titleStartupAdds = [];
+  function titleDefs() { return Array.isArray(config.titles) ? config.titles : []; }
+  function titleDef(id) { return titleDefs().find(t => t.id === id) || null; }
+  function titleContext() {
+    const idx = itemIndex(), dexCats = new Set(), dex = save.dex || {};
+    Object.keys(dex).forEach(name => { const it = idx[name]; if (it && it.cat && it.cat.id !== "rubble") dexCats.add(it.cat.id); });
+    const kinds = ((((config.boss || {}).boonsV2 || {}).kinds) || {});
+    return {
+      save, dexCats,
+      dexCount: Object.keys(dex).filter(name => idx[name] && idx[name].cat.id !== "rubble").length,
+      boonKinds: Object.keys(kinds)
+    };
+  }
+  function awardTitles(notify) {
+    const added = TS.check(save, titleDefs(), titleContext());
+    if (!added.length) return added;
+    if (notify !== false && titleBooting) titleStartupAdds.push(...added);
+    else if (notify !== false) setTimeout(() => toast(added.length === 1 ? `獲得頭銜：${added[0].name}` : `獲得 ${added.length} 個頭銜`), 0);
+    return added;
+  }
+  function currentTitle() { return titleDef(((save.titles || {}).equipped)) || null; }
+  function titleBadge(def, big) { return def ? `<span class="tt r${def.rarity}${big ? " big" : ""}"><span>${esc(def.name)}</span></span>` : ""; }
+  function statSwing(mineId) {
+    TS.fix(save); save.stat.swings++; save.stat.mineSwings[mineId] = (save.stat.mineSwings[mineId] || 0) + 1;
+  }
+  function statBroken() { TS.fix(save); save.stat.toolsBroken++; }
+  function statFreeze(kind) { TS.fix(save); save.stat.freeze[kind]++; }
+  function statVein() { TS.fix(save); save.stat.veinsEntered++; }
+  function statQuest() { TS.fix(save); save.stat.questsCompleted++; }
+  function touchLoginDay(k) {
+    if (!k) return false;
+    TS.fix(save);
+    if (save.stat.lastLoginDay === k) return false;
+    save.stat.lastLoginDay = k; save.stat.loginDays++; return true;
+  }
   let save = store.get(SAVE_KEY);
   let needStarter = false;
   if (!save || save.v !== 1) { save = newSave(); needStarter = true; }
@@ -265,6 +303,10 @@
   fixSenpai(save);
   fixBoss(save, "local");
   fixAds(save);
+  const titleFixedAtLoad = TS.fix(save);
+  titleStartupAdds = awardTitles(false);
+  if (needStarter) titleStartupAdds = [];
+  if (titleFixedAtLoad || titleStartupAdds.length) store.set(SAVE_KEY, save);
   delete save.upgrades;
   /* v0.10.3：存檔一律「立即寫入」。
      舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
@@ -272,6 +314,7 @@
      實測 16.8KB 的存檔寫一次只要 0.34ms，佔 350ms 的 0.1%，沒有效能理由要延遲。
      雲端上傳仍然保留 5 秒 debounce（那個是網路請求，不能每揮都打）。 */
   function persist() {
+    awardTitles();
     store.set(SAVE_KEY, save);
     cloudLater();
   }
@@ -398,6 +441,7 @@
     fixSenpai(save);
     fixBoss(save, "cloud");
     fixAds(save);
+    TS.fix(save); awardTitles();
     fixToolDur();
     storyFresh = false;
     store.set(SAVE_KEY, save);
@@ -701,6 +745,7 @@
     if (!k) return;   // 日期未知：不換日、不重置次數
     if (save.today.date !== k) save.today = { date: k, stats: {} };
     if (save.ads.date !== k) save.ads = { date: k, count: 0 };
+    if (touchLoginDay(k)) persist();
   }
   function mineStats(id) {
     return save.today.stats[id] || (save.today.stats[id] = { swings: 0, hits: 0, epic: 0, normalSwings: 0 });
@@ -785,9 +830,16 @@
   }
 
   /* ---------------- HUD ---------------- */
+  function hudMoney(v) {
+    const n = Math.max(0, Math.floor(Number(v) || 0));
+    if (n < 10000000) return fmt(v);
+    if (n < 100000000) return Math.floor(n / 10000).toLocaleString("en-US") + "萬";
+    return (Math.floor(n / 10000000) / 10).toFixed(1) + "億";
+  }
   function renderHud() {
     $("hudName").textContent = save.name || "玩家";
-    $("hudCoins").textContent = fmt(save.coins);
+    $("hudTitle").innerHTML = titleBadge(currentTitle());
+    $("hudCoins").textContent = hudMoney(save.coins);
     $("hudPlays").textContent = fmt(totalPlays());
     $("hudRuby").classList.remove("hidden");
     $("hudRubyN").textContent = fmt(RUBY_PREVIEW ? RUBY_MOCK : 0);
@@ -1212,6 +1264,7 @@
 
     if (!res.free) {
       ms.swings++;
+      statSwing(mine.id);
       const phase = res.stateBefore === "normal" ? "normal" : res.stateBefore === "bonus" ? "bonus" : "st";
       const g = ((R.map || {})[phase] || {})[res.cat];
       const name = Array.isArray(g) ? pickOne(g) : g;
@@ -1233,7 +1286,7 @@
         bigHtml = colored(name, oreColor(name)) + (qty > 1 ? colored(` ×${qty}`, config.theme.accent) : "");
       }
       tool.dur--;
-      if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); talk().broke = true; lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
+      if (tool.dur <= 0) { save.tools = save.tools.filter(t => t.uid !== tool.uid); statBroken(); talk().broke = true; lines.push(colored(config.texts.toolBreak + toolDef(tool.id).name, "#ff5555")); }
     }
 
     let tag = "", omen = 0, choices = null, skipBig = false;
@@ -1324,6 +1377,8 @@
       big.innerHTML = bigHtml; big.classList.remove("pop"); void big.offsetWidth; big.classList.add("pop");
     }
     $("sceneSub").textContent = "";
+    if (res.events.some(e => e.t === "freeze")) statFreeze("senpai");
+    if (res.events.some(e => e.t === "announce")) statVein();
     logRolls(res, ms.swings);
     renderMine();
     persist();
@@ -1426,6 +1481,7 @@
     const r = E.swing(rules, todaySetting(mine.id), st, Math.random, mine.tenjou);
     const ms = mineStats(mine.id);
     ms.swings++;
+    statSwing(mine.id);
     if (r.stateBefore !== "bonus") { ms.normalSwings++; if (r.cat === "epic") ms.epic++; if (r.cat === "legend") ms.legend = (ms.legend || 0) + 1; }
     const ev = t => r.events.find(e => e.t === t);
     if (ev("bonusStart")) { ms.hits++; veinGain = 0; veinRun = { swings: 0, types: {}, core: false }; }
@@ -1522,6 +1578,7 @@
     let broke = false;
     if (tool.dur <= 0) {
       save.tools = save.tools.filter(t => t.uid !== tool.uid);
+      statBroken();
       lines.push(colored(T.toolBreak + toolDef(tool.id).name, "#ff5555"));
       talk().broke = true;          // 佐佐木之後才知道「上一把用壞了」
       broke = true;
@@ -1537,6 +1594,7 @@
     if (cat.rarity >= 4 || ev("bonusStart") || ev("bonusChain")) {
       const sc = $("scene"); sc.classList.remove("shake"); void sc.offsetWidth; sc.classList.add("shake");
     }
+    if (ev("freeze")) statFreeze("normal");
     logRolls(r, ms.swings);
     renderMine();
     persist();
@@ -1759,14 +1817,58 @@
   /* 成就頁（v0.10.12）：目前放前輩信賴與珍貴回憶；挖礦紀錄類成就先保留位置，見 BACKLOG */
   /* 2026-10-03 擁有者：成就分書籤（目前「三位前輩的考驗」＋「其他 準備中」）。
      前輩信賴拿到 100 次回憶後改看下一個門檻（memories.next）；珍貴回憶每位三格（100／500／1000），500、1000 內容未寫只占位。 */
-  let achTab = "senpai";
+  let achTab = "senpai", titleFilter = "all";
   function renderAch() {
-    const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["other", "其他", "準備中"]];
+    const ownedN = ((save.titles || {}).owned || []).length;
+    const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["titles", "頭銜", `${ownedN}/${titleDefs().length}`], ["other", "其他", "準備中"]];
     $("achTabs").innerHTML = tabs.map(([id, n, sub]) =>
       `<button data-ach-tab="${id}" class="${id === achTab ? "on" : ""}${sub ? " dim" : ""}">${esc(n)}${sub ? ` <span class="sub">${sub}</span>` : ""}</button>`).join("");
     document.querySelectorAll("#recAch .ach-senpai").forEach(el => el.classList.toggle("hidden", achTab !== "senpai"));
     $("achOther").classList.toggle("hidden", achTab !== "other");
+    $("achTitles").classList.toggle("hidden", achTab !== "titles");
     if (achTab === "senpai") renderSenpaiBag();
+    if (achTab === "titles") renderTitles();
+  }
+  function renderTitles() {
+    const defs = titleDefs(), owned = new Set(save.titles.owned || []), cur = currentTitle();
+    $("titleCount").textContent = `已取得 ${owned.size}／${defs.length}`;
+    $("titlePreviewName").textContent = save.name || "玩家";
+    $("titlePreviewBadge").innerHTML = titleBadge(cur);
+    const chips = [["all", "全部"], ["0", "一般"], ["1", "珍貴"], ["2", "稀有"], ["3", "傳說"]];
+    $("titleChips").innerHTML = chips.map(([id, n]) => `<button data-title-filter="${id}" class="${id === titleFilter ? "on" : ""} ${id === "all" ? "" : "rw" + id}">${n}</button>`).join("");
+    const list = defs.filter(d => titleFilter === "all" || String(d.rarity) === titleFilter);
+    $("titleList").innerHTML = list.map(d => {
+      const has = owned.has(d.id), on = save.titles.equipped === d.id, hidden = !has && d.rarity === 3;
+      const p = TS.progress(d, titleContext()), cond = hidden ? "？？？" : esc(d.condition);
+      const pg = !has && !hidden ? `<div class="need pg">${esc(p.text)}</div>` : "";
+      const btn = on ? '<button class="px-btn on" disabled>使用中</button>' : has ? `<button class="px-btn" data-title-wear="${d.id}">使用</button>` : '<button class="px-btn" disabled>未取得</button>';
+      return `<div class="title-row ${has ? "" : "lock"} ${on ? "equipped" : ""}" data-title-id="${d.id}"><div class="grow">${titleBadge(d)}
+        <div class="need"><span class="rk rw${d.rarity}">${TITLE_RANK[d.rarity]}</span>${has ? "取得方式：" : "取得條件："}${cond}</div>${pg}</div>${btn}</div>`;
+    }).join("");
+  }
+  function wearTitle(id) {
+    if (!(save.titles.owned || []).includes(id) || !titleDef(id)) return;
+    save.titles.equipped = id; persist(true); renderHud(); if (currentScreen === "rec") renderAch(); if (currentScreen === "acct") renderAcct();
+  }
+  function clearTitle() {
+    save.titles.equipped = null; persist(true); renderHud(); if (currentScreen === "rec") renderAch(); if (currentScreen === "acct") renderAcct();
+  }
+  function showTitleDetail(id) {
+    const d = titleDef(id); if (!d) return;
+    const has = (save.titles.owned || []).includes(id), on = save.titles.equipped === id, hidden = !has && d.rarity === 3;
+    const p = TS.progress(d, titleContext()), cond = hidden ? "？？？" : esc(d.condition), prog = !has && !hidden ? `　<span>${esc(p.text)}</span>` : "";
+    const box = $("modalBox");
+    box.className = `modal-box title-modal r${d.rarity}`;
+    box.innerHTML = `<span class="rank">${TITLE_RANK[d.rarity]}</span>${titleBadge(d, true)}
+      <div class="detail"><span class="key">${has ? "取得方式" : "取得條件"}</span>${cond}${prog}</div>
+      <div class="detail"><span class="key">一句話</span>${esc(d.intro)}</div>
+      <div class="state">${has ? (on ? '<span style="color:var(--green)">已取得・使用中</span>' : '<span style="color:var(--green)">已取得</span>') : '<span class="sub">尚未取得</span>'}</div>
+      <div class="btns">${has && !on ? `<button class="px-btn on" data-title-wear="${d.id}">戴上</button>` : on ? '<button class="px-btn" disabled>使用中</button>' : ""}<button class="px-btn" id="titleModalClose">關閉</button></div>`;
+    $("modal").classList.remove("hidden");
+  }
+  function closeTitleDetail() {
+    $("modal").classList.add("hidden");
+    $("modalBox").className = "modal-box";
   }
   function renderSenpaiBag() {
     const S = save.senpai, need = memNeed(), gold = "#ffcc33";
@@ -1886,7 +1988,11 @@
   }
   /* 帳號（2026-10-03）：點頂部名字進來；名字＋雲端存檔／玩家 ID（原本放在地圖頁最下面） */
   let acctBack = "mine";
-  function renderAcct() { $("acctName").textContent = save.name || "玩家"; renderCloud(); }
+  function renderAcct() {
+    $("acctName").textContent = save.name || "玩家";
+    $("acctTitle").innerHTML = titleBadge(currentTitle()) || '<span class="sub">沒有戴頭銜</span>';
+    renderCloud();
+  }
 
   /* 探索保障（內部叫天井）：顯示的揮數必須跟引擎真正用的門檻一致
      第一種：engine.js 用 mine.tenjou 比 sinceHit → 到達後進入「礦脈前兆」，前兆結束才開礦脈
@@ -2880,6 +2986,7 @@
     // v2：委託酬勞＝基本售價 × 數量 × 交付倍率，不吃出售加價（與委託板顯示一致）
     const coins = Math.round(basePrice(l.name) * (v2() ? 1 : sellBonus(l.name, catDef(l.cat).rarity)) * need * B().deliverMul * 10) / 10;
     save.coins = Math.round((save.coins + coins) * 10) / 10; l.done = true;
+    statQuest();
     let pts = B().points[l.cat] || 1;
     const allDone = req.lines.every(x => x.done);
     if (allDone) pts += B().completeBonus;
@@ -3297,11 +3404,19 @@
     recTab = b.dataset.rec; renderRec(); $("scr-rec").scrollTop = 0;
   });
   $("hudName").addEventListener("click", () => { if (!window.Editor?.isPicking() && currentScreen !== "acct") { acctBack = currentScreen; go("acct"); } });
+  $("modal").addEventListener("click", e => { if (e.target === $("modal") && $("modalBox").classList.contains("title-modal")) closeTitleDetail(); });
   document.addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     const link = e.target.closest("[data-origin]"); if (link) { oreOrigin(link.dataset.origin); return; }
+    const titleRow = e.target.closest("[data-title-id]");
+    if (titleRow && !e.target.closest("button")) { showTitleDetail(titleRow.dataset.titleId); return; }
     const t = e.target.closest("button"); if (!t) return;
     const d = t.dataset;
+    if (t.id === "titleModalClose") { closeTitleDetail(); return; }
+    if (d.titleWear) { wearTitle(d.titleWear); if (!$("modal").classList.contains("hidden")) closeTitleDetail(); return; }
+    if (d.titleFilter) { titleFilter = d.titleFilter; renderTitles(); return; }
+    if (t.id === "titleClear") { clearTitle(); return; }
+    if (t.id === "acctTitlePick") { recTab = "ach"; achTab = "titles"; go("rec"); return; }
     if (t.id === "btnBoardReset") { askBoardReset(); return; }
     if (t.id === "acctRename") { askName(false); return; }
     if (d.dexMine) { dexMine = d.dexMine; renderDex(); return; }
@@ -3375,7 +3490,7 @@
     setConfig(c, keep) { config = normTools(c); if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
     resetConfig() { store.del(CFG_KEY); config = normTools(clone(window.DEFAULT_CONFIG)); renderAll(); },
     stdTools: () => stdTools().map(t => t.id),
-    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); fixToolDur(); storyFresh = false; persist(true); adLeftover(); renderAll(); },
+    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); TS.fix(save); fixToolDur(); storyFresh = false; persist(true); adLeftover(); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
     setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
@@ -3471,6 +3586,8 @@
   glassState();   // 一開遊戲就檢查／清除舊版觀測鏡的紀錄（不必等玩家打開觀測畫面）
   adLeftover();   // 上次關頁／當機留下的待完成廣告 → 取消（Q2＝A）
   renderAll();
+  titleBooting = false;
+  if (titleStartupAdds.length) setTimeout(() => toast(`補發 ${titleStartupAdds.length} 個已達成頭銜`), 500);
   renderClockTag();
   if (!todayKey()) showClockMsg();   // 還沒拿到台灣日期：先顯示確認中（被開場動畫蓋住；失敗時動畫收起後看得到重試）
   splashRun();
