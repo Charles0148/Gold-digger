@@ -237,7 +237,9 @@
     if (!ok() || !sess) return { mail: [], claimed: {} };
     return await withAuth(async () => {
       const [mail, claims] = await Promise.all([
-        jfetch("/rest/v1/mail?select=*&order=id.desc&limit=50", { headers: head(true) }),
+        /* 只拿全體信與寄給自己的信：管理員的 "admin writes" 政策（docs/06）讓管理員也讀得到寄給別人的信，
+           不過濾的話開發者帳號會看到別人的信、按領取被資料庫擋下又被當成「已過期」 */
+        jfetch("/rest/v1/mail?select=*&or=(to_user.is.null,to_user.eq." + encodeURIComponent(sess.user.id) + ")&order=id.desc&limit=50", { headers: head(true) }),
         jfetch("/rest/v1/mail_claims?select=mail_id&user_id=eq." + encodeURIComponent(sess.user.id), { headers: head(true) })
       ]);
       const claimed = {};
