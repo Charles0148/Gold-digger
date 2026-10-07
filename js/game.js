@@ -1481,36 +1481,42 @@
     sc.appendChild(el);
   }
   // 一輪結束的結算畫面
-  function showRunSummary(e, mine) {
-    const mult = mine.mult || 1, box = $("modalBox");
-    box.innerHTML = `<div class="boss-name">結算</div>
-      <div style="margin:10px 0;line-height:1.9;text-align:left">
-        通關關數　<b>${e.cleared || 0}</b> 關<br>
-        單次最多可挖　<b>${e.maxBonus || 0}</b> 次<br>
-        本輪總收穫　<b style="color:${config.theme.accent}">$${money((e.gain || 0) * mult)}</b><br>
-        ${e.upper ? '<span style="color:#ffcc33">※ 這一輪獲得過最終認可</span><br>' : ""}
-        <span class="sub">最後倒在 ${bossName2(e.boss)} 手上</span>
-      </div>
+  /* 結算畫面（2026-10-07 擁有者：六座礦坑同一個框、同一種排版；用詞與 Codex 討論後定案：「這趟」、「第 N 次認可」、「前輩的心意」）
+     rows：[標籤, 值HTML]；note：黃字備註；tail：最後一行（前輩台用） */
+  const SENPAI_COLOR = { a: "#8fd694", b: "#ff9466", c: "#a9bcdf" };   // 岩倉＝植物嫩綠、赤井＝暖紅橙、霧島＝冷霧藍
+  function showSummary(mineName, rows, note, tail) {
+    const box = $("modalBox");
+    box.className = "px-box modal-box sum-modal";
+    box.innerHTML = `<i class="sum-corner tl"></i><i class="sum-corner tr"></i><i class="sum-corner bl"></i><i class="sum-corner br"></i>
+      <div class="sum-title">結算</div>
+      <div class="sum-mine">${esc(mineName)}</div>
+      <div class="sum-rows">${rows.map(([k, v]) => `<div class="sum-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("")}</div>
+      ${note ? `<div class="sum-note">※ ${note}</div>` : ""}
+      ${tail ? `<div class="sum-tail">${tail}</div>` : ""}
       <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
     $("modal").classList.remove("hidden");
-    $("sumOk").onclick = () => $("modal").classList.add("hidden");
+    $("sumOk").onclick = () => { $("modal").classList.add("hidden"); box.className = "px-box modal-box"; };
   }
-  // 第一台：一趟礦脈結束的結算畫面（樣式同三位前輩台）
+  const sumGain = v => `<b class="sum-gain">$${money(v)}</b>`;
+  // 三位前輩的考驗：一輪結束
+  function showRunSummary(e, mine) {
+    const nm = `<b style="color:${SENPAI_COLOR[e.boss] || "#e8e8e8"}">${esc(bossName2(e.boss))}</b>`;
+    showSummary(mine.name, [
+      ["前輩認可", e.cleared ? `第 ${e.cleared} 次認可` : "還沒有獲得認可"],
+      ["最多心意", `前輩的心意 ${e.maxBonus || 0}`],
+      ["這趟總收穫", sumGain((e.gain || 0) * (mine.mult || 1))]
+    ], e.upper ? "這趟獲得過最終認可" : "", `最後倒在${nm}手上`);
+  }
+  // 一般礦坑：一趟礦脈結束
   function showVeinSummary(e, run, mineName) {
-    const gain = run ? run.gain : 0;
-    const box = $("modalBox"), types = (run && run.types) || {};
+    const types = (run && run.types) || {};
     const kinds = ["SBB", "BB", "RB"].filter(t => types[t]).map(t => colored(`${veinName(t)}×${types[t]}`, TYPE_COLOR[t])).join("・");
-    box.innerHTML = `<div class="boss-name">結算</div>
-      <div style="margin:10px 0;line-height:1.9;text-align:left">
-        共 <b>${e.chain || 1}</b> 脈${kinds ? `<br><span class="sub">${kinds}</span>` : ""}<br>
-        ${run ? `礦脈中揮了　<b>${fmt(run.swings)}</b> 揮<br>` : ""}
-        這趟總收穫　<b style="color:${config.theme.accent}">$${money(gain)}</b><br>
-        ${run && run.core ? '<span style="color:#ffcc33">※ 這一趟礦脈進入過核心層</span><br>' : ""}
-        <span class="sub">${esc(mineName)}</span>
-      </div>
-      <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
-    $("modal").classList.remove("hidden");
-    $("sumOk").onclick = () => $("modal").classList.add("hidden");
+    showSummary(mineName, [
+      ["礦脈數", `${e.chain || 1} 脈`],
+      ...(kinds ? [["礦脈種類", kinds]] : []),
+      ...(run ? [["礦脈中揮礦", `${fmt(run.swings)} 揮`]] : []),
+      ["這趟總收穫", sumGain(run ? run.gain : 0)]
+    ], run && run.core ? "這趟進入過核心層" : "");
   }
   function setChoices(list) {
     const box = $("tbChoice");
