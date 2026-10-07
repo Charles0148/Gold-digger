@@ -45,7 +45,7 @@
     ({ layout: tabLayout, theme: tabTheme, images: tabImages, texts: tabTexts, numbers: tabNumbers, m2: tabM2, sim: tabSim, data: tabData })[tab](body);
   }
 
-  const screenJump = () => `<div class="ed-flex">切換畫面：${[["mine", "挖礦"], ["bag", "背包"], ["map", "地圖"], ["dex", "圖鑑"], ["shop", "工坊"]].map(([k, n]) => `<button class="ed-btn" data-jump="${k}">${n}</button>`).join("")}</div>`;
+  const screenJump = () => `<div class="ed-flex">切換畫面：${[["mine", "挖礦"], ["bag", "背包"], ["map", "地圖"], ["dex", "圖鑑"], ["shop", "老闆"]].map(([k, n]) => `<button class="ed-btn" data-jump="${k}">${n}</button>`).join("")}</div>`;
   function bindJump(body) { body.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { G.go(b.dataset.jump); if (selected) select(null); }); }
 
   /* ================= 版面 ================= */
@@ -219,15 +219,13 @@
       ${draft.machine2.bosses.map((b, i) => `<div class="ed-row"><label>前輩${i + 1}</label><input type="text" data-p="machine2.bosses.${i}.name" value="${esc(b.name)}"></div>`).join("")}
       <div class="ed-row"><label>找你談話(多句)</label><textarea rows="3" data-p="machine2.lines.call" data-lines>${esc((draft.machine2.lines.call || []).join("\n"))}</textarea></div>
       <div class="ed-row"><label>約會對話(一行一句)</label><textarea rows="3" data-p="machine2.lines.dateStep" data-lines>${esc((draft.machine2.lines.dateStep || []).join("\n"))}</textarea></div>
-      ${Object.keys(draft.machine2.lines).filter(k => !["call", "dateStep"].includes(k)).map(k => `<div class="ed-row"><label>${{ dateWin: "約會成功", dateLose: "約會失敗", atStart: "進入報酬", stIntro: "挑戰開始", stAppear: "對手出現", stPass: "通關", stLose: "失敗", reward: "一轉定勝負", pick: "選擇告知", drill: "鑽頭選項", shovel: "鏟子選項", digTap: "挖掘提示", announce: "告知轉數", upperStart: "進入上位", askBoss: "選擇前輩", bonusEnd: "BONUS結束" }[k] || k}</label><input type="text" data-p="machine2.lines.${k}" value="${esc(draft.machine2.lines[k])}"></div>`).join("")}
+      ${Object.keys(draft.machine2.lines).filter(k => !["call", "dateStep"].includes(k) && typeof draft.machine2.lines[k] === "string").map(k => `<div class="ed-row"><label>${{ dateWin: "約會成功", dateLose: "約會失敗", atStart: "進入報酬", stIntro: "挑戰開始", stAppear: "對手出現", stPass: "通關", stLose: "失敗", reward: "一轉定勝負", pick: "選擇告知", drill: "鑽頭選項", shovel: "鏟子選項", digTap: "挖掘提示", announce: "告知轉數", upperStart: "進入上位", askBoss: "選擇前輩", bonusEnd: "BONUS結束", alsoWants: "也想找你（提示）", goldGift: "有人說好話（提示）" }[k] || k}</label><input type="text" data-p="machine2.lines.${k}" value="${esc(draft.machine2.lines[k])}"></div>`).join("")}
       <div class="ed-sec">礦坑老闆</div>
       <div class="ed-row"><label>名字</label><input type="text" data-p="boss.name" value="${esc(draft.boss.name)}"></div>
       <div class="ed-row"><label>打招呼(多句)</label><textarea rows="3" data-p="boss.lines.greet" data-lines>${draft.boss.lines.greet.join("\n")}</textarea></div>
       ${Object.keys(draft.boss.lines).filter(k => k !== "greet").map(k => `<div class="ed-row"><label>${{ board: "委託板", noEnough: "數量不夠", deliver: "交付", allDone: "全部完成", sell: "收購", buy: "買鎬子", boons: "恩惠", noBoon: "沒有恩惠", levelUp: "升級給恩惠", ad: "補給", bye: "離開" }[k] || k}</label><input type="text" data-p="boss.lines.${k}" value="${esc(draft.boss.lines[k])}"></div>`).join("")}
       <div class="ed-sec">恩惠 v2 名稱（四種各 5 階）</div>
-      ${Object.keys(((draft.boss.boonsV2 || {}).kinds) || {}).map(k => `<div class="ed-row"><label>${k}</label><input type="text" data-p="boss.boonsV2.kinds.${k}.name" value="${esc(draft.boss.boonsV2.kinds[k].name)}"></div>`).join("")}
-      <div class="ed-sec">舊版恩惠名稱（v2 開啟時不使用）</div>
-      ${Object.keys(draft.boss.boons).map(k => `<div class="ed-row"><label>${["普通", "藍", "紫", "金"][draft.boss.boons[k].r]}</label><input type="text" data-p="boss.boons.${k}.name" value="${esc(draft.boss.boons[k].name)}"></div>`).join("")}`;
+      ${Object.keys(((draft.boss.boonsV2 || {}).kinds) || {}).map(k => `<div class="ed-row"><label>${{ autoSpeed: "自動挖掘速度", sell: "礦石出售加價", toolCut: "鎬子購買折扣", toolDur: "新鎬子耐久" }[k] || k}</label><input type="text" data-p="boss.boonsV2.kinds.${k}.name" value="${esc(draft.boss.boonsV2.kinds[k].name)}"></div>`).join("")}`;
     bindP(body);
     body.querySelectorAll("[data-csv]").forEach(inp => inp.onchange = inp.oninput = () => {
       setPath(draft, inp.dataset.p, inp.value.split(/[、,，]/).map(s => s.trim()).filter(Boolean)); commit();
@@ -262,16 +260,29 @@
     boardLines: "每張委託項數", boardResets: "每日委託板重置次數", catWeights: "委託礦石稀有度權重", qty: "需求數量(最少,最多)", points: "恩惠點數",
     completeBonus: "全部完成加點", veinChance: "要求脈晶機率", deliverMul: "交付金額倍率", levelNeed: "升級所需點數", step: "每段增加", every: "每幾級一段",
     boonRarity: "舊版恩惠稀有度權重(普通/藍/紫/金)", r: "稀有度(0普通~3金)", v: "效果數值", underMul: "低階工具額外折扣",
-    boonsV2: "恩惠 v2（四種各幾階）", kinds: "四種恩惠", offer: "每級候選數"
+    boonsV2: "恩惠 v2（四種各幾階）", kinds: "四種恩惠", offer: "每級候選數",
+    freeze: "地底凍結", adSupplyQty: "每次補給數量", tenjou: "天井（轉）", minTaps: "鏟子最少點幾下", hintRate: "心情暗示出現率",
+    hot: "激熱", win: "會成功時", lose: "不會成功時", need: "珍貴回憶所需次數", lv: "需要恩惠等級",
+    shortReturnSec: "剛離開又回來（秒）", longAwayHours: "很久沒來（小時）", lowToolRatio: "鎬子快用完（比例）", heavyBag: "背包很滿（件數）", chatChance: "閒聊機率"
   };
+  /* 同名鍵在不同區塊意思不同（LABEL 物件同名會互相覆蓋）：用路徑結尾指定 */
+  const PLABEL = {
+    "rules.bonusTable": "⑧ AT 中的小役機率", "machine2.bonusTable": "BONUS的小役", "date.steps": "談話長度(最短,最長)",
+    "hints.rate": "確定後每揮出現率", "call.rate": "各累積數的機率", "freeze.rate": "發生機率", "freeze.stock": "凍結後送的礦脈數",
+    "cont.low": "第1～4隻", "reward.low": "無（最低）"
+  };
+  const plab = p => { const k = Object.keys(PLABEL).find(x => p === x || p.endsWith("." + x)); return k && PLABEL[k]; };
+  /* 已不影響遊戲的設定：不列在數值頁（舊版恩惠＝恩惠 v2 正式開啟後不用；期待度的連續演出欄位引擎沒在讀） */
+  const NUM_HIDE = new Set(["boss.boons", "boss.boonRarity", "rules.omen.chanceLow", "rules.omen.chanceHigh", "rules.omen.highP", "rules.omen.chanceWin", "machine2.prices"]);
   const BV2K = () => ((draft.boss.boonsV2 || {}).kinds) || {};
-  const lab = (k, parent) => (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "kinds" && BV2K()[k]) ? BV2K()[k].name : (BV2K()[parent] && k === "step") ? "每階效果(0.04=4%)" : (BV2K()[parent] && k === "max") ? "最多幾階" : (parent === "boons" && draft.boss.boons[k] ? draft.boss.boons[k].name : (LABEL[k] || k));
+  const lab = (k, parent, p) => (p && plab(p)) || (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "kinds" && BV2K()[k]) ? BV2K()[k].name : (BV2K()[parent] && k === "step") ? "每階效果(0.04=4%)" : (BV2K()[parent] && k === "max") ? "最多幾階" : (LABEL[k] || k);
   function numTree(obj, path, parent, depth) {
     let html = "";
     for (const k of Object.keys(obj)) {
       const v = obj[k], p = path ? path + "." + k : k;
+      if (NUM_HIDE.has(p)) continue;
       if (typeof v === "number") {
-        html += `<div class="ed-row"><label>${lab(k, parent)}</label><input type="number" step="any" data-n="${p}" value="${v}"></div>`;
+        html += `<div class="ed-row"><label>${lab(k, parent, p)}</label><input type="number" step="any" data-n="${p}" value="${v}"></div>`;
       } else if (Array.isArray(v) && v.every(x => typeof x === "number")) {
         const head = parent === "hints" || k === "lenWeights" || parent === "weights" || parent === "omen"
           ? (k === "lenWeights" ? v.map((_, i) => (obj === draft.rules.gold ? i + 1 : i + 2) + "揮") : parent === "omen" ? draft.rules.omen.names : draft.rules.hints.ids)
@@ -279,15 +290,15 @@
           : (parent === "chance" && k.startsWith("color")) ? draft.rules.omen.names
           : parent === "qty" ? ["最少", "最多"] : k === "boonRarity" ? ["普通", "藍", "紫", "金"]
           : v.map((_, i) => "設定" + (i + 1));
-        html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>
+        html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent, p)}</div><div class="ed-scroll"><table class="ed-table"><tr>${head.map(h => `<th>${h}</th>`).join("")}</tr>
           <tr>${v.map((x, i) => `<td><input type="number" step="any" data-n="${p}.${i}" value="${x}"></td>`).join("")}</tr></table></div>`;
       } else if (v && typeof v === "object" && !Array.isArray(v)) {
         const vals = Object.values(v);
         if (vals.length && vals.every(x => typeof x === "number") && Object.keys(v).every(x => ["RB", "BB", "SBB"].includes(x))) {
-          html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent)}</div><div class="ed-scroll"><table class="ed-table"><tr>${Object.keys(v).map(h => `<th>${h}</th>`).join("")}</tr>
+          html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent, p)}</div><div class="ed-scroll"><table class="ed-table"><tr>${Object.keys(v).map(h => `<th>${h}</th>`).join("")}</tr>
             <tr>${Object.keys(v).map(h => `<td><input type="number" step="any" data-n="${p}.${h}" value="${v[h]}"></td>`).join("")}</tr></table></div>`;
         } else {
-          html += depth === 0 ? `<div class="ed-sec">${lab(k, parent)}</div>` : `<div class="ed-note" style="margin:8px 0 2px;color:#ccc">▸ ${lab(k, parent)}</div>`;
+          html += depth === 0 ? `<div class="ed-sec">${lab(k, parent, p)}</div>` : `<div class="ed-note" style="margin:8px 0 2px;color:#ccc">▸ ${lab(k, parent, p)}</div>`;
           html += numTree(v, p, k, depth + 1);
         }
       }
@@ -307,7 +318,7 @@
       ${Object.keys(draft.machine2.prices).map(k => `<div class="ed-row"><label>${k}</label><input type="number" step="any" data-n="machine2.prices.${k}" value="${draft.machine2.prices[k]}"></div>`).join("")}
       <div class="ed-sec">礦坑老闆（委託／恩惠）</div>
       <div class="ed-note">升級所需 = 基本 + 每段增加 × floor(等級 ÷ 每幾級一段)。恩惠「效果數值」0.05 = 5%。</div>
-      <div class="ed-row"><label>恩惠 v2 狀態</label><span class="ed-note" style="margin:0">${G.boonsV2 && G.boonsV2.on ? "開啟中（本機隔離預覽）" : "關閉"}｜這裡不能切換：只看程式內建值，或 localhost＋?sandbox=名稱&boonsv2=1。正式開啟前須完成 RELEASE_GATE。</span></div>
+      <div class="ed-row"><label>恩惠 v2 狀態</label><span class="ed-note" style="margin:0">${G.boonsV2 && G.boonsV2.on ? "已正式開啟" : "關閉"}｜這裡不能切換。舊版恩惠的設定已不使用，不再列出。</span></div>
       <div class="ed-row"><label>滿階後送鎬子</label><input type="checkbox" data-bool="boss.boonsV2.maxedReward" ${(draft.boss.boonsV2 || {}).maxedReward !== false ? "checked" : ""}></div>
       ${numTree(draft.boss, "boss", "", 1)}
       <div class="ed-sec">小役售價（第1層基準）：平常 ／ 礦脈中</div>
@@ -316,7 +327,7 @@
         ${draft.tools.map((t, i) => STD(t) ? `<tr><th>${t.name}</th><td><input type="number" data-n="tools.${i}.durability" value="${t.durability}"></td><td><input type="number" data-n="tools.${i}.price" value="${t.price}"></td></tr>` : "").join("")}</table></div>
       ${field("低階工具額外折扣", "toolPenalty.underMul")}
       <div class="ed-sec">副本（礦坑）</div><div class="ed-scroll"><table class="ed-table"><tr><th>副本</th><th>天井</th><th>售價倍率</th><th>解鎖費用</th></tr>
-        ${draft.mines.map((m, i) => `<tr><th>${m.name}</th><td><input type="number" data-n="mines.${i}.tenjou" value="${m.tenjou}"></td><td><input type="number" step="any" data-n="mines.${i}.mult" value="${m.mult}"></td><td><input type="number" data-n="mines.${i}.unlock" value="${m.unlock}"></td></tr>`).join("")}</table></div>`;
+        ${draft.mines.map((m, i) => `<tr><th>${m.name}</th><td><input type="number" data-n="${m.engine === 2 ? "machine2.tenjou" : `mines.${i}.tenjou`}" value="${m.engine === 2 ? draft.machine2.tenjou : m.tenjou}"></td><td><input type="number" step="any" data-n="mines.${i}.mult" value="${m.mult}"></td><td><input type="number" data-n="mines.${i}.unlock" value="${m.unlock}"></td></tr>`).join("")}</table></div>`;
     body.querySelectorAll("[data-n]").forEach(inp => inp.onchange = () => {
       if (inp.value === "" || isNaN(+inp.value)) { inp.value = getPath(draft, inp.dataset.n); return; }
       setPath(draft, inp.dataset.n, +inp.value); commit();
@@ -332,7 +343,7 @@
     const KEYS = [["call", "找你談話"], ["again", "又是你（上次被他拒絕）"], ["chat", "談話・一般（白藍黃）"], ["up", "談話・升溫（綠）"], ["hot", "談話・確信（紅）"], ["win", "約會成功"], ["lose", "約會失敗"], ["appear", "ST 出場"], ["pass", "ST 通關"], ["fail", "ST 失敗"]];
     const SKEYS = [["depart", "出發"], ["during", "現場"], ["win", "成功"], ["lose", "失敗"]];
     body.innerHTML = `
-      <div class="ed-note">每個欄位一行一句，遊戲會隨機挑一句。談話每一轉會抽一個信賴度顏色：白／藍／黃用「一般」、綠用「升溫」、紅用「確信」的句子。紅色出現越多次＝越容易過關。談話長度 5～15 轉，抽到 1～2 轉或 16～20 轉就是違和感（確定過關）。</div>
+      <div class="ed-note">每個欄位一行一句，遊戲會隨機挑一句。談話每一轉會抽一個信賴度顏色：白／藍／黃用「一般」、綠用「升溫」、紅用「確信」的句子。紅色出現越多次＝越容易過關。談話長度 ${M.date.steps[0]}～${M.date.steps[1]} 轉，抽到 ${M.date.shortLen[0]}～${M.date.shortLen[1]} 轉或 ${M.date.longLen[0]}～${M.date.longLen[1]} 轉就是違和感（確定過關）。</div>
       ${M.bosses.map((b, i) => `
         <div class="ed-sec">${b.name}（${["甲・通關高", "乙・中", "丙・低"][i]}）</div>
         <div class="ed-row"><label>名字</label><input type="text" data-p="machine2.bosses.${i}.name" value="${esc(b.name)}"></div>
@@ -395,7 +406,7 @@
     body.innerHTML = `
       <div class="ed-note">使用「目前的設定數值」跑模擬（和遊戲同一套引擎）。<br>
       初當 = 平均幾揮（不含AT中）當選一次 AT；機械割 = 挖到的價值 ÷ 工具花費（100% 以上玩家賺）；平均連 = 每次初當連了幾隻。</div>
-      <div class="ed-row"><label>副本</label><select id="simMine">${draft.mines.map((m, i) => `<option value="${i}">${m.name}（天井${m.tenjou}）</option>`).join("")}</select></div>
+      <div class="ed-row"><label>副本</label><select id="simMine">${draft.mines.map((m, i) => m.engine === 2 ? "" : `<option value="${i}">${m.name}（天井${m.tenjou}）</option>`).join("")}</select></div>
       <div class="ed-row"><label>每個設定揮幾次</label><select id="simN"><option>100000</option><option selected>500000</option><option>2000000</option></select></div>
       <button class="ed-btn primary" id="simGo">開始模擬（設定1～6）</button>
       <div id="simOut" style="margin-top:10px"></div>`;

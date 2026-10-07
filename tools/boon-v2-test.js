@@ -29,7 +29,7 @@ ok(K.sell.step === 0.02 && K.sell.max === 5, "出售 2%×5");
 ok(K.toolCut.step === 0.01 && K.toolCut.max === 5, "折扣 1%×5");
 ok(K.toolDur.step === 0.02 && K.toolDur.max === 5, "耐久 2%×5");
 ok(BV.cap(C) === 20, "總共 20 階");
-ok(C.boss.boonsV2.enabled === false, "預設 enabled=false（正式網址維持舊恩惠）");
+ok(C.boss.boonsV2.enabled === true, "恩惠 v2 已正式開啟（enabled=true）");
 ok(K.toolCut.name === "鎬子購買折扣" && K.toolDur.name === "新鎬子耐久", "玩家用語：鎬子購買折扣／新鎬子耐久");
 
 /* ---------- 2. 逐階效果與取整 ---------- */
