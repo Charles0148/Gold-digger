@@ -1820,7 +1820,7 @@
   }
   /* 前輩信賴＋珍貴回憶（收藏品，不是礦石：不進 save.ores、不能賣、不算圖鑑） */
   /* 成就頁（v0.10.12）：目前放前輩信賴與珍貴回憶；挖礦紀錄類成就先保留位置，見 BACKLOG */
-  /* 2026-10-03 擁有者：成就分書籤（目前「三位前輩的考驗」＋「其他 準備中」）。
+  /* 2026-10-03 擁有者：成就分書籤（三位前輩的考驗／頭銜；2026-10-07 拿掉「其他 準備中」）。
      前輩信賴拿到 100 次回憶後改看下一個門檻（memories.next）；珍貴回憶每位三格（100／500／1000），500、1000 內容未寫只占位。 */
   let achTab = "senpai", titleFilter = "all";
   /* 頭銜入口模式（v1.02.01）：view＝紀錄頁的純圖鑑（不能戴上／取消）；acct＝從「帳號→換頭銜」進來才可更換。
@@ -1829,11 +1829,10 @@
   const canEditTitle = () => titleMode === "acct" && currentScreen === "rec";
   function renderAch() {
     const ownedN = ((save.titles || {}).owned || []).length;
-    const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["titles", "頭銜", `${ownedN}/${titleDefs().length}`], ["other", "其他", "準備中"]];
+    const tabs = [["senpai", (config.mines.find(m => m.engine === 2) || {}).name || "前輩", ""], ["titles", "頭銜", `${ownedN}/${titleDefs().length}`]];
     $("achTabs").innerHTML = tabs.map(([id, n, sub]) =>
       `<button data-ach-tab="${id}" class="${id === achTab ? "on" : ""}${sub ? " dim" : ""}">${esc(n)}${sub ? ` <span class="sub">${sub}</span>` : ""}</button>`).join("");
     document.querySelectorAll("#recAch .ach-senpai").forEach(el => el.classList.toggle("hidden", achTab !== "senpai"));
-    $("achOther").classList.toggle("hidden", achTab !== "other");
     $("achTitles").classList.toggle("hidden", achTab !== "titles");
     if (achTab === "senpai") renderSenpaiBag();
     if (achTab === "titles") renderTitles();
@@ -1912,7 +1911,7 @@
     const S = save.senpai, need = memNeed(), gold = "#ffcc33";
     const tiers = [need].concat((MEM().next || []).filter(n => n > need));
     const bosses = (M2().bosses || []).filter(b => memDef(b.id));
-    $("bagSenpaiSince").textContent = S.since ? `自 v${S.since} 開始記錄` : "自此版本開始記錄";
+    $("bagSenpaiSince").textContent = "自這項紀錄推出後開始累計";
     $("bagSenpai").innerHTML = bosses.map(b => {
       const w = S.wins[b.id] || 0, got = S.memories[b.id];
       const target = got ? (tiers[1] || need) : need;   // 拿到 100 → 看 500；500 回憶還沒寫，到了就停在 500／500「準備中」
@@ -2308,7 +2307,7 @@
     if (mailExpired(m)) { toast("這封信已過期"); openMail(); return; }
     btn.disabled = true;
     const r = MAIL_TEST ? mailTestClaim(id) : await Cloud.claim(id);
-    if (!r.ok) { btn.disabled = false; toast(r.err || "領取失敗"); if (r.expired) { m._expired = true; openMail(); } return; }   // 伺服器判定過期（docs/18）：畫面也改成過期、不再顯示領取鈕
+    if (!r.ok) { btn.disabled = false; toast(r.err || "領取失敗"); if (r.expired) { m._expired = true; renderMailBadge(); openMail(); } return; }   // 伺服器判定過期（docs/18）：畫面也改成過期、不再顯示領取鈕
     mailCache.claimed[id] = true;
     if (m.coins) save.coins += m.coins;
     if (m.ore_name && m.ore_qty) save.ores[m.ore_name] = (save.ores[m.ore_name] || 0) + m.ore_qty;
