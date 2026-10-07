@@ -130,6 +130,19 @@
     try { if (sess) await jfetch("/auth/v1/logout", { method: "POST", headers: head(true) }); } catch (e) {}
     saveSess(null); adminFlag = null; playerIdCache = null; playerProfileCache = null; setStatus("out");
   }
+  /* 刪除帳號（2026-10-08，docs/22）：先用密碼重新登入確認是本人，再呼叫 delete_my_account。
+     成功後清掉本機登入狀態；遊戲進度由 game.js 清。密碼錯不會把狀態留在「同步失敗」。 */
+  async function deleteAccount(password) {
+    if (!ok()) return { ok: false, err: "雲端未設定" };
+    const email = sess && sess.user && sess.user.email;
+    if (!email) return { ok: false, err: "未登入" };
+    const r = await signIn(email, password);
+    if (!r.ok) { setStatus("in"); return { ok: false, err: r.err === "Email 或密碼不對" ? "密碼不對" : r.err }; }
+    const d = await rpc("delete_my_account");
+    if (!d.ok) return { ok: false, err: d.err };
+    saveSess(null); adminFlag = null; playerIdCache = null; playerProfileCache = null; setStatus("out");
+    return { ok: true };
+  }
 
   /* ---------- 存檔 ---------- */
   async function pull() {
@@ -415,8 +428,35 @@
     return r.ok ? { ok: true, msg: r.data } : r;
   }
 
+  /* ---------- 錯誤回報（2026-10-08，docs/22） ----------
+     攔截沒被接住的錯誤，送到 report_client_error（未登入也能送，登入時伺服器記帳號）。
+     每次開遊戲最多送 5 筆、同樣訊息只送一次；不是自家程式的錯誤（瀏覽器外掛、跨網域的 "Script error."）不送。
+     回報本身任何失敗都安靜吞掉，不能因為回報又產生錯誤。sandbox 不連網，什麼都不送。 */
+  const reported = new Set();
+  function reportError(msg, src, stack) {
+    msg = String(msg || "").slice(0, 300);
+    if (!ok() || !msg || reported.has(msg) || reported.size >= 5) return;
+    if (/^script error\.?$/i.test(msg) || /ResizeObserver loop/i.test(msg)) return;
+    reported.add(msg);
+    const args = { p_ver: String(window.GAME_VERSION || ""), p_msg: msg, p_src: src || null,
+                   p_stack: stack ? String(stack).slice(0, 2000) : null, p_ua: navigator.userAgent.slice(0, 200) };
+    (sess ? rpc("report_client_error", args)
+          : jfetch("/rest/v1/rpc/report_client_error", { method: "POST", headers: head(false), body: JSON.stringify(args) })
+    ).catch(() => {});
+  }
+  window.addEventListener("error", e => {
+    if (e.filename && e.filename.indexOf(location.origin) !== 0) return;
+    reportError(e.message, e.filename ? e.filename.replace(location.origin, "") + ":" + e.lineno + ":" + e.colno : null,
+                e.error && e.error.stack);
+  });
+  window.addEventListener("unhandledrejection", e => {
+    const r = e.reason;
+    reportError(r && r.message ? r.message : String(r), null, r && r.stack);
+  });
+
   window.Cloud = {
     enabled: ok,
+    deleteAccount,
     gameClock, claimMilestone, claimLifetime,
     isAdmin, mailbox, claim,
     myPlayerId, myPlayerProfile, adminChangePlayerId, adminGetPlayer, adminSetIdStyle,

@@ -340,7 +340,9 @@
      結果只要自動還在跑，存檔就永遠不會落地 → 中途關網頁／當機，整段自動揮全部回滾重抽。
      實測 16.8KB 的存檔寫一次只要 0.34ms，佔 350ms 的 0.1%，沒有效能理由要延遲。
      雲端上傳仍然保留 5 秒 debounce（那個是網路請求，不能每揮都打）。 */
+  let wiping = false;   // 刪除帳號後設成 true（wipeLocal）；宣告放在 persist 前面，避免開機時就用到
   function persist() {
+    if (wiping) return;   // 刪除帳號後：不要把清掉的進度寫回來
     awardTitles();
     store.set(SAVE_KEY, save);
     cloudLater();
@@ -2141,13 +2143,15 @@
                <button class="px-btn small" id="cldOut">登出</button>`
             : `<button class="px-btn small" id="cldIn">登入</button>
                <button class="px-btn small" id="cldReg">註冊新帳號</button>`}
-      </div>`;
+      </div>
+      ${u ? `<div class="btns" style="margin-top:14px"><button class="px-btn small" id="cldDel" style="color:var(--red)">刪除帳號</button></div>` : ""}`;
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
     on("cldOut", async () => { await Cloud.signOut(); cloudBlocked = null; mailLoaded = false; pidReset(null); adminSeen = false; loadMail(true); renderCloud(); toast("已登出雲端"); });
     on("cldPush", async () => { const r = await cloudPush(); if (r && r.blocked) return showBlocked(); toast(r && r.ok ? "已上傳雲端" : "上傳失敗"); });
     on("cldPull", cloudPullAsk);
+    on("cldDel", askDeleteAccount);
     on("pidCopy", () => copyText(playerId, "已複製玩家 ID " + playerId));
     on("pidRetry", () => loadPlayerId(true, true));
     if (u && pid.st === "idle") loadPlayerId();   // 只有「這個帳號還沒問過」才自動問；失敗後不會因為重畫而再打
@@ -2234,6 +2238,45 @@
       $("modal").classList.add("hidden");
       renderCloud();
       afterLogin();
+    };
+  }
+
+  /* 刪除帳號（2026-10-08，擁有者定案：重新輸入密碼確認；雲端＋這台裝置的進度全部清空、從頭開始）。
+     伺服器端見 docs/22（delete_my_account）。成功後清掉所有 mine_ 開頭的本機資料（sandbox 只清自己那份），
+     wiping 期間 persist 不再寫回，最後重新整理頁面。 */
+  function wipeLocal() {
+    wiping = true;
+    try {
+      Object.keys(localStorage).forEach(k => {
+        if (k.indexOf("mine_") !== 0) return;
+        if (SB ? k.slice(-SB.length) === SB : k.indexOf("__sandbox_") < 0) localStorage.removeItem(k);
+      });
+    } catch (e) {}
+  }
+  function askDeleteAccount() {
+    const box = $("modalBox");
+    box.innerHTML = `<div>刪除帳號</div>
+      <div class="sub" style="margin-top:6px">刪除後，下面這些會全部消失，<b style="color:var(--red)">無法復原</b>：</div>
+      <div class="sub">・雲端存檔，以及這台裝置上的遊戲進度<br>・玩家 ID、信箱裡的信與領取紀錄<br>・頭銜、外觀與紅晶</div>
+      <div class="sub" style="margin-top:6px">刪除後遊戲會從頭開始。請輸入這個帳號的密碼確認：</div>
+      <input id="dPass" type="password" placeholder="密碼" autocomplete="current-password">
+      <div class="sub hidden" id="dErr" style="color:#ff5555"></div>
+      <div class="btns"><button class="px-btn" id="dOk" style="color:var(--red)">永久刪除</button><button class="px-btn" id="dNo">取消</button></div>`;
+    $("modal").classList.remove("hidden");
+    const err = m => { const e = $("dErr"); e.textContent = m; e.classList.remove("hidden"); };
+    $("dNo").onclick = () => { $("modal").classList.add("hidden"); renderCloud(); };
+    $("dOk").onclick = async () => {
+      const pw = $("dPass").value || "";
+      if (!pw) return err("請輸入密碼");
+      $("dOk").disabled = $("dNo").disabled = true;
+      const r = await Cloud.deleteAccount(pw);
+      $("dOk").disabled = $("dNo").disabled = false;
+      if (!r.ok) return err(r.err || "刪除失敗，請稍後再試");
+      wipeLocal();
+      box.innerHTML = `<div>帳號已刪除</div>
+        <div class="sub" style="margin-top:6px">謝謝你一路以來的挖掘。遊戲會從頭開始。</div>
+        <div class="btns"><button class="px-btn" id="dDone">重新開始</button></div>`;
+      $("dDone").onclick = () => location.reload();
     };
   }
 
