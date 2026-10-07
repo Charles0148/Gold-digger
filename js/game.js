@@ -2144,7 +2144,8 @@
             : `<button class="px-btn small" id="cldIn">登入</button>
                <button class="px-btn small" id="cldReg">註冊新帳號</button>`}
       </div>
-      ${u ? `<div class="btns" style="margin-top:14px"><button class="px-btn small" id="cldDel" style="color:var(--red)">刪除帳號</button></div>` : ""}`;
+      ${u ? `<div class="btns" style="margin-top:14px"><button class="px-btn small" id="cldDel" style="color:var(--red)">刪除帳號</button></div>` : ""}
+      <div class="sub" style="margin-top:10px"><a href="privacy.html" target="_blank" rel="noopener" style="color:var(--sub)">隱私權政策</a></div>`;
     const on = (id, f) => { const b = $(id); if (b) b.onclick = f; };
     on("cldIn", () => askCloudLogin(false));
     on("cldReg", () => askCloudLogin(true));
@@ -2221,6 +2222,7 @@
       <div class="sub" style="margin-top:6px">用來把存檔存到雲端，換手機也接得回來。</div>
       <input id="cEmail" type="email" placeholder="Email" autocomplete="email">
       <input id="cPass" type="password" placeholder="密碼（至少 6 碼）" autocomplete="${isReg ? "new-password" : "current-password"}">
+      ${isReg ? `<div class="sub" style="margin-top:6px">註冊即表示你同意 <a href="privacy.html" target="_blank" rel="noopener" style="color:var(--gold)">隱私權政策</a>。</div>` : ""}
       <div class="sub hidden" id="cErr" style="color:#ff5555"></div>
       <div class="btns"><button class="px-btn" id="cOk">${isReg ? "註冊" : "登入"}</button><button class="px-btn" id="cNo">取消</button></div>`;
     $("modal").classList.remove("hidden");
