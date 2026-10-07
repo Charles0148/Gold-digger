@@ -116,7 +116,7 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 .mb-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .mb-name { flex: 1; color: var(--accent); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .mb-state { font-size: .875em; text-align: right; flex: none; max-width: 62%; }
-.mb-data { font-size: .8125em; color: var(--sub); margin-top: 3px; }
+.mb-data { font-size: .8125em; color: var(--sub); margin-top: 3px; flex-wrap: wrap; row-gap: 2px; }   /* 2026-10-07 用詞變長：窄螢幕可換行 */
 .mb-data b { color: var(--text); font-weight: normal; }
 
 #scene {

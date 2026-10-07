@@ -22,10 +22,10 @@
        rarity：0 一般／1 珍貴／2 稀有／3 傳說。取得後永久保留；傳說未取得時隱藏條件。 */
     titles: [
       { id:"new_miner", name:"新來的礦工", rarity:0, kind:"start", condition:"開始遊戲", intro:"今天起，你也是深入地底的一員。" },
-      { id:"swing_1k", name:"手上有繭了", rarity:0, kind:"stat", path:"swings", target:1000, condition:"累計揮鎬 1,000 次", intro:"握過一千次鎬柄，雙手開始記住礦坑的重量。" },
-      { id:"swing_10k", name:"鎬聲不斷", rarity:1, kind:"stat", path:"swings", target:10000, condition:"累計揮鎬 10,000 次", intro:"只要鎬聲還在回響，你就不會停下。" },
-      { id:"swing_100k", name:"礦坑的回音", rarity:2, kind:"stat", path:"swings", target:100000, condition:"累計揮鎬 100,000 次", intro:"數不清的揮擊，已成為地底最熟悉的聲音。" },
-      { id:"swing_1m", name:"地底不滅的鎬聲", rarity:3, kind:"stat", path:"swings", target:1000000, condition:"累計揮鎬 1,000,000 次", intro:"百萬次揮擊之後，你的鎬聲已成為地底永不消失的回音。" },
+      { id:"swing_1k", name:"手上有繭了", rarity:0, kind:"stat", path:"swings", target:1000, condition:"累計挖掘 1,000 次", intro:"握過一千次鎬柄，雙手開始記住礦坑的重量。" },
+      { id:"swing_10k", name:"鎬聲不斷", rarity:1, kind:"stat", path:"swings", target:10000, condition:"累計挖掘 10,000 次", intro:"只要鎬聲還在回響，你就不會停下。" },
+      { id:"swing_100k", name:"礦坑的回音", rarity:2, kind:"stat", path:"swings", target:100000, condition:"累計挖掘 100,000 次", intro:"數不清的揮擊，已成為地底最熟悉的聲音。" },
+      { id:"swing_1m", name:"地底不滅的鎬聲", rarity:3, kind:"stat", path:"swings", target:1000000, condition:"累計挖掘 1,000,000 次", intro:"百萬次揮擊之後，你的鎬聲已成為地底永不消失的回音。" },
       { id:"broken_100", name:"鎬子的墳場", rarity:2, kind:"stat", path:"toolsBroken", target:100, condition:"累計用壞 100 把鎬子", intro:"每一把壞掉的鎬子，都替你留下了一段路。" },
       { id:"days_7", name:"熟面孔", rarity:0, kind:"stat", path:"loginDays", target:7, condition:"累計登入 7 天", intro:"坑口的人已經開始認得你了。" },
       { id:"days_30", name:"坑口的常客", rarity:1, kind:"stat", path:"loginDays", target:30, condition:"累計登入 30 天", intro:"你來得太勤，連礦塵都像在等你。" },
@@ -37,8 +37,8 @@
       { id:"unlock_m4", name:"熔岩邊的人", rarity:1, kind:"unlocked", key:"m4", condition:"解鎖熔岩深淵", intro:"你曾站在熱浪前，仍選擇繼續向下。" },
       { id:"unlock_m5", name:"星核的見證者", rarity:2, kind:"unlocked", key:"m5", condition:"解鎖星核裂谷", intro:"裂谷深處的星光，曾映進你的眼裡。" },
       { id:"unlock_m6", name:"前輩帶出來的人", rarity:1, kind:"unlocked", key:"m6", condition:"解鎖三位前輩的考驗", intro:"走過三位前輩的考驗，你已不再只是新人。" },
-      { id:"m1_3k", name:"洞窟老手", rarity:0, kind:"mineSwings", key:"m1", target:3000, condition:"在淺層洞窟累計揮鎬 3,000 次", intro:"淺層洞窟的每一處回音，你都聽得懂。" },
-      { id:"m1_m5_1k", name:"礦脈地圖都在腦子裡", rarity:2, kind:"mineSwingsAll", keys:["m1","m2","m3","m4","m5"], target:1000, condition:"五座礦坑各累計揮鎬 1,000 次", intro:"不必攤開地圖，你已知道每條路通往何處。" },
+      { id:"m1_3k", name:"洞窟老手", rarity:0, kind:"mineSwings", key:"m1", target:3000, condition:"在淺層洞窟累計挖掘 3,000 次", intro:"淺層洞窟的每一處回音，你都聽得懂。" },
+      { id:"m1_m5_1k", name:"礦脈地圖都在腦子裡", rarity:2, kind:"mineSwingsAll", keys:["m1","m2","m3","m4","m5"], target:1000, condition:"五座礦坑各累計挖掘 1,000 次", intro:"不必攤開地圖，你已知道每條路通往何處。" },
       { id:"world_heart", name:"世界之心的主人", rarity:2, kind:"dexName", key:"世界之心", condition:"取得世界之心", intro:"你曾把地底最深處的心跳握在手中。" },
 
       { id:"ore_green", name:"綠光入袋", rarity:0, kind:"dexCat", key:"good", condition:"第一次取得綠色礦石", intro:"第一抹綠光，讓你的礦工生涯有了顏色。" },

@@ -933,10 +933,10 @@
       stateTxt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${nm}${st.pending ? "(當選" + st.pending + ")" : ""}${st.zenchoType ? "(" + st.zenchoType + ")" : ""}${st.state === "chance" ? `｜${st.chanceIdx}/${st.chanceRounds}回合 ${st.chanceWin ? "會過" + (st.chanceFake ? "(先演失敗)" : "") : "不會過"}` : ""}${st.stock && st.stock.length ? "｜庫存" + st.stock.map(x => x.type).join(",") : ""}</span>`;
     }
     $("mbState").innerHTML = stateTxt;
-    $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
+    $("mbSwings").textContent = fmt(ms.swings) + " 次";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits;
-    $("mbSinceL").textContent = "距上次礦脈";       // sinceHit：上次礦脈結束（或進坑）後的揮數，礦脈中顯示 —
-    $("mbSince").textContent = st.state === "bonus" ? "—" : fmt(st.sinceHit) + " 揮";
+    $("mbSinceL").textContent = "距離上次遇見礦脈挖掘";       // sinceHit：上次礦脈結束（或進坑）後的揮數，礦脈中顯示 —
+    $("mbSince").textContent = st.state === "bonus" ? "—" : fmt(st.sinceHit) + " 次";
     mbExtra(true); $("mbSince").parentElement.classList.remove("hidden");
 
     const inBonus = st.state === "bonus";
@@ -979,10 +979,10 @@
       txt += ` <span style="color:#ff4fd8">設定${todaySetting(mine.id)}｜${st.state}｜累${st.counts.a}/${st.counts.b}/${st.counts.c}｜好感${Math.round(st.favor.a * 100)}/${Math.round(st.favor.b * 100)}/${Math.round(st.favor.c * 100)}%${st.stBoss ? "｜對手" + bossName2(st.stBoss) : ""}${st.bonusTotal ? "｜報酬" + st.bonusTotal + "轉" : ""}</span>`;
     }
     $("mbState").innerHTML = txt;
-    $("mbSwings").textContent = fmt(ms.swings) + " 揮";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
+    $("mbSwings").textContent = fmt(ms.swings) + " 次";   // 今天在這座礦坑的揮數；換日或離開礦坑歸零
     $("mbHits").textContent = ms.hits || 0;
-    $("mbSinceL").textContent = "距上次談話";       // sinceAt：上次前輩找你談話（或進坑）後的揮數
-    $("mbSince").textContent = fmt(st.sinceAt) + " 揮";
+    $("mbSinceL").textContent = "距離上次談話挖掘";       // sinceAt：上次前輩找你談話（或進坑）後的揮數
+    $("mbSince").textContent = fmt(st.sinceAt) + " 次";
     mbExtra(false);                  // 第二台只留「本日」「累計」，礦脈不顯示（紫已於 2026-10-03 全部拿掉）
     const inRun = ["at", "st", "reward", "pick", "dig", "bonus", "stIntro"].includes(st.state);
     $("mbSince").parentElement.classList.toggle("hidden", inRun);   // 談話成功後的各階段不顯示「距上次談話」（原本的「累計」隱藏規則）
@@ -2089,8 +2089,8 @@
       <div class="mi-body">
         ${m.engine === 2 ? line("玩法", "跟其他礦坑不同") : ""}
         ${line("建議工具", need ? need.name : "?")}
-        ${line("探索保障", guardText(m).replace(/^探索保障 /, ""))}
-        ${unlocked ? line("今日此坑", `${fmt(ms.swings)} 揮` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
+        ${line("探索保障", guardText(m).replace(/^探索保障：/, ""))}
+        ${unlocked ? line("今日此坑", `挖掘 ${fmt(ms.swings)} 次` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
         ${unlocked ? line("今日觀測", marks || '<span class="sub">還沒觀測</span>') : ""}
         ${dbg("showSetting") ? line("設定", `<span style="color:#ff4fd8">${todaySetting(m.id)}</span>`) : ""}
       </div>
@@ -2106,12 +2106,12 @@
     renderCloud();
   }
 
-  /* 探索保障（內部叫天井）：顯示的揮數必須跟引擎真正用的門檻一致
+  /* 探索保障（內部叫天井）：顯示的次數必須跟引擎真正用的門檻一致
      第一種：engine.js 用 mine.tenjou 比 sinceHit → 到達後進入「礦脈前兆」，前兆結束才開礦脈
      前輩礦坑：engine2.js 用 machine2.tenjou 比 sinceAt → 到達後好感度最高的前輩找你談話（成不成功照常抽） */
   function guardText(m) {
-    if (m.engine === 2) return `探索保障 ${fmt(M2().tenjou || 0)} 揮：一直沒有前輩找你，就會有前輩主動來談話（不保證成功）`;
-    return `探索保障 ${fmt(m.tenjou || 800)} 揮：一直沒碰到礦脈，就會先出現礦脈前兆`;
+    if (m.engine === 2) return `探索保障：挖掘 ${fmt(M2().tenjou || 0)} 次都沒有前輩找你，就會有前輩主動來談話（不保證成功）`;
+    return `探索保障：挖掘 ${fmt(m.tenjou || 800)} 次都沒碰到礦脈，就會先出現礦脈前兆`;
   }
 
   /* ---------------- 雲端存檔（介面） ---------------- */
@@ -3299,7 +3299,7 @@
       body = `<div class="board"><div class="board-head">鎬子 ${cut ? `<span class="boon-tag">恩惠折扣 -${pctTxt(cut)}</span>` : ""}${dur ? ` <span class="boon-tag">新鎬子耐久 +${pctTxt(dur)}</span>` : ""}</div><div class="list">` + stdTools().map(t => {
         const pr = toolPrice(t);
         return `<div class="row"><div class="grow"><span style="color:${rarityColor(t.rarity)}">${t.name}</span>
-        <div class="sub">耐久 ${toolMax(t.id)}｜每揮 $${(pr / toolMax(t.id)).toFixed(1)}｜適合 ${config.mines.filter(m => m.tier === t.tier).map(m => m.name).join("、")}</div></div>
+        <div class="sub">耐久 ${toolMax(t.id)}｜每次挖掘 $${(pr / toolMax(t.id)).toFixed(1)}｜適合 ${config.mines.filter(m => m.tier === t.tier).map(m => m.name).join("、")}</div></div>
         <button class="px-btn small" data-buy="${t.id}" ${save.coins < pr ? "disabled" : ""}>$${fmt(pr)}</button></div>`;
       }).join("") + `</div></div>` + back;
     }
@@ -3641,7 +3641,7 @@
     }
     const st = save.plays[mine.id];
     if (!st) return "";
-    if (st.state === "bonus") return `你正在礦脈中！還剩 ${st.bonusLeft} 揮，離開的話這條礦脈會消失。`;
+    if (st.state === "bonus") return `你正在礦脈中！還能挖掘 ${st.bonusLeft} 次，離開的話這條礦脈會消失。`;
     if (st.state === "chance") return "連續演出進行中！離開的話，這次的演出會作廢。";
     if (st.state === "zencho" || st.fakeLeft > 0) return "現在出現前兆了！離開的話，這次的前兆會跟著消失。";
     return "";
