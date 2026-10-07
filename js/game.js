@@ -3546,8 +3546,8 @@
     const src = !day ? '<div class="sub">需要連上網路確認今天的日期（台灣時間）後才會累積。</div>' : `
       <div class="ruby-src"><span>挖礦</span>${bar(T.dig.pct)}<span class="sub">${T.dig.got}／${T.dig.cap} 顆</span></div>
       <div class="ruby-src"><span>委託</span><span class="sub grow">今天第一張委託板全部完成 +${T.board.amount}</span><span class="sub">${T.board.got ? "✔ 已領" : "—"}</span></div>
-      <div class="ruby-src"><span>恩惠</span><span class="sub grow">每升 1 級 +1</span><span class="sub">本週 ${T.boon.week}／${T.boon.weekCap}</span></div>
-      ${frozeOnce(T) ? `<div class="ruby-src"><span>凍結</span><span class="sub grow">地底凍結 +${(RC().freeze || {}).per || 0}（每天 ${T.freeze.cap} 次）</span><span class="sub">今天 ${T.freeze.times}／${T.freeze.cap}｜本週 ${T.freeze.week}／${T.freeze.weekCap}</span></div>`
+      <div class="ruby-src"><span>恩惠</span><span class="sub grow">每升 1 級 +1</span><span class="sub">本週 ${T.boon.week}／${T.boon.weekCap} 顆</span></div>
+      ${frozeOnce(T) ? `<div class="ruby-src"><span>凍結</span><span class="sub grow">地底凍結 +${(RC().freeze || {}).per || 0}（每天 ${T.freeze.cap} 次）</span><span class="sub">今天 ${T.freeze.times}／${T.freeze.cap} 次｜本週 ${T.freeze.week}／${T.freeze.weekCap} 顆</span></div>`
         : '<div class="ruby-src"><span>？？？</span><span class="sub grow">？？？</span></div>'}
       <div class="ruby-src"><span>廣告</span><span class="sub grow">${T.ads.enabled ? `當天第 ${T.ads.at.join("、")} 次看完各 +1` : "之後開放"}</span></div>`;
     return `<div class="board ruby-board"><div class="board-head">紅晶商店 <span class="sub ruby-num">持有 ${RUBY_ICO} ${fmt(R.bal)}</span></div>
