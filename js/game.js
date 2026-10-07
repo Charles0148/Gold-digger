@@ -2089,7 +2089,7 @@
       <div class="mi-body">
         ${m.engine === 2 ? line("玩法", "跟其他礦坑不同") : ""}
         ${line("建議工具", need ? need.name : "?")}
-        ${line("探索保障", guardText(m).replace(/^探索保障：/, ""))}
+        ${line("礦工的直覺", guardText(m))}
         ${unlocked ? line("今日此坑", `挖掘 ${fmt(ms.swings)} 次` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
         ${unlocked ? line("今日觀測", marks || '<span class="sub">還沒觀測</span>') : ""}
         ${dbg("showSetting") ? line("設定", `<span style="color:#ff4fd8">${todaySetting(m.id)}</span>`) : ""}
@@ -2106,12 +2106,12 @@
     renderCloud();
   }
 
-  /* 探索保障（內部叫天井）：顯示的次數必須跟引擎真正用的門檻一致
+  /* 礦工的直覺（內部叫天井；2026-10-07 擁有者：玩家畫面不用「探索保障」「前兆」）：顯示的次數必須跟引擎真正用的門檻一致
      第一種：engine.js 用 mine.tenjou 比 sinceHit → 到達後進入「礦脈前兆」，前兆結束才開礦脈
      前輩礦坑：engine2.js 用 machine2.tenjou 比 sinceAt → 到達後好感度最高的前輩找你談話（成不成功照常抽） */
   function guardText(m) {
-    if (m.engine === 2) return `探索保障：挖掘 ${fmt(M2().tenjou || 0)} 次都沒有前輩找你，就會有前輩主動來談話（不保證成功）`;
-    return `探索保障：挖掘 ${fmt(m.tenjou || 800)} 次都沒碰到礦脈，就會先出現礦脈前兆`;
+    if (m.engine === 2) return `挖掘 ${fmt(M2().tenjou || 0)} 次都沒有前輩找你，就會有前輩主動來找你（不一定談得成）`;
+    return `挖掘 ${fmt(m.tenjou || 800)} 次都沒遇見礦脈，就會察覺到礦脈的徵兆`;
   }
 
   /* ---------------- 雲端存檔（介面） ---------------- */
@@ -3643,7 +3643,7 @@
     if (!st) return "";
     if (st.state === "bonus") return `你正在礦脈中！還能挖掘 ${st.bonusLeft} 次，離開的話這條礦脈會消失。`;
     if (st.state === "chance") return "連續演出進行中！離開的話，這次的演出會作廢。";
-    if (st.state === "zencho" || st.fakeLeft > 0) return "現在出現前兆了！離開的話，這次的前兆會跟著消失。";
+    if (st.state === "zencho" || st.fakeLeft > 0) return "礦脈的徵兆已經出現了！離開的話，這次的徵兆會跟著消失。";
     return "";
   }
   function askLeave(mine, note, onOk) {

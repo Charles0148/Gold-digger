@@ -383,7 +383,7 @@ button.mem-slot.on { cursor:pointer; min-height:44px; }
 .mi-title { font-size: 1.125em; margin-bottom: 8px; }
 .mi-body { text-align: left; border-top: 2px solid #000; border-bottom: 2px solid #000; padding: 8px 2px; margin-bottom: 4px; }
 .mi-row { display: flex; gap: 10px; padding: 3px 0; line-height: 1.5; }
-.mi-k { flex: none; width: 4.5em; color: var(--sub); font-size: .875em; padding-top: 1px; }
+.mi-k { flex: none; width: 5.5em; color: var(--sub); font-size: .875em; padding-top: 1px; }
 .mi-v { flex: 1; min-width: 0; }
 .modal-box .btns { flex-wrap: wrap; align-items: center; }
 
