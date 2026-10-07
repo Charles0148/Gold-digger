@@ -1514,7 +1514,7 @@
     showSummary(mineName, [
       ["礦脈數", `${e.chain || 1} 脈`],
       ...(kinds ? [["礦脈種類", kinds]] : []),
-      ...(run ? [["礦脈中揮礦", `${fmt(run.swings)} 揮`]] : []),
+      ...(run ? [["挖掘次數", `${fmt(run.swings)} 次`]] : []),
       ["這趟總收穫", sumGain(run ? run.gain : 0)]
     ], run && run.core ? "這趟進入過核心層" : "");
   }
