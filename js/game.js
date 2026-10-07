@@ -13,6 +13,11 @@
      存檔 save.ruby（見 ruby.js 檔頭）；三個載入入口都經過 fixAds → RY.fix 補欄位。 */
   const RY = window.Ruby;
   function RC() { return (window.DEFAULT_CONFIG || {}).ruby || {}; }   // 函式宣告：檔頭載入存檔時就會用到
+  /* 冒險狩獵礦坑（第 7 座，2026-10-08；第一階段＝內部測試，一般玩家看不到）：純邏輯 js/mine-hunt.js（window.MineHunt）、畫面 js/hunt-ui.js、斬擊演出 js/hunt-fx.js。
+     數值讀程式內建的 DEFAULT_CONFIG.hunt（編輯器存的設定檔改不動）。存檔 save.huntMeta（永久）＋save.huntRuns（本趟，離開礦坑就刪）；頂層 save.v 維持 1。 */
+  const MH = window.MineHunt, HU = window.HuntUI;
+  function HC() { return (window.DEFAULT_CONFIG || {}).hunt || {}; }   // 函式宣告：檔頭載入存檔時就會用到
+  function fixHuntSave(sv) { return MH.fix(sv, HC()); }   // 四個入口共用：本機讀檔、adoptSave、Game.setSave、newSave
   let FORCE_FREEZE = !!SANDBOX && /[?&]freeze=1/.test(location.search);   // 本機測試：網址加 ?freeze=1 → 下一次通常揮必定「地底凍結」
   const RUBY_ICO = '<svg class="ruby-ico" viewBox="0 0 10 10" aria-hidden="true"><use href="#ico-ruby"/></svg>';
   const CFG_KEY = "mine_config_v4" + SB;
@@ -172,6 +177,7 @@
       adPending: null, adDone: [], boardCredits: 0,
       ruby: RY.newRuby(),
       senpai: newSenpai(),
+      huntMeta: MH.newMeta(), huntRuns: {},
       stat: window.TitleSystem.freshStat(), titles: { owned: [], equipped: null, grantVersion: 1 },
       auto: false, debug: { showSetting: false, forceSetting: 0 }
     };
@@ -330,10 +336,11 @@
   fixSenpai(save);
   fixBoss(save, "local");
   fixAds(save);
+  const huntFixedAtLoad = fixHuntSave(save);
   const titleFixedAtLoad = TS.fix(save);
   titleStartupAdds = awardTitles(false);
   if (needStarter) { titleStartupAdds = []; cosStartupAdds = []; }
-  if (titleFixedAtLoad || titleStartupAdds.length || cosStartupAdds.length) store.set(SAVE_KEY, save);
+  if (titleFixedAtLoad || huntFixedAtLoad || titleStartupAdds.length || cosStartupAdds.length) store.set(SAVE_KEY, save);
   delete save.upgrades;
   /* v0.10.3：存檔一律「立即寫入」。
      舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
@@ -384,6 +391,11 @@
   }
   /* 兩台裝置撞在一起時的處理畫面 */
   let conflictOpen = false;
+  function huntSummary(d) {   // 衝突視窗的冒險之地摘要：體力、本輪累積金幣（沒有就不顯示）
+    const M = d && d.huntMeta, r = d && d.huntRuns && d.huntRuns[(HC().mine || {}).id];
+    const st = M ? Math.floor(Number(M.stamina) || 0) : 0, g = r ? Math.floor(Number(r.gold) || 0) : 0;
+    return st > 0 || g > 0 ? `<br><span class="sub">冒險之地　體力 ${fmt(st)}　本輪金幣 ${fmt(g)}</span>` : "";
+  }
   function showConflict(row) {
     if (conflictOpen) return;
     conflictOpen = true;
@@ -396,9 +408,9 @@
         <b>兩邊只能留一邊</b>，沒選到的會被覆蓋掉。`}
       </div>
       <div class="sub" style="margin-top:8px;text-align:left">
-        <b>雲端</b>：${esc(row.name || "（無名）")}　$${fmt(row.coins || 0)}<br>
+        <b>雲端</b>：${esc(row.name || "（無名）")}　$${fmt(row.coins || 0)}${huntSummary(row.data)}<br>
         <span class="sub">最後存檔 ${when}</span><br><br>
-        <b>這台</b>：${esc(save.name || "（無名）")}　$${fmt(save.coins)}
+        <b>這台</b>：${esc(save.name || "（無名）")}　$${fmt(save.coins)}${huntSummary(save)}
       </div>
       ${stale ? STALE_NOTE : ""}
       <div class="btns"><button class="px-btn" id="cfCloud">用雲端的</button>${stale ? "" : `<button class="px-btn" id="cfLocal">用這台的</button>`}</div>`;
@@ -470,6 +482,7 @@
     fixSenpai(save);
     fixBoss(save, "cloud");
     fixAds(save);
+    fixHuntSave(save);
     TS.fix(save); awardTitles();
     fixToolDur();
     storyFresh = false;
@@ -491,8 +504,14 @@
   const isStd = id => BV.toolCat(config, id) === "pick";
   const stdTools = () => config.tools.filter(t => isStd(t.id));
   const stdOfTier = tier => stdTools().find(t => t.tier === tier);
-  const mineDef = id => config.mines.find(m => m.id === id);
-  const curMine = () => mineDef(save.mineId) || config.mines[0];
+  /* 冒險狩獵礦坑不放在 config.mines（委託板、圖鑑、商店文字、模擬器、編輯器都不會碰到它）；地圖與觀測鏡明確加入。
+     一般玩家看不到：只有開發者模式（?dev=1）或本機 ?sandbox= 才列出、才進得去（mine.devOnly）。 */
+  const huntMine = () => (HC().enabled !== false && HC().mine) || null;
+  const huntVisible = () => !!huntMine() && (!huntMine().devOnly || devMode || !!SANDBOX);
+  const mineDef = id => config.mines.find(m => m.id === id) || (huntMine() && huntMine().id === id ? huntMine() : undefined);
+  const curMine = () => { const m = mineDef(save.mineId); return m && (m.runPolicy !== "adventure" || huntVisible()) ? m : config.mines[0]; };
+  const isHunt = () => curMine().runPolicy === "adventure";
+  const mineList = () => config.mines.concat(huntVisible() ? [huntMine()] : []);   // 地圖列表／觀測鏡用
   const catDef = id => config.categories.find(c => c.id === id);
   const rarityColor = r => (config.rarities[r] || config.rarities[0]).color;
   function totalPlays() { return save.tools.reduce((a, t) => a + t.dur, 0); }
@@ -644,7 +663,7 @@
   const SCOPE_FRAMES = ["◍", "◎", "◉", "◎"];
   const SCOPE_TURNS = 3;
 
-  function scopeMines() { return config.mines.filter(m => save.unlocked.includes(m.id)); }
+  function scopeMines() { return mineList().filter(m => m.runPolicy === "adventure" ? m.scopeEligible !== false : save.unlocked.includes(m.id)); }   // 冒險之地（開發者／sandbox 才有）沿用同一份觀測表
   function scopeReset() {
     // 已經付錢但還在轉鏡片的那一次，一定要先落地，否則切礦坑／離開畫面等於白花錢
     if (scopePhase === "focus" && scopePending && scopeMine) { scopeRecord(); persist(); }
@@ -921,11 +940,12 @@
   function veinRunOf(id) { const all = save.veinRuns || (save.veinRuns = {}); return all[id] || null; }
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
-  function renderMine() { renderMineBase(); storySync(); renderProbeTag(); }
+  function renderMine() { HU.chrome(isHunt()); renderMineBase(); storySync(); renderProbeTag(); }
   /* 資訊列中間的「礦脈」「紫」：第一台顯示，第二台不顯示 */
   function mbExtra(show) { ["mbHits"].forEach(id => $(id).parentElement.classList.toggle("hidden", !show)); }
   function renderMineBase() {
     checkDay();
+    if (isHunt()) return HU.render();   // 冒險之地：js/hunt-ui.js
     if (isM2()) return renderMine2();
     const mine = curMine(), st = save.plays[mine.id] || E.newPlayState(), ms = mineStats(mine.id);
     $("mbName").textContent = mine.name;
@@ -1039,6 +1059,7 @@
   }
   function dayBlocked() {   // 揮擊入口：日期未知 → 不抽、不耗工具、停自動
     if (todayKey()) return false;
+    if (isHunt()) { const hr = MH.peek(save, HC()); if (hr && hr.phase !== "walk") return false; }   // 冒險之地：只有「走新的一步」需要日期；國度以後的流程不讀設定，照常打完
     if (save.auto) { save.auto = false; clearTimeout(autoTimer); }
     renderMineBase(); showClockMsg();
     if (!clock.syncing) clockSync();
@@ -1271,7 +1292,7 @@
      日期沒確認（顯示連線提示）、不在挖礦畫面、回憶播放中都不播；玩家一揮鎬就被正常內容蓋掉。 */
   function playWelcome() {
     const list = config.texts.welcome || [];
-    if (!list.length || !todayKey() || currentScreen !== "mine" || save.senpai.story) return;
+    if (!list.length || !todayKey() || currentScreen !== "mine" || save.senpai.story || isHunt()) return;   // 冒險之地：敘述框是目前的旅途／狩獵狀態，不播歡迎字條
     const txt = pickOne(list).replace(/\{name\}/g, save.name || "礦工");
     setTextbox([`<span id="tbWelcome" style="color:${config.theme.text}"></span>`], 0);
     let i = 0;
@@ -1533,6 +1554,7 @@
 
   function doSwing() {
     if (save.senpai.story) { renderMine(); return null; }   // 回憶演出中：不抽、不耗工具
+    if (isHunt()) return null;                              // 冒險之地：沒有「揮擊」（走路、出招都不算挖掘），操作走 HuntUI
     if (isM2()) return doSwing2();
     if (dayBlocked()) return null;                          // 台灣日期未知：不揮（Q1＝A）
     checkDay();
@@ -1701,8 +1723,14 @@
   /* ---------------- 自動模式 ---------------- */
   let autoTimer = null;
   const AUTO_STOP = ["chanceStart", "fakeStart", "tenjou", "directWin", "bonusStart", "bonusChain", "bonusEnd", "stock", "upgrade", "chanceUp", "revive"];
+  function autoStepHunt() {   // 冒險之地的自動模式：演出播完才繼續；選擇、國度解題、停住時不代按（見 HuntUI.auto）
+    const r = HU.auto();
+    if (!r || r.stop || !save.auto) { stopAuto(); return; }
+    autoTimer = setTimeout(autoStep, r.wait);
+  }
   function autoStep() {
     if (!save.auto) return;
+    if (isHunt()) return autoStepHunt();
     if (isM2()) return autoStep2();
     const res = doSwing();
     if (!res) return;
@@ -2068,18 +2096,20 @@
      點卡片跳出詳細資料框（建議工具、探索保障、今日紀錄、觀測結果、前往／觀測／解鎖）。 */
   function renderMap() {
     checkDay();
-    $("mapList").innerHTML = config.mines.map(m => {
-      const unlocked = save.unlocked.includes(m.id), here = m.id === save.mineId;
+    $("mapList").innerHTML = mineList().map(m => {
+      const hunt = m.runPolicy === "adventure";
+      const unlocked = hunt || save.unlocked.includes(m.id), here = m.id === curMine().id;
       const state = here ? '<span class="map-here">所在地</span>'
         : unlocked ? '<span class="sub">前往 ▶</span>'
         : `<span class="sub ${save.coins < m.unlock ? "" : "map-can"}">🔒 $${fmt(m.unlock)}</span>`;
       return `<button class="row map-card ${here ? "equipped" : ""} ${unlocked ? "" : "locked"}" data-mine-info="${m.id}">
-        <span class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> <span class="sub">×${m.mult}</span></span>${state}</button>`;
+        <span class="grow"><span style="color:${rarityColor(m.tier)}">${m.name}</span> ${hunt ? '<span class="sub">冒險</span>' : `<span class="sub">×${m.mult}</span>`}</span>${state}</button>`;
     }).join("");
   }
   function openMineInfo(id) {
     const m = mineDef(id); if (!m) return;
-    const unlocked = save.unlocked.includes(m.id), ms = mineStats(m.id), here = m.id === save.mineId;
+    const hunt = m.runPolicy === "adventure";
+    const unlocked = hunt || save.unlocked.includes(m.id), ms = hunt ? { swings: 0, hits: 0 } : mineStats(m.id), here = m.id === curMine().id;
     const need = stdOfTier(m.tier);   // 「今日此坑」不顯示紫（機會牌）次數——擁有者 2026-10-03：不用記數
     const seen = unlocked ? glassSeen(m.id) : [];
     const marks = seen.map(e => { const r = glassResult(e); return `<span style="color:${r.color};${r.badge ? "border:2px double " + r.color + ";padding:0 4px;" : ""}">${r.icon}</span>`; }).join(" ");
@@ -2087,12 +2117,12 @@
     const btns = here ? `<span class="map-here">所在地</span>${unlocked ? `<button class="px-btn" data-scope-at="${m.id}">觀測 ▶</button>` : ""}`
       : unlocked ? `<button class="px-btn gold" data-go-mine="${m.id}">${locked(m.id) ? "🔒 " : ""}前往</button><button class="px-btn" data-scope-at="${m.id}">觀測 ▶</button>`
       : `<button class="px-btn gold" data-unlock="${m.id}" ${save.coins < m.unlock ? "disabled" : ""}>解鎖 $${fmt(m.unlock)}</button>`;
-    $("modalBox").innerHTML = `<div class="mi-title"><span style="color:${rarityColor(m.tier)}">${esc(m.name)}</span> <span class="sub">×${m.mult}</span></div>
+    $("modalBox").innerHTML = `<div class="mi-title"><span style="color:${rarityColor(m.tier)}">${esc(m.name)}</span> ${hunt ? "" : `<span class="sub">×${m.mult}</span>`}</div>
       <div class="mi-body">
-        ${m.engine === 2 ? line("玩法", "跟其他礦坑不同") : ""}
-        ${line("建議工具", need ? need.name : "?")}
-        ${line("礦工的直覺", guardText(m))}
-        ${unlocked ? line("今日此坑", `挖掘 ${fmt(ms.swings)} 次` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
+        ${m.engine === 2 || hunt ? line("玩法", "跟其他礦坑不同") : ""}
+        ${hunt ? line("建議工具", "任何鎬子（餵給小精靈換體力）") : line("建議工具", need ? need.name : "?")}
+        ${hunt ? "" : line("礦工的直覺", guardText(m))}
+        ${unlocked && !hunt ? line("今日此坑", `挖掘 ${fmt(ms.swings)} 次` + (m.engine === 2 ? "" : `｜礦脈 ${ms.hits}`)) : ""}
         ${unlocked ? line("今日觀測", marks || '<span class="sub">還沒觀測</span>') : ""}
         ${dbg("showSetting") ? line("設定", `<span style="color:#ff4fd8">${todaySetting(m.id)}</span>`) : ""}
       </div>
@@ -2105,6 +2135,7 @@
   function renderAcct() {
     $("acctName").textContent = save.name || "玩家";
     $("acctTitle").innerHTML = titleBadge(currentTitle()) || '<span class="sub">沒有戴頭銜</span>';
+    HU.renderFxPanel();   // 顯示設定：減少特效（冒險之地才有的演出；一般玩家看不到這座礦坑時，這個區塊也不顯示）
     renderCloud();
   }
 
@@ -2302,9 +2333,9 @@
     const box = $("modalBox");
     box.innerHTML = `<div>要留哪一邊的存檔？</div>
       <div class="sub" style="margin-top:8px;text-align:left">
-        <b>雲端</b>：${row.name || "（無名）"}　$${fmt(row.coins || 0)}<br>
+        <b>雲端</b>：${row.name || "（無名）"}　$${fmt(row.coins || 0)}${huntSummary(row.data)}<br>
         <span class="sub">最後上傳 ${when}</span><br><br>
-        <b>這台手機</b>：${save.name || "（無名）"}　$${fmt(save.coins)}
+        <b>這台手機</b>：${save.name || "（無名）"}　$${fmt(save.coins)}${huntSummary(save)}
       </div>
       ${stale ? STALE_NOTE : `<div class="sub" style="color:#ff5555;margin-top:8px">沒選到的那一邊會被覆蓋掉。</div>`}
       <div class="btns"><button class="px-btn" id="useCloud">用雲端的</button>${stale ? "" : `<button class="px-btn" id="useLocal">用這台的</button>`}</div>`;
@@ -3680,6 +3711,7 @@
   /* 離開礦坑的醒目提醒（2026-10-03 擁有者）：只看玩家畫面上本來就看得到的狀態，不洩漏隱藏資訊——
      假前兆跟真前兆一樣提醒；高確、「先演失敗→復活」這類看不出來的狀態不提醒。 */
   function leaveWarn(mine) {
+    if (mine.runPolicy === "adventure") return HU.leaveWarn();
     if (mine.engine === 2) {
       const st = save.plays2[mine.id];
       return st && st.state && st.state !== "normal" ? "前輩的考驗正在進行中！離開的話，這一輪的進度會全部消失。" : "";
@@ -3712,8 +3744,16 @@
   function leaveMine() {
     if (save.senpai.story) { toast("先把回憶看完"); return; }
     const mine = curMine();
-    askLeave(mine, "離開礦坑後，坑洞就會塌掉，這次的進度也會歸零喔…", () => {
+    if (HU.busy()) return;   // 斬擊演出播放中：退出鈕暫時不能按
+    askLeave(mine, mine.runPolicy === "adventure" ? HC().texts.leaveNote : "離開礦坑後，坑洞就會塌掉，這次的進度也會歸零喔…", () => {
       stopAuto(); clearM2UI();
+      if (mine.runPolicy === "adventure") {   // 冒險之地：本輪金幣照拿、清掉本輪進度、體力保留
+        resetMineView(); go("map");   // 先離開畫面（go 會重畫一次），再清本輪紀錄，才不會被重畫又建回來
+        const res = HU.leave();
+        toast(HC().texts.leaveToast.replace("{g}", fmt(res.gold)));
+        persist(true); renderMap(); renderHud();
+        return;
+      }
       if (mine.engine === 2) senpaiTripEnd();          // 確實從前輩礦坑離開
       resetMineView();
       go("map");
@@ -3738,7 +3778,7 @@
     if (name === "dex" || name === "ach") { recTab = name; name = "rec"; }   // 舊的入口名稱 → 紀錄頁的子分頁
     clearM2UI();
     titleMode = pendingAcctPick && name === "rec" ? "acct" : "view"; pendingAcctPick = false;
-    if (name !== "mine") stopAuto();
+    if (name !== "mine") { stopAuto(); HU.abortFx(); }
     if (name === "shop" && currentScreen !== "shop") bossView = "menu";
     if (name === "shop" && currentScreen !== "shop" && currentScreen !== "scope") shopEnter();
     if (currentScreen === "shop" && name !== "shop" && name !== "scope") shopLeave();
@@ -3782,6 +3822,7 @@
   $("textbox").addEventListener("click", e => {
     if (window.Editor?.isPicking()) return;
     if (save.senpai.story) { storyTap(); return; }
+    if (isHunt()) { if (e.target.closest("[data-hunt]")) return; if (e.target.closest("#clockRetry")) { clockSync(); return; } if (!save.auto) HU.tap(); return; }   // 選項按鈕由下面 document 的 data-hunt 處理；自動中點敘述框＝不動作（用「自動」鈕關）
     if (e.target.closest("#clockRetry")) { clockSync(); showClockMsg(); return; }
     if (Date.now() - storyDoneAt < 600) return;     // 剛收下回憶：連點的後幾下不要直接揮出去
     if (save.auto) { stopAuto(); return; }
@@ -3828,6 +3869,7 @@
       const cnt = names.reduce((a, n) => a + save.ores[n], 0), sum = sellTotal(names.map(n => [n, save.ores[n]]));
       askSellAll(names.length, cnt, sum);
     }
+    if (d.hunt) { if (isHunt() || d.hunt.startsWith("fx:")) HU.onBtn(d.hunt); return; }
     if (d.m2) { doSwing2({ choice: d.m2 }); return; }
     if (d.boss) bossGo(d.boss);
     if (d.deliver !== undefined) deliver(+d.deliver);
@@ -3841,16 +3883,18 @@
       if (locked(d.goMine)) { askPassword(d.goMine, () => { const b = document.querySelector(`[data-go-mine="${d.goMine}"]`); if (b) b.click(); }); return; }
       const from = curMine(), to = d.goMine;
       const doGo = () => {
+        if (from.runPolicy === "adventure" && from.id !== to) { const res = HU.leave(); toast(HC().texts.leaveToast.replace("{g}", fmt(res.gold))); }   // 冒險之地換到別座：金幣照拿、體力保留
         if (from.engine === 2 && from.id !== to) { delete save.plays2[from.id]; toast("離開了「" + from.name + "」，累積全部歸零"); }
         if (from.engine === 2 && from.id !== to) senpaiTripEnd();        // 從前輩礦坑換到別座＝離開
         if (mineDef(to).engine === 2 && from.id !== to) senpaiTripStart();   // 走進前輩礦坑＝新的一趟
         save.mineId = to; save.equipped = null; clearM2UI(); persist();
-        if (!(from.engine === 2 && from.id !== to)) toast("前往 " + mineDef(to).name);
+        if (!(from.engine === 2 && from.id !== to) && !(from.runPolicy === "adventure" && from.id !== to)) toast("前往 " + mineDef(to).name);
         if (from.id !== to) resetMineView();
         go("mine");
       };
       // 前輩礦坑換到別座會清掉累積 → 先醒目確認（第一台換礦坑會保留進度，不用確認）
       if (from.engine === 2 && from.id !== to) { askLeave(from, "換到別的礦坑，這裡累積的進度會全部歸零。", doGo); return; }
+      if (from.runPolicy === "adventure" && from.id !== to) { if (HU.busy()) return; askLeave(from, HC().texts.leaveNote, doGo); return; }
       doGo();
     }
     if (d.unlock) { const m = mineDef(d.unlock); if (save.coins >= m.unlock) { save.coins -= m.unlock; save.unlocked.push(m.id); persist(); toast("解鎖 " + m.name); renderMap(); renderHud(); openMineInfo(m.id); } }   // 解鎖後直接顯示可以「前往」的資料框
@@ -3868,9 +3912,10 @@
   /* 分頁到背景：停自動、存檔；回到前景且離開超過 60 秒：先重新同步，完成前每日功能暫停用（clock.hold） */
   let hiddenAt = null;
   document.addEventListener("visibilitychange", () => {
-    if (document.hidden) { hiddenAt = { m: mono(), d: Date.now() }; stopAuto(); persist(true); return; }
+    if (document.hidden) { hiddenAt = { m: mono(), d: Date.now() }; stopAuto(); HU.abortFx(); persist(true); return; }
     const away = hiddenAt ? Math.max(mono() - hiddenAt.m, Date.now() - hiddenAt.d) : 0;
     hiddenAt = null;
+    if (currentScreen === "mine" && isHunt()) HU.render();   // 離開時中止的斬擊演出：回來從頭補播（狀態一直是「演出待播」，不會被跳過）
     if (away <= 60000) return;
     clock.hold = true; clockChanged();
     clockSync().finally(() => { clock.hold = false; clockChanged(); });
@@ -3884,7 +3929,7 @@
     setConfig(c, keep) { config = normTools(c); if (keep !== false) { if (!store.set(CFG_KEY, c)) toast("儲存失敗：圖片可能太大"); } renderAll(); },
     resetConfig() { store.del(CFG_KEY); config = normTools(clone(window.DEFAULT_CONFIG)); renderAll(); },
     stdTools: () => stdTools().map(t => t.id),
-    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); TS.fix(save); fixToolDur(); storyFresh = false; persist(true); adLeftover(); renderAll(); },
+    setSave(s) { save = s; if (!save.plays2) save.plays2 = {}; fixSenpai(save); fixBoss(save, "import"); fixAds(save); fixHuntSave(save); TS.fix(save); fixToolDur(); storyFresh = false; persist(true); adLeftover(); renderAll(); },
     resetSave() { store.del(SAVE_KEY); save = newSave(); addTool("wood", 1); addTool("wood", 1); persist(true); renderAll(); askName(true); },
     persist, renderAll, toast, todaySetting, go, swing: () => doSwing(),
     setLock(id, pw) { config.locks = config.locks || {}; if (pw) { config.locks[id] = pwHash(pw); delete save.pw[id]; } else { delete config.locks[id]; } store.set(CFG_KEY, config); persist(true); renderAll(); },
@@ -3919,6 +3964,7 @@
       bonus(n) { const st = state2(); st.bonusTotal = n; st.bonusLeft = n; st.state = "bonus"; persist(true); go("mine"); },
       reset() { const id = curMine().id; delete save.plays2[id]; persist(true); renderAll(); }
     },
+    get hunt() { return devMode || SANDBOX ? HU.dev : null; },   // 開發者／本機測試：冒險之地加體力、跳狀態、強制預抽（一般玩家呼叫無效）
     addFavor: p => { const r = addFavor(p); persist(true); renderAll(); if (r.gained.length) showBoons(r.gained); if (r.ups && v2()) offerPick(); },
     /* 開發者（恩惠 v2）：直接設定階數／清空／全滿；只給編輯器與本機測試用 */
     boonsV2: {
@@ -3951,6 +3997,14 @@
       unread: mailUnread
     };
   }
+
+  HU.init({
+    save: () => save, H: HC, config: () => config, store, sb: SB, persist: () => persist(), toast, colored, setTextbox, renderHud, todaySetting, dayBlocked, stopAuto,
+    autoWait: () => autoWait(), toolDef, rarityColor, dbgSetting: () => dbg("showSetting"),
+    onMine: () => currentScreen === "mine" && isHunt(), isHere: () => isHunt(), visible: huntVisible,
+    modalOpen: () => !$("modal").classList.contains("hidden"),
+    openAcct: () => { acctBack = "mine"; go("acct"); }
+  });
 
   /* ---------------- 啟動 ---------------- */
   applyLook();

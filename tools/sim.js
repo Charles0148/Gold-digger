@@ -19,9 +19,147 @@ const E  = require(path.join(ROOT, "js/engine.js"));
 const E2 = require(path.join(ROOT, "js/engine2.js"));
 const VER = require("fs").readFileSync(path.join(ROOT, "js/version.js"), "utf8").match(/"([\d.]+)"/)[1];
 
-const N = +(process.argv[2] || 1500000);
+const HUNT_ONLY = process.argv[2] === "hunt";   // node tools/sim.js hunt [輪數]：只跑 §8.10 冒險狩獵（很快）
+const N = HUNT_ONLY ? 1500000 : +(process.argv[2] || 1500000);
 const R = C.rules;
 const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
+const HUNT_RUNS = HUNT_ONLY ? +(process.argv[3] || 400000) : Math.max(100000, Math.min(N, 600000));
+
+/* ---------- §8.10 冒險狩獵礦坑（第 7 座，2026-10-08；規格 Claude outputs/新礦坑_冒險狩獵_規格定案v2_2026-10-08.md） ----------
+   只跑這一節：node tools/sim.js hunt [輪數，預設 400000]
+   ① 精確期望值（不靠亂數）：第一階段單獨回收率、完整遊戲（加上之後階段的巨龍／狹間，參數在 config.hunt.later）回收率。
+      完整遊戲要落在規格 3.4 的表值（112.9／116.4／119.4／126.6／134.2／144.6）±1.0，依設定分佈加權 120%±1，設定六減設定一 28～36 點。
+      第一階段（只有下位 3 隻怪、沒有巨龍和狹間）單獨回收率很低是預期的，全部不開放，不影響玩家。
+   ② 蒙地卡羅：直接驅動 js/mine-hunt.js 的真實狀態機（不是另寫一份模型），驗證入口機率、30 步保底、呈現類型比例、擊倒率、第一階段回收率。
+   ③ 餵食：換算只會少不會多（無套利）、多把先加總再捨去、單把換算為 0 不可餵、試用版不可餵、鑽頭 1,380。 */
+function huntSection(runs) {
+  const MH = require(path.join(ROOT, "js/mine-hunt.js"));
+  const H = C.hunt, ST = H.stamina, LW = H.later, dist = R.settingDist;
+  let bad = 0;
+  const ck = (ok, msg) => { if (!ok) { bad++; console.log(`  ✗ ${msg}`); } return ok; };
+  console.log(`\n=== §8.10 冒險狩獵礦坑（${runs.toLocaleString()} 輪／設定）===`);
+
+  // ---- ① 精確期望值 ----
+  function expect(S, full) {
+    const pDev = S.dev, N0 = H.walk.guarantee, q = 1 - pDev, wMap = 1 - H.walk.caveShare;
+    const walk = (1 - Math.pow(q, N0)) / pDev;
+    const Q = (1 - wMap) * S.cave + wMap * S.map;
+    const K = H.lower.count, k = H.lower.win;
+    let stepsL = 0, goldL = 0, reach = 1;
+    for (let i = 0; i < K; i++) { stepsL += reach; goldL += reach * k * H.lower.gold; reach *= k; }
+    const passL = reach;
+    let spent = walk * ST.perStep + ST.countryCost + Q * stepsL * ST.perStep, gold = Q * goldL;
+    const out = { walk, Q, passL, stage1: gold / (spent * ST.valuePer), spent1: spent, gold1: gold };
+    if (full) {
+      const d = LW.dragon, enter = passL * d.win;
+      spent += Q * passL * ST.perStep; gold += Q * passL * d.win * d.gold;
+      const rnd = (h, cap, w) => { let m = 0; for (let n = 0; n < cap; n++) m += Math.pow(h, n); return { m, gold: m * w, pcap: Math.pow(h, cap - 1) }; };
+      const Hv = rnd(LW.heaven.cont, LW.heaven.cap, LW.heaven.gold), Gv = rnd(LW.hell.cont, LW.hell.cap, LW.hell.gold);
+      const a = LW.heaven.nextHeaven, b = LW.hell.nextHeaven, ph = Hv.pcap * LW.ember, pg = Gv.pcap * LW.ember;
+      const solve = (Hx, Gx) => {
+        const A11 = 1 - ph * a, A12 = -ph * (1 - a), A21 = -pg * b, A22 = 1 - pg * (1 - b), det = A11 * A22 - A12 * A21;
+        return { Eh: (Hx * A22 - A12 * Gx) / det, Eg: (A11 * Gx - A21 * Hx) / det };
+      };
+      const st = solve(Hv.m, Gv.m), gd = solve(Hv.gold, Gv.gold), ent = x => LW.entryHeaven * x.Eh + (1 - LW.entryHeaven) * x.Eg;
+      spent += Q * enter * ent(st) * ST.perStep; gold += Q * enter * ent(gd);
+      out.full = gold / (spent * ST.valuePer);
+    }
+    return out;
+  }
+  const EXPECT_FULL = [1.129, 1.164, 1.194, 1.266, 1.342, 1.446];   // 規格 3.4 表值
+  const ex = H.settings.map(S => expect(S, true));
+  console.log(`  設定｜每步發展率｜平均幾步遇發展｜洞窟成功｜藏寶圖成功｜國度成功合計｜階段1單獨回收率｜完整遊戲回收率（規格表值）`);
+  H.settings.forEach((S, i) => console.log(`  ${i + 1}｜${pct(S.dev, 2)}｜${ex[i].walk.toFixed(1)}｜${pct(S.cave)}｜${pct(S.map)}｜${pct(ex[i].Q)}｜${pct(ex[i].stage1)}｜${pct(ex[i].full)}（${pct(EXPECT_FULL[i])}）`));
+  const wFull = ex.reduce((a, e, i) => a + e.full * dist[i], 0), wS1 = ex.reduce((a, e, i) => a + e.stage1 * dist[i], 0);
+  console.log(`  加權（settingDist）：完整遊戲 ${pct(wFull, 2)}｜階段 1 單獨 ${pct(wS1, 2)}（只有下位 ${H.lower.count} 隻怪，沒有巨龍與狹間，很低是預期的）｜設定六減設定一 ${((ex[5].full - ex[0].full) * 100).toFixed(1)} 點`);
+  ex.forEach((e, i) => ck(Math.abs(e.full - EXPECT_FULL[i]) <= 0.01, `設定${i + 1} 完整遊戲回收率 ${pct(e.full)} 與規格表值 ${pct(EXPECT_FULL[i])} 差超過 1.0 點`));
+  ck(Math.abs(wFull - 1.20) <= 0.01, `完整遊戲加權回收率 ${pct(wFull, 2)} 不在 120%±1`);
+  ck((ex[5].full - ex[0].full) * 100 >= 28 && (ex[5].full - ex[0].full) * 100 <= 36, `設定六減設定一 ${((ex[5].full - ex[0].full) * 100).toFixed(1)} 點不在 28～36`);
+  ck(wS1 > 0.05 && wS1 < 0.30, `階段 1 單獨回收率 ${pct(wS1)} 不在合理範圍（5%～30%）`);
+  ck(H.settings.every(S => S.dev > 0 && S.dev < 1 && S.cave > 0 && S.cave < 1 && S.map > 0 && S.map < 1), "入口機率必須在 0～1 之間");
+  ck(H.settings.length === 6 && dist.length === 6, "每日設定必須 6 種");
+
+  // ---- ② 蒙地卡羅：真實狀態機 ----
+  console.log(`  --- 蒙地卡羅（真實 js/mine-hunt.js，每輪：旅途→發展→國度→下位狩獵→凱旋）---`);
+  console.log(`  設定｜每步發展率(排除保底)｜洞窟成功｜藏寶圖成功｜單鈕/二選一/三選一｜擊倒率｜最長連續沒發展｜階段1回收率（精確）`);
+  let wMc = 0;
+  H.settings.forEach((S, si) => {
+    const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} };
+    sv.huntMeta.stamina = ST.cap;
+    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0 };
+    for (let n = 0; n < runs; n++) {
+      MH.run(sv, H);
+      const before = sv.huntMeta.stamina;
+      for (let guard = 0; guard < 200; guard++) {
+        const r = MH.peek(sv, H);
+        if (r.phase === "walk") {
+          const since = r.since, res = MH.step(sv, H, { setting: si + 1 });
+          if (!res.ok) { ck(false, "走路失敗：" + res.reason); break; }
+          c.steps++; c.streak++;
+          if (since < H.walk.guarantee - 1) { c.free++; if (res.ev === "dev") c.freeDev++; }
+          if (res.ev === "dev") { c.maxStreak = Math.max(c.maxStreak, c.streak); c.streak = 0; const kd = MH.peek(sv, H); if (kd.dev.kind === "cave") { c.caveN++; if (kd.country.ok) c.caveOk++; } else { c.mapN++; if (kd.country.ok) c.mapOk++; } }
+        } else if (r.phase === "dev") MH.enterCountry(sv, H);
+        else if (r.phase === "country") { MH.pickCountry(sv, H, 0); MH.afterCountry(sv, H); }
+        else if (r.phase === "hunt") {
+          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; MH.strike(sv, H, 0); MH.finishAnim(sv, H, MH.peek(sv, H).anim.rid); }
+          else { ck(false, "狩獵中沒有怪物"); break; }
+        } else if (r.phase === "done") { c.gold += r.last.gold; MH.again(sv, H); break; }
+      }
+      c.spent += before - sv.huntMeta.stamina;
+    }
+    const mcRtp = c.gold / (c.spent * ST.valuePer);
+    wMc += mcRtp * dist[si];
+    const totP = c.pres[0] + c.pres[1] + c.pres[2];
+    console.log(`  ${si + 1}｜${pct(c.freeDev / c.free, 2)}（${pct(S.dev, 2)}）｜${pct(c.caveOk / c.caveN)}（${pct(S.cave)}）｜${pct(c.mapOk / c.mapN)}（${pct(S.map)}）｜${c.pres.map(x => pct(x / totP, 0)).join("/")}｜${pct(c.monWin / c.monN)}｜${c.maxStreak} 步｜${pct(mcRtp)}（${pct(ex[si].stage1)}）`);
+    ck(Math.abs(c.freeDev / c.free - S.dev) <= 0.003, `設定${si + 1} 每步發展率實測 ${pct(c.freeDev / c.free, 2)} 與設定值 ${pct(S.dev, 2)} 差超過 0.3 點`);
+    ck(Math.abs(c.caveOk / c.caveN - S.cave) <= 0.005, `設定${si + 1} 洞窟國度成功率實測 ${pct(c.caveOk / c.caveN)} 與設定值差超過 0.5 點`);
+    ck(Math.abs(c.mapOk / c.mapN - S.map) <= 0.01, `設定${si + 1} 藏寶圖國度成功率實測 ${pct(c.mapOk / c.mapN)} 與設定值差超過 1 點（樣本較少）`);
+    ck(Math.abs(c.mapN / (c.mapN + c.caveN) - (1 - H.walk.caveShare)) <= 0.005, `設定${si + 1} 藏寶圖占比與設定值差超過 0.5 點`);
+    ck(c.maxStreak <= H.walk.guarantee, `設定${si + 1} 連續 ${c.maxStreak} 步沒遇到發展，超過保底 ${H.walk.guarantee}`);
+    H.present.forEach((p, k) => ck(Math.abs(c.pres[k] / totP - p) <= 0.01, `設定${si + 1} 呈現類型 ${k} 實測 ${pct(c.pres[k] / totP)} 與設定值 ${pct(p)} 差超過 1 點`));
+    ck(Math.abs(c.monWin / c.monN - H.lower.win) <= 0.005, `設定${si + 1} 擊倒率實測 ${pct(c.monWin / c.monN)} 與設定值差超過 0.5 點`);
+    ck(Math.abs(mcRtp - ex[si].stage1) <= 0.01, `設定${si + 1} 階段 1 回收率實測 ${pct(mcRtp)} 與精確值 ${pct(ex[si].stage1)} 差超過 1 點`);
+  });
+  console.log(`  階段 1 單獨加權回收率（蒙地卡羅）${pct(wMc, 2)}（精確 ${pct(wS1, 2)}）`);
+  // 打進去之後的機率與設定無關：第一階段只有「下位擊倒率」，固定寫在 config.hunt.lower；每日設定只能有入口三個欄位
+  ck(H.settings.every(S => Object.keys(S).sort().join() === "cave,dev,map"), "每日設定只能有 dev／cave／map 三個入口欄位（打進去之後不隨設定變）");
+
+  // ---- ③ 餵食換算 ----
+  console.log(`  --- 餵食（1 體力＝${ST.valuePer} 金幣的鎬子價值，無條件捨去，無套利）---`);
+  const defOf = id => C.tools.find(t => t.id === id);
+  const WANT = { wood: 18, stone: 55, iron: 133, gold: 275, diamond: 608, redrock: ST.drillTotal };
+  const fresh = id => { const d = defOf(id); return { uid: 1, id, dur: d.durability, max: d.durability }; };
+  const feedN = tools => MH.feedPreview({ tools }, H, defOf, tools.map(t => t.uid)).n;
+  console.log("  滿耐久：" + Object.keys(WANT).map(id => `${defOf(id).name} ${feedN([fresh(id)])}`).join("｜"));
+  Object.keys(WANT).forEach(id => ck(feedN([fresh(id)]) === WANT[id], `${defOf(id).name} 滿耐久應為 ${WANT[id]} 體力，實際 ${feedN([fresh(id)])}`));
+  ck(WANT.redrock === 1380, "鑽頭應為 1,380 體力");
+  ck(!MH.feedable(H, defOf("redrockTrial"), fresh("redrockTrial")).ok, "試用版鑽頭不可餵");
+  // 無套利：任何耐久、任何組合，換到的體力 × 6 都不超過精確價值；多把先加總再捨去（≥ 各自捨去的總和）
+  let arbBad = 0, multiBad = 0;
+  const ids = ["wood", "stone", "iron", "gold", "diamond", "redrock"];
+  ids.forEach(id => {
+    const d = defOf(id), per = d.price ? d.price / d.durability : ST.drillTotal * ST.valuePer / d.durability;
+    for (let dur = 1; dur <= d.durability; dur++) {
+      const t = { uid: 1, id, dur, max: d.durability }, f = MH.feedable(H, d, t);
+      if (f.ok && f.n * ST.valuePer > dur * per + 1e-6) arbBad++;
+      if (!f.ok && dur * per / ST.valuePer >= 1) arbBad++;
+    }
+  });
+  for (let k = 0; k < 20000; k++) {
+    const cnt = 1 + Math.floor(Math.random() * 6), tools = [];
+    for (let j = 0; j < cnt; j++) { const id = ids[Math.floor(Math.random() * ids.length)], d = defOf(id); tools.push({ uid: j + 1, id, dur: 1 + Math.floor(Math.random() * d.durability), max: d.durability }); }
+    const okTools = tools.filter(t => MH.feedable(H, defOf(t.id), t).ok);
+    const exact = okTools.reduce((a, t) => a + MH.feedExact(H, defOf(t.id), t), 0), singles = okTools.reduce((a, t) => a + MH.feedable(H, defOf(t.id), t).n, 0);
+    const all = MH.feedPreview({ tools: okTools }, H, defOf, okTools.map(t => t.uid)).n;
+    if (all > exact + 1e-6 || all < singles) multiBad++;
+  }
+  ck(arbBad === 0, `餵食換算有 ${arbBad} 個耐久值會多拿體力或誤判不可餵`);
+  ck(multiBad === 0, `多把一起餵有 ${multiBad} 組不符合「先加總再捨去、不超過精確值」`);
+  ck(!MH.feedable(H, defOf("wood"), { uid: 1, id: "wood", dur: 3, max: 60 }).ok, "耐久 3 的木鎬（換算 0.55 體力）應為不可餵");
+  console.log(bad ? `  ⚠️ §8.10 共 ${bad} 項不合格` : `  ✓ §8.10：入口機率／保底／呈現比例／擊倒率／完整遊戲回收率（加權 ${pct(wFull, 2)}）／餵食無套利 全部正確`);
+  if (bad) process.exitCode = 1;
+}
+if (HUNT_ONLY) { console.log("深層礦脈 模擬報表（只跑 §8.10）｜gameVersion " + VER); huntSection(HUNT_RUNS); process.exit(process.exitCode || 0); }
 
 console.log(`深層礦脈 模擬報表`);
 console.log(`gameVersion ${VER}｜iterations ${N.toLocaleString()}｜date ${new Date().toISOString().slice(0, 10)}｜rng Math.random（未固定 seed）`);
@@ -352,3 +490,5 @@ console.log(`\n=== §8.7 依每日設定分配加權（玩家實際體感）===`
       `｜用一次多拿 $${per.toFixed(0)}（≈${(per / cps).toFixed(0)} 揮的鎬子錢）｜機械割 +${rtpPt.toFixed(3)} 個百分點`);
   });
 }
+
+huntSection(HUNT_RUNS);

@@ -33,10 +33,15 @@
             <span id="mbName" class="mb-name">淺層洞窟</span>
             <span id="mbState" class="mb-state"></span>
           </div>
-          <div class="mb-row mb-data">
+          <div class="mb-row mb-data" id="mbData">
             <span>今日此坑挖掘 <b id="mbSwings">0</b></span>
             <span>礦脈 <b id="mbHits">0</b></span>
             <span><span id="mbSinceL">距離上次遇見礦脈挖掘</span> <b id="mbSince">0</b></span>
+          </div>
+          <div class="mb-row mb-data hidden" id="huntData">
+            <span>可走 <b id="hbStep">0</b> 步</span>
+            <span>本輪金幣 <b id="hbGold">0</b></span>
+            <span>去過國度 <b id="hbVisit">0</b> 次</span>
           </div>
         </div>
         <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
@@ -68,6 +73,7 @@
           <div class="bar"><div class="bar-fill" id="tiBar"></div></div>
           <div class="ti-dur" id="tiDur">0/0</div>
         </div>
+        <button class="px-btn hidden" id="btnFeed">餵食</button>
         <button class="px-btn" id="btnAuto">手動</button>
         <button class="px-btn" id="btnLeave" title="離開礦坑">離開</button>
       </div>
@@ -103,6 +109,7 @@
           <button class="px-btn small" id="acctRename">改名字</button>
           <div class="cell" id="acctTitle"></div><button class="px-btn small" id="acctTitlePick">換頭銜</button></div>
       </div>
+      <div class="px-box panel hidden" id="fxPanel"></div>   <!-- 顯示（減少特效）：冒險之地才有的演出，一般玩家看不到那座礦坑時不顯示 -->
       <div class="px-box panel" id="cloudPanel" data-edit="cloudPanel" data-label="雲端存檔"></div>
       <button class="px-btn wide boss-opt" id="acctBack">◀ 返回</button>
     </section>
@@ -227,6 +234,9 @@
 <script src="js/config.js?v=1.04.01"></script>
 <script src="js/engine.js?v=1.04.01"></script>
 <script src="js/engine2.js?v=1.04.01"></script>
+<script src="js/mine-hunt.js?v=1.04.01"></script>
+<script src="js/hunt-fx.js?v=1.04.01"></script>
+<script src="js/hunt-ui.js?v=1.04.01"></script>
 <script src="js/boons.js?v=1.04.01"></script>
 <script src="js/ruby.js?v=1.04.01"></script>
 <script src="js/titles.js?v=1.04.01"></script>
