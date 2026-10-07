@@ -260,7 +260,8 @@
   const TS = window.TitleSystem;
   const TITLE_RANK = ["一般", "珍貴", "稀有", "傳說"];
   let titleBooting = true, titleStartupAdds = [];
-  function titleDefs() { return Array.isArray(config.titles) ? config.titles : []; }
+  /* 頭銜清單一律用程式內建值：編輯器存的設定檔會整個蓋掉陣列，舊設定檔裡的清單會跟不上（條件、文字改了也不會生效） */
+  function titleDefs() { const t = (window.DEFAULT_CONFIG || {}).titles; return Array.isArray(t) ? t : []; }
   function titleDef(id) { return titleDefs().find(t => t.id === id) || null; }
   function titleContext() {
     const idx = itemIndex(), dexCats = new Set(), dex = save.dex || {};
