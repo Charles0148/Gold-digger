@@ -18,6 +18,67 @@
       { id: 5, name: "金", color: "#ffaa00" }
     ],
 
+    /* ---------- 稱號（擁有者 2026-10-06 定案，共 50 個） ----------
+       rarity：0 一般／1 珍貴／2 稀有／3 傳說。取得後永久保留；傳說未取得時隱藏條件。 */
+    titles: [
+      { id:"new_miner", name:"新來的礦工", rarity:0, kind:"start", condition:"開始遊戲", intro:"今天起，你也是深入地底的一員。" },
+      { id:"swing_1k", name:"手上有繭了", rarity:0, kind:"stat", path:"swings", target:1000, condition:"累計揮鎬 1,000 次", intro:"握過一千次鎬柄，雙手開始記住礦坑的重量。" },
+      { id:"swing_10k", name:"鎬聲不斷", rarity:1, kind:"stat", path:"swings", target:10000, condition:"累計揮鎬 10,000 次", intro:"只要鎬聲還在回響，你就不會停下。" },
+      { id:"swing_100k", name:"礦坑的回音", rarity:2, kind:"stat", path:"swings", target:100000, condition:"累計揮鎬 100,000 次", intro:"數不清的揮擊，已成為地底最熟悉的聲音。" },
+      { id:"swing_1m", name:"地底不滅的鎬聲", rarity:3, kind:"stat", path:"swings", target:1000000, condition:"累計揮鎬 1,000,000 次", intro:"百萬次揮擊之後，你的鎬聲已成為地底永不消失的回音。" },
+      { id:"broken_100", name:"鎬子的墳場", rarity:2, kind:"stat", path:"toolsBroken", target:100, condition:"累計用壞 100 把鎬子", intro:"每一把壞掉的鎬子，都替你留下了一段路。" },
+      { id:"days_7", name:"熟面孔", rarity:0, kind:"stat", path:"loginDays", target:7, condition:"累計登入 7 天", intro:"坑口的人已經開始認得你了。" },
+      { id:"days_30", name:"坑口的常客", rarity:1, kind:"stat", path:"loginDays", target:30, condition:"累計登入 30 天", intro:"你來得太勤，連礦塵都像在等你。" },
+      { id:"days_100", name:"在這裡待了很久的人", rarity:2, kind:"stat", path:"loginDays", target:100, condition:"累計登入 100 天", intro:"許多礦工來了又走，而你仍在這裡。" },
+      { id:"days_365", name:"與礦同行", rarity:3, kind:"stat", path:"loginDays", target:365, condition:"累計登入 365 天", intro:"一整年的日子，都有礦坑陪你走過。" },
+
+      { id:"unlock_m2", name:"煤灰沾袖", rarity:0, kind:"unlocked", key:"m2", condition:"解鎖煤灰坑道", intro:"袖口的第一層煤灰，是礦工的起點。" },
+      { id:"unlock_m3", name:"一身鏽味", rarity:1, kind:"unlocked", key:"m3", condition:"解鎖鏽鐵礦山", intro:"鏽鐵的氣味，已經洗不掉了。" },
+      { id:"unlock_m4", name:"熔岩邊的人", rarity:1, kind:"unlocked", key:"m4", condition:"解鎖熔岩深淵", intro:"你曾站在熱浪前，仍選擇繼續向下。" },
+      { id:"unlock_m5", name:"星核的見證者", rarity:2, kind:"unlocked", key:"m5", condition:"解鎖星核裂谷", intro:"裂谷深處的星光，曾映進你的眼裡。" },
+      { id:"unlock_m6", name:"前輩帶出來的人", rarity:1, kind:"unlocked", key:"m6", condition:"解鎖三位前輩的考驗", intro:"走過三位前輩的考驗，你已不再只是新人。" },
+      { id:"m1_3k", name:"洞窟老手", rarity:0, kind:"mineSwings", key:"m1", target:3000, condition:"在淺層洞窟累計揮鎬 3,000 次", intro:"淺層洞窟的每一處回音，你都聽得懂。" },
+      { id:"m1_m5_1k", name:"礦脈地圖都在腦子裡", rarity:2, kind:"mineSwingsAll", keys:["m1","m2","m3","m4","m5"], target:1000, condition:"m1～m5 每座礦坑各累計揮鎬 1,000 次", intro:"不必攤開地圖，你已知道每條路通往何處。" },
+      { id:"world_heart", name:"世界之心的主人", rarity:2, kind:"dexName", key:"世界之心", condition:"取得世界之心", intro:"你曾把地底最深處的心跳握在手中。" },
+
+      { id:"ore_green", name:"綠光入袋", rarity:0, kind:"dexCat", key:"good", condition:"第一次取得綠色礦石", intro:"第一抹綠光，讓你的礦工生涯有了顏色。" },
+      { id:"ore_blue", name:"藍光入袋", rarity:1, kind:"dexCat", key:"rare", condition:"第一次取得藍色礦石", intro:"幽藍礦光，照亮了更深的一段路。" },
+      { id:"ore_purple", name:"紫色的預感", rarity:1, kind:"dexCat", key:"epic", condition:"第一次取得紫色礦石", intro:"紫光出現時，你知道好東西就在附近。" },
+      { id:"ore_gold", name:"金光一閃", rarity:2, kind:"dexCat", key:"legend", condition:"第一次取得金色礦石", intro:"那一瞬金光，足以讓所有辛苦都有了答案。" },
+      { id:"ore_50", name:"礦石鑑定家", rarity:2, kind:"dexCount", target:50, condition:"發現 50 種不同礦石（不含碎石）", intro:"礦石才露出一角，你就知道它的名字。" },
+
+      { id:"senpai_each_20", name:"前輩的小幫手", rarity:1, kind:"bossEach", target:20, condition:"岩倉、赤井、霧島談話成功各 20 次", intro:"前輩有事時，已經會第一個想到你。" },
+      { id:"iwakura_100", name:"岩倉的同行者", rarity:2, kind:"memory", key:"a", condition:"取得岩倉的 100 次珍貴回憶", intro:"你和岩倉走過的路，已經足以稱為回憶。" },
+      { id:"akai_100", name:"赤井的夥伴", rarity:2, kind:"memory", key:"b", condition:"取得赤井的 100 次珍貴回憶", intro:"赤井願意把背後交給你，這就夠了。" },
+      { id:"kirishima_100", name:"霧島的晚輩", rarity:2, kind:"memory", key:"c", condition:"取得霧島的 100 次珍貴回憶", intro:"霧島很少稱讚人，但他記得你的努力。" },
+      { id:"senpai_memories_all", name:"三條路的交會", rarity:3, kind:"memoriesAll", condition:"取得三位前輩的 100 次珍貴回憶", intro:"三段珍貴回憶，終於在你手中交會。" },
+      { id:"senpai_total_1k", name:"三人的不解之緣", rarity:3, kind:"bossTotal", target:1000, condition:"三位前輩談話成功合計 1,000 次", intro:"一起走過這麼久，前輩們早已習慣有你在身旁。" },
+      { id:"iwakura_500", name:"礦燈下的知己", rarity:3, kind:"bossEach", bosses:["a"], target:500, condition:"與岩倉談話成功 500 次", intro:"許多話已經不必說出口，一個眼神就能明白彼此。" },
+      { id:"iwakura_1000", name:"一生摯友", rarity:3, kind:"bossEach", bosses:["a"], target:1000, condition:"與岩倉談話成功 1,000 次", intro:"千次同行之後，你已成為岩倉最不願失去的朋友。" },
+      { id:"akai_500", name:"鑿聲搭檔", rarity:3, kind:"bossEach", bosses:["b"], target:500, condition:"與赤井談話成功 500 次", intro:"再難走的礦道，只要你在身旁，赤井就敢繼續向前。" },
+      { id:"akai_1000", name:"生死相託", rarity:3, kind:"bossEach", bosses:["b"], target:1000, condition:"與赤井談話成功 1,000 次", intro:"他敢毫不猶豫地把背後交給你，因為你從未讓他失望。" },
+      { id:"kirishima_500", name:"銘心後輩", rarity:3, kind:"bossEach", bosses:["c"], target:500, condition:"與霧島談話成功 500 次", intro:"在那道嚴格的目光中，你終於看見了毫不保留的認可。" },
+      { id:"kirishima_1000", name:"霧島的驕傲", rarity:3, kind:"bossEach", bosses:["c"], target:1000, condition:"與霧島談話成功 1,000 次", intro:"如今霧島提起你時，嚴肅的語氣裡也藏不住驕傲。" },
+      { id:"senpai_each_500", name:"前輩們的老朋友", rarity:3, kind:"bossEach", target:500, condition:"岩倉、赤井、霧島談話成功各 500 次", intro:"五百次相遇之後，留下的不只是認可，而是真正的交情。" },
+      { id:"senpai_each_1000", name:"礦脈盡頭的同行者", rarity:3, kind:"bossEach", target:1000, condition:"岩倉、赤井、霧島談話成功各 1,000 次", intro:"走過千次回憶，無論礦脈通往哪裡，你們仍會並肩前行。" },
+
+      { id:"boss_lv5", name:"店裡的熟客", rarity:0, kind:"bossLevel", target:5, condition:"佐佐木恩惠達到 Lv5", intro:"佐佐木看見你進門，已經懶得問要買什麼。" },
+      { id:"boss_lv15", name:"佐佐木的得力幫手", rarity:1, kind:"bossLevel", target:15, condition:"佐佐木恩惠達到 Lv15", intro:"有些麻煩事，佐佐木只放心交給你。" },
+      { id:"boss_lv30", name:"佐佐木留的位置", rarity:2, kind:"bossLevel", target:30, condition:"佐佐木恩惠達到 Lv30", intro:"櫃檯裡總有一個位置留給你，有些事佐佐木只願意交給你。" },
+      { id:"quests_25", name:"跑腿的", rarity:0, kind:"stat", path:"questsCompleted", target:25, condition:"累計完成 25 件委託", intro:"礦坑裡的大事小事，最後總會找到你。" },
+      { id:"quests_250", name:"委託板小能手", rarity:2, kind:"stat", path:"questsCompleted", target:250, condition:"累計完成 250 件委託", intro:"再滿的委託板，到了你手裡也會被清空。" },
+      { id:"boons_all", name:"佐佐木的心意", rarity:1, kind:"boonAll", condition:"佐佐木四種恩惠都至少取得一階", intro:"佐佐木給出的四份心意，你一樣也沒錯過。" },
+
+      { id:"freeze_once", name:"礦坑安靜的那一刻", rarity:3, kind:"stat", path:"freeze.normal", target:1, condition:"第一次在一般礦坑經歷地底凍結", intro:"礦坑深處，時間曾在你面前停了一瞬。" },
+      { id:"freeze_twice", name:"寂靜再次降臨", rarity:3, kind:"stat", path:"freeze.normal", target:2, condition:"在一般礦坑累計經歷地底凍結 2 次", intro:"那份不可能忘記的寂靜，竟然再次出現。" },
+      { id:"freeze_senpai", name:"前輩也沉默了", rarity:3, kind:"stat", path:"freeze.senpai", target:1, condition:"在三位前輩的考驗中經歷地底凍結", intro:"那一瞬間，連身旁的前輩都停下了腳步。" },
+      { id:"vein_once", name:"前輩的心意", rarity:1, kind:"stat", path:"veinsEntered", target:1, condition:"第一次進入「前輩的心意」", intro:"你曾走進一條只為信任而開啟的礦脈。" },
+      { id:"vein_25", name:"順著礦脈走", rarity:2, kind:"stat", path:"veinsEntered", target:25, condition:"累計進入「前輩的心意」25 次", intro:"你已學會聽從礦脈，而不是只相信眼睛。" },
+
+      { id:"ruby_1000", name:"掌心有紅光", rarity:1, kind:"rubyGot", target:1000, condition:"累計取得紅晶 1,000 顆", intro:"紅晶的微光，在你掌心累積成了一段旅程。" },
+      { id:"cosmetics_6", name:"衣櫃裡有礦味", rarity:1, kind:"cosmetics", target:6, condition:"名字顏色與外框合計擁有 6 件", intro:"你的收藏證明，礦工也可以很講究。" }
+    ],
+
     /* ---------- 小役（每揮一次抽一個） ---------- */
     // value = 平常挖到的基本售價；veinValue = 礦脈中挖到「脈晶」的基本售價（都 × 礦坑倍率）
     categories: [
