@@ -38,7 +38,7 @@
       { id:"unlock_m5", name:"星核的見證者", rarity:2, kind:"unlocked", key:"m5", condition:"解鎖星核裂谷", intro:"裂谷深處的星光，曾映進你的眼裡。" },
       { id:"unlock_m6", name:"前輩帶出來的人", rarity:1, kind:"unlocked", key:"m6", condition:"解鎖三位前輩的考驗", intro:"走過三位前輩的考驗，你已不再只是新人。" },
       { id:"m1_3k", name:"洞窟老手", rarity:0, kind:"mineSwings", key:"m1", target:3000, condition:"在淺層洞窟累計揮鎬 3,000 次", intro:"淺層洞窟的每一處回音，你都聽得懂。" },
-      { id:"m1_m5_1k", name:"礦脈地圖都在腦子裡", rarity:2, kind:"mineSwingsAll", keys:["m1","m2","m3","m4","m5"], target:1000, condition:"m1～m5 每座礦坑各累計揮鎬 1,000 次", intro:"不必攤開地圖，你已知道每條路通往何處。" },
+      { id:"m1_m5_1k", name:"礦脈地圖都在腦子裡", rarity:2, kind:"mineSwingsAll", keys:["m1","m2","m3","m4","m5"], target:1000, condition:"五座礦坑各累計揮鎬 1,000 次", intro:"不必攤開地圖，你已知道每條路通往何處。" },
       { id:"world_heart", name:"世界之心的主人", rarity:2, kind:"dexName", key:"世界之心", condition:"取得世界之心", intro:"你曾把地底最深處的心跳握在手中。" },
 
       { id:"ore_green", name:"綠光入袋", rarity:0, kind:"dexCat", key:"good", condition:"第一次取得綠色礦石", intro:"第一抹綠光，讓你的礦工生涯有了顏色。" },
