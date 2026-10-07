@@ -396,7 +396,7 @@ notify pgrst, 'reload schema';
 -- select column_name, column_default from information_schema.columns
 --  where table_schema = 'public' and table_name = 'mail' and column_name = 'ruby';             -- 應有一列，預設 0
 -- select count(*) from public.lifetime_claims;                                                   -- 剛套用應為 0
--- select count(*) from public.cosmetic_catalog;                                                  -- 剛套用應為 0（清單等核准後再加）
+-- select count(*) from public.cosmetic_catalog;                                                  -- 剛套用應為 14
 -- select column_name from information_schema.columns
 --  where table_schema = 'public' and table_name = 'player_profiles' and column_name like 'equipped_%';   -- 應有兩列
 
