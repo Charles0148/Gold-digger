@@ -70,8 +70,8 @@
       }
       case "rubyGot": value = n(((save.ruby || {}).got)); break;
       case "cosmetics": {
-        const owned = (((save.ruby || {}).cos || {}).owned);
-        value = Array.isArray(owned) ? new Set(owned).size : 0;
+        const owned = (((save.ruby || {}).cos || {}).owned), ok = ctx.cosIds;   // 只算正式外觀清單裡的 id
+        value = Array.isArray(owned) ? new Set(owned.filter(id => !ok || ok.has(id))).size : 0;
         break;
       }
     }

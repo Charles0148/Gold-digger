@@ -271,11 +271,23 @@
     return {
       save, dexCats,
       dexCount: Object.keys(dex).filter(name => idx[name] && idx[name].cat.id !== "rubble").length,
-      boonKinds: Object.keys(kinds)
+      boonKinds: Object.keys(kinds),
+      cosIds: new Set(COS().map(c => c.id))
     };
   }
+  /* 成就版外觀：條件沿用 cos.ach 指的頭銜判定（達成就給，不另外補算舊紀錄）；要在頭銜判定前給，#50 才算得到 */
+  function awardAchCos(ctx) {
+    const got = [];
+    COS().forEach(c => {
+      const def = c.ach && titleDef(c.ach);
+      if (def && !cosOwned(c.id) && TS.progress(def, ctx).done) { save.ruby.cos.owned.push(c.id); got.push(c); }
+    });
+    return got;
+  }
   function awardTitles(notify) {
-    const added = TS.check(save, titleDefs(), titleContext());
+    const ctx = titleContext(), cos = awardAchCos(ctx);
+    if (cos.length && notify !== false && !titleBooting) setTimeout(() => toast(cos.length === 1 ? `獲得外觀：${cos[0].label}` : `獲得 ${cos.length} 件外觀`), 0);
+    const added = TS.check(save, titleDefs(), ctx);
     if (!added.length) return added;
     if (notify !== false && titleBooting) titleStartupAdds.push(...added);
     else if (notify !== false) setTimeout(() => toast(added.length === 1 ? `獲得頭銜：${added[0].name}` : `獲得 ${added.length} 個頭銜`), 0);
@@ -3381,13 +3393,13 @@
   function renderLook() {
     const c = save.ruby.cos, name = save.name || "玩家";
     const status = it => cosOwned(it.id) ? (c[it.slot] === it.id ? '<span class="sub">使用中</span>' : `<button class="px-btn small" data-cos="${it.slot}:${it.id}">使用</button>`)
-      : `<span class="sub">${it.src === "ruby" ? "紅晶商店" : "成就獎勵（準備中）"}</span>`;
+      : `<span class="sub">${it.src === "ruby" ? "紅晶商店" : esc((titleDef(it.ach) || {}).condition || "")}</span>`;
     const nameRow = it => `<div class="row look-row"><span class="look-prev"><span class="${it.src === "ruby" ? "nc-g " : ""}nc-${it.id}">${esc(name)}</span></span><span class="grow">${esc(it.label)}</span>${status(it)}</div>`;
     const frameRow = it => `<div class="row look-row"><span class="look-frame textbox fr-${it.id}"><i class="fr-gem tl"></i><i class="fr-gem tr"></i><i class="fr-gem bl"></i><i class="fr-gem br"></i></span><span class="grow">${esc(it.label)}</span>${status(it)}</div>`;
     const off = slot => `<div class="row look-row"><span class="grow sub">不使用（預設）</span>${c[slot] ? `<button class="px-btn small" data-cos="${slot}:">使用</button>` : '<span class="sub">使用中</span>'}</div>`;
     $("achLookList").innerHTML = `<div class="look-sec">名字顏色</div>${off("name")}${COS().filter(x => x.slot === "name").map(nameRow).join("")}
       <div class="look-sec">敘述框外框</div>${off("frame")}${COS().filter(x => x.slot === "frame").map(frameRow).join("")}
-      <div class="sub" style="margin-top:8px">紅晶版在紅晶商店整組購買；成就版之後完成成就即可取得。</div>`;
+      <div class="sub" style="margin-top:8px">紅晶版在紅晶商店整組購買；其他外觀達成條件就會自動取得。</div>`;
   }
   const rubyLine = (n, why) => colored(`◆ 紅晶 +${n}（${why}）`, RUBY_COLOR);
   /* 揮擊後：扣掉的耐久累積挖礦進度。spent＝這一揮實際扣掉的耐久（鑽頭免扣時是 0） */

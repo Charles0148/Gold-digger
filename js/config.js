@@ -76,7 +76,7 @@
       { id:"vein_25", name:"順著礦脈走", rarity:2, kind:"stat", path:"veinsEntered", target:25, condition:"累計進入「前輩的心意」25 次", intro:"你已學會聽從礦脈，而不是只相信眼睛。" },
 
       { id:"ruby_1000", name:"掌心有紅光", rarity:1, kind:"rubyGot", target:1000, condition:"累計取得紅晶 1,000 顆", intro:"紅晶的微光，在你掌心累積成了一段旅程。" },
-      { id:"cosmetics_6", name:"衣櫃裡有礦味", rarity:1, kind:"cosmetics", target:6, condition:"名字顏色與外框合計擁有 6 件", intro:"你的收藏證明，礦工也可以很講究。" }
+      { id:"cosmetics_6", name:"衣櫃裡有礦味", rarity:1, kind:"cosmetics", target:10, condition:"名字顏色與外框合計擁有 10 件", intro:"你的收藏證明，礦工也可以很講究。" }
     ],
 
     /* ---------- 小役（每揮一次抽一個） ---------- */
@@ -420,7 +420,8 @@
         trialEndLine: "試用的紅岩鑽頭用完了。"
       },
       shop: { redrock: 175, probe: 330, boardTicket: 25, nameColor: 120, frame: 220 },
-      /* 外觀（擁有者 2026-10-05 看圖核准；星辰框不用）。src：ruby＝紅晶商店整組購買（華麗）／ach＝成就獎勵（樸素，哪個成就送哪款討論中）。
+      /* 外觀（擁有者 2026-10-05 看圖核准；星辰框不用）。src：ruby＝紅晶商店整組購買（華麗）／ach＝成就獎勵（樸素）。
+         ach：沿用該頭銜的取得條件判定（擁有者 2026-10-07 定案；畫面上頭銜與外觀分開顯示，頭銜卡不提外觀）。
          id 與 docs/20 SQL 的 cosmetic_catalog 對應（只存白名單 id，不存顏色碼）。樣式在 css/style.css 的 .nc-*／.fr-* */
       cosmetics: [
         { id: "name_ruby",  slot: "name",  src: "ruby", label: "紅晶" },
@@ -429,14 +430,14 @@
         { id: "name_ice",   slot: "name",  src: "ruby", label: "冰晶" },
         { id: "name_jade",  slot: "name",  src: "ruby", label: "翠脈" },
         { id: "name_dusk",  slot: "name",  src: "ruby", label: "夕焰" },
-        { id: "name_moss",  slot: "name",  src: "ach",  label: "苔綠" },
-        { id: "name_slate", slot: "name",  src: "ach",  label: "石青" },
-        { id: "name_amber", slot: "name",  src: "ach",  label: "琥珀" },
+        { id: "name_moss",  slot: "name",  src: "ach",  label: "苔綠", ach: "m1_3k" },
+        { id: "name_slate", slot: "name",  src: "ach",  label: "石青", ach: "m1_m5_1k" },
+        { id: "name_amber", slot: "name",  src: "ach",  label: "琥珀", ach: "boss_lv30" },
         { id: "frame_ruby", slot: "frame", src: "ruby", label: "紅晶框" },
         { id: "frame_gold", slot: "frame", src: "ruby", label: "金紋框" },
-        { id: "frame_iron", slot: "frame", src: "ach",  label: "鐵框" },
-        { id: "frame_wood", slot: "frame", src: "ach",  label: "木框" },
-        { id: "frame_bronze", slot: "frame", src: "ach", label: "銅框" }
+        { id: "frame_iron", slot: "frame", src: "ach",  label: "鐵框", ach: "unlock_m3" },
+        { id: "frame_wood", slot: "frame", src: "ach",  label: "木框", ach: "days_30" },
+        { id: "frame_bronze", slot: "frame", src: "ach", label: "銅框", ach: "ore_50" }
       ],
       /* 每座礦坑的紅晶設定（docs/20 第三、五節）。放在這裡（以礦坑 id 為 key）而不是 mines 陣列裡：
          編輯器存的設定檔會整個蓋掉 mines 陣列，新欄位會不見。沒列出的礦坑一律「不適用」（docs/20 第四節安全預設）。

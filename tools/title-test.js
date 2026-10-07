@@ -48,13 +48,23 @@ defs.forEach(d => {
   save.senpai.wins = { a: 1000, b: 1000, c: 1000 };
   save.senpai.memories = { a: {}, b: {}, c: {} };
   save.boss = { level: 30, tiers: { a: 1, b: 1, c: 1, d: 1 } };
-  save.ruby = { got: 1000, cos: { owned: [1,2,3,4,5,6] } };
+  save.ruby = { got: 1000, cos: { owned: ["c1","c2","c3","c4","c5","c6","c7","c8","c9","c10"] } };
   const got = TS.check(save, defs, ctx(save, { dexCats: new Set(["good", "rare", "epic", "legend"]), dexCount: 50 }));
   assert.strictEqual(save.titles.owned.length, 50, `全條件達標應取得 50 個，實際 ${save.titles.owned.length}`);
   assert.strictEqual(got.length, 50, "第一次全條件補發數量錯誤");
   save.stat.swings = 0;
   TS.check(save, defs, ctx(save));
   assert.ok(save.titles.owned.includes("swing_1m"), "取得後不得因數值降低被收回");
+}
+
+{
+  // #50 衣櫃：只算正式外觀清單裡的 id，未知 id 不灌數
+  const cosDef = defs.find(d => d.id === "cosmetics_6"), cosIds = new Set(["c1","c2","c3","c4","c5","c6","c7","c8","c9","c10"]);
+  const save = base(); TS.fix(save);
+  save.ruby = { cos: { owned: ["c1","c2","c3","c4","c5","c6","c7","c8","c9","junk_x"] } };
+  assert.strictEqual(TS.progress(cosDef, ctx(save, { cosIds })).done, false, "未知外觀 id 不得計入衣櫃");
+  save.ruby.cos.owned.push("c10");
+  assert.strictEqual(TS.progress(cosDef, ctx(save, { cosIds })).done, true, "10 件正式外觀應達成衣櫃");
 }
 
 {
