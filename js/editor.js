@@ -263,19 +263,22 @@
     boonsV2: "恩惠 v2（四種各幾階）", kinds: "四種恩惠", offer: "每級候選數",
     freeze: "地底凍結", adSupplyQty: "每次補給數量", tenjou: "天井（轉）", minTaps: "鏟子最少點幾下", hintRate: "心情暗示出現率",
     hot: "激熱", win: "會成功時", lose: "不會成功時", need: "珍貴回憶所需次數", lv: "需要恩惠等級",
-    shortReturnSec: "剛離開又回來（秒）", longAwayHours: "很久沒來（小時）", lowToolRatio: "鎬子快用完（比例）", heavyBag: "背包很滿（件數）", chatChance: "閒聊機率"
+    shortReturnSec: "剛離開又回來（秒）", longAwayHours: "很久沒來（小時）", lowToolRatio: "鎬子快用完（比例）", heavyBag: "背包很滿（件數）", chatChance: "閒聊機率",
+    len: "共鳴長度", at: "報酬（前輩帶路）", st: "ST（前輩出題）", rounds: "上位・各轉數的機率", incs: "鏟子每下的數字", incWeights: "鏟子數字權重",
+    mood: "前輩心情", memories: "珍貴回憶", milestones: "里程碑", redrockTrial: "紅岩鑽頭試用", talk: "佐佐木談話"
   };
   /* 同名鍵在不同區塊意思不同（LABEL 物件同名會互相覆蓋）：用路徑結尾指定 */
   const PLABEL = {
     "rules.bonusTable": "⑧ AT 中的小役機率", "machine2.bonusTable": "BONUS的小役", "date.steps": "談話長度(最短,最長)",
     "hints.rate": "確定後每揮出現率", "call.rate": "各累積數的機率", "freeze.rate": "發生機率", "freeze.stock": "凍結後送的礦脈數",
-    "cont.low": "第1～4隻", "reward.low": "無（最低）"
+    "cont.low": "第1～4隻", "reward.low": "無（最低）",
+    "stTable.a": "岩倉出題", "stTable.b": "赤井出題", "stTable.c": "霧島出題"
   };
   const plab = p => { const k = Object.keys(PLABEL).find(x => p === x || p.endsWith("." + x)); return k && PLABEL[k]; };
   /* 已不影響遊戲的設定：不列在數值頁（舊版恩惠＝恩惠 v2 正式開啟後不用；期待度的連續演出欄位引擎沒在讀） */
   const NUM_HIDE = new Set(["boss.boons", "boss.boonRarity", "rules.omen.chanceLow", "rules.omen.chanceHigh", "rules.omen.highP", "rules.omen.chanceWin", "machine2.prices"]);
   const BV2K = () => ((draft.boss.boonsV2 || {}).kinds) || {};
-  const lab = (k, parent, p) => (p && plab(p)) || (parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "kinds" && BV2K()[k]) ? BV2K()[k].name : (BV2K()[parent] && k === "step") ? "每階效果(0.04=4%)" : (BV2K()[parent] && k === "max") ? "最多幾階" : (LABEL[k] || k);
+  const lab = (k, parent, p) => (p && plab(p)) || ((parent === "koukaku" && k === "koukaku") ? "高確" : (k === "bonus" && parent === "toolDrop") ? "AT中" : (parent === "levelNeed" && k === "base") ? "基本" : (parent === "kinds" && BV2K()[k]) ? BV2K()[k].name : (BV2K()[parent] && k === "step") ? "每階效果(0.04=4%)" : (BV2K()[parent] && k === "max") ? "最多幾階" : (LABEL[k] || k));
   function numTree(obj, path, parent, depth) {
     let html = "";
     for (const k of Object.keys(obj)) {
@@ -298,8 +301,10 @@
           html += `<div class="ed-note" style="margin:6px 0 2px">${lab(k, parent, p)}</div><div class="ed-scroll"><table class="ed-table"><tr>${Object.keys(v).map(h => `<th>${h}</th>`).join("")}</tr>
             <tr>${Object.keys(v).map(h => `<td><input type="number" step="any" data-n="${p}.${h}" value="${v[h]}"></td>`).join("")}</tr></table></div>`;
         } else {
+          const sub = numTree(v, p, k, depth + 1);
+          if (!sub) continue;   // 底下沒有數字可改（台詞、演出物件）就不列標題
           html += depth === 0 ? `<div class="ed-sec">${lab(k, parent, p)}</div>` : `<div class="ed-note" style="margin:8px 0 2px;color:#ccc">▸ ${lab(k, parent, p)}</div>`;
-          html += numTree(v, p, k, depth + 1);
+          html += sub;
         }
       }
     }
