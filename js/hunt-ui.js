@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
+  const ui = { stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -79,12 +79,12 @@
     $("btnFeed").classList.toggle("hidden", !on);
     $("btnFeed").textContent = T().feedBtn;
   }
-  const busy = () => { const r = MH.peek(SV(), H()); return !!(FX.playing() || (r && r.anim)); };
+  const busy = () => { const r = MH.peek(SV(), H()); return !!(FX.playing() || (r && r.anim && ui.stalled !== r.anim.rid)); };
 
   function render() {
     const sv = SV(), h = H(), M = sv.huntMeta, r = RUN(), t = T();
     if (r.phase === "hunt" && !r.mon && !r.anim && !MH.halted(sv, h)) { MH.spawn(sv, h); A.persist(); }   // 自我修復：狩獵中卻沒有怪（例如開發者跳狀態、舊版留下的狀態）→ 付 1 體力遇一隻
-    const halted = MH.halted(sv, h), animating = !!r.anim, st = M.stamina;
+    const halted = MH.halted(sv, h), stalled = !!r.anim && ui.stalled === r.anim.rid, animating = !!r.anim && !stalled, st = M.stamina;
     chrome(true);
     $("mbName").textContent = h.mine.name;
     const PH = { walk: "旅途", dev: r.dev && r.dev.kind === "map" ? "藏寶圖" : "洞窟", country: t.countryName, hunt: "狩獵", done: "凱旋" };
@@ -101,7 +101,7 @@
     $("tiDur").textContent = num(st) + " 步";
     $("btnAuto").textContent = A.save().auto ? "自動" : "手動";
     $("btnAuto").classList.toggle("on", !!A.save().auto);
-    $("btnFeed").disabled = animating || FX.playing();
+    $("btnFeed").disabled = animating || FX.playing() || !MH.canFeed(sv, h);   // 只有旅途、發展揭曉後、停住時才能餵
     $("btnLeave").disabled = animating || FX.playing();
 
     const big = $("sceneBig"), subEl = $("sceneSub");
@@ -127,7 +127,9 @@
       const variant = r.anim ? r.kills - (r.anim.kind === "kill" ? 1 : 0) : r.kills;
       bigHtml = r.mon ? monHtml(variant) : A.colored("…", sub());
       subTxt = `第 ${Math.min(r.kills + 1, h.lower.count)} 隻`;
-      if (r.anim) {
+      if (stalled) {   // 演出後的結果寫入失敗，已回到操作前：不自動重播，讓玩家按「再試一次」
+        lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
+      } else if (r.anim) {
         lines = [r.anim.kind === "kill" ? t.monHit[r.anim.pick] : t.downLine]; tap = "";
       } else if (r.mon) {
         lines = [t.monAppear[r.kills % t.monAppear.length]]; tap = r.mon.pres === 0 ? "▼ 點擊出招" : "";
@@ -156,7 +158,7 @@
   /* ---------- 斬擊／倒下演出 ---------- */
   function maybeFx() {
     const sv = SV(), r = MH.peek(sv, H());
-    if (!r || !r.anim || FX.playing() || !A.onMine()) return;
+    if (!r || !r.anim || FX.playing() || !A.onMine() || ui.stalled === r.anim.rid) return;
     const rid = r.anim.rid;
     if ($("splash")) { setTimeout(() => { if (A.onMine()) maybeFx(); }, 300); return; }   // 開場動畫還沒收起：先等（重開後補播的演出才看得到）
     requestAnimationFrame(() => {
@@ -172,30 +174,34 @@
   function fxDone(rid) {
     const sv = SV(), h = H(), r = MH.peek(sv, h);
     if (!r || !r.anim || r.anim.rid !== rid) { if (A.onMine()) render(); return; }   // 演出播放期間存檔被換掉（接回雲端等）：舊演出作廢，重畫並讓新存檔的待播演出接著播
-    const kind = r.anim.kind, res = MH.finishAnim(sv, h, rid);
-    if (res.ok && kind === "kill") ui.flash = { rid: MH.peek(sv, h).rid, text: fill(T().killLine, { g: h.lower.gold }) };
-    A.persist();
+    const kind = r.anim.kind;
+    const res = A.commit(() => MH.finishAnim(SV(), H(), rid));   // 原子：往下一隻／凱旋入帳＋存檔；寫入失敗會回到演出前
+    if (res && res.failed) { ui.stalled = rid; A.stopAuto(); if (A.onMine()) render(); return; }
+    ui.stalled = 0;
+    if (res.ok && kind === "kill") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: H().lower.gold }) };
     if (A.onMine()) render(); else A.renderHud();
   }
   function abortFx() { FX.abort(); }
 
   /* ---------- 操作 ---------- */
-  function persistRender() { A.persist(); render(); }
-  function doStep() {
-    const res = MH.step(SV(), H(), { setting: A.todaySetting(H().mine.id) });
-    if (!res.ok) {
-      if (res.reason === "nosetting") A.dayBlocked();
-      else if (res.reason === "hungry") { A.stopAuto(); render(); }
-      return res;
-    }
-    ui.flash = null; persistRender();
+  /* 一個操作＝一次原子寫入（A.commit：先拍快照，寫入失敗就回到操作前、提示玩家）。失敗時停自動、中止演出、重畫 */
+  function act(fn) {
+    const res = A.commit(fn);
+    if (res && res.failed) { A.stopAuto(); FX.abort(); render(); return { ok: false, failed: true }; }
+    render();
     return res;
   }
-  function doEnter() { const res = MH.enterCountry(SV(), H()); if (res.ok) { ui.devSeen = false; persistRender(); } else if (res.reason === "hungry") { A.stopAuto(); render(); } return res; }
-  function doPick(i) { const res = MH.pickCountry(SV(), H(), i); if (res.ok) { ui.resSeen = false; persistRender(); } return res; }
-  function doAfterCountry() { const res = MH.afterCountry(SV(), H()); if (res.ok) { ui.flash = null; persistRender(); } return res; }
-  function doStrike(i) { const res = MH.strike(SV(), H(), i); if (res.ok) persistRender(); return res; }
-  function doAgain() { const res = MH.again(SV(), H()); if (res.ok) { ui.doneSeen = false; ui.flash = null; persistRender(); } return res; }
+  function doStep() {
+    ui.flash = null;
+    const res = act(() => MH.step(SV(), H(), { setting: A.todaySetting(H().mine.id) }));
+    if (!res.ok && !res.failed) { if (res.reason === "nosetting") A.dayBlocked(); else if (res.reason === "hungry") A.stopAuto(); }
+    return res;
+  }
+  function doEnter() { ui.devSeen = false; const res = act(() => MH.enterCountry(SV(), H())); if (!res.ok && res.reason === "hungry") A.stopAuto(); return res; }
+  function doPick(i) { ui.resSeen = false; return act(() => MH.pickCountry(SV(), H(), i)); }
+  function doAfterCountry() { ui.flash = null; return act(() => MH.afterCountry(SV(), H())); }
+  function doStrike(i) { return act(() => MH.strike(SV(), H(), i)); }
+  function doAgain() { ui.doneSeen = false; ui.flash = null; return act(() => MH.again(SV(), H())); }
 
   /* 點敘述框（textbox）：依目前階段做「主要動作」。有選項的地方只能按按鈕 */
   function tap() {
@@ -213,6 +219,7 @@
     else if (k === "cpick") doPick(+v);
     else if (k === "strike") { const r = RUN(); if (!r.anim && !FX.playing()) doStrike(+v); }
     else if (k === "fx") setFxPref(v);
+    else if (k === "retry") { const r = RUN(); if (r.anim && ui.stalled === r.anim.rid && !FX.playing()) fxDone(r.anim.rid); }
   }
 
   /* ---------- 自動模式（規格 2.7）：演出播完才繼續；二選一／三選一、國度解題、停住時不代按 ---------- */
@@ -263,8 +270,8 @@
       <div class="btns"><button class="px-btn gold" id="feedGo" ${pv.count && pv.n >= 1 ? "" : "disabled"}>餵食</button><button class="px-btn" id="feedNo">關閉</button></div>`;
   }
   function openFeed() {
-    const r = RUN();
-    if (r.anim || FX.playing()) return;
+    if (busy()) return;
+    if (!MH.canFeed(SV(), H())) { A.toast(T().feedPhase, 1600); return; }   // 只有旅途、發展揭曉後、停住時才能餵
     ui.feedSel = new Set(); ui.feedOpen = true;
     showFeed();
   }
@@ -282,7 +289,7 @@
   function confirmFeed() {   // 二次確認
     const sv = SV(), h = H(), tx = T(), uids = [...ui.feedSel], pv = MH.feedPreview(sv, h, A.toolDef, uids);
     if (!pv.count || pv.n < 1) return;
-    const precious = uids.map(u => sv.tools.find(t => t.uid === u)).filter(Boolean).filter(t => MH.feedable(h, A.toolDef(t.id), t).exact >= h.stamina.warnAt);
+    const precious = uids.map(u => sv.tools.find(t => t.uid === u)).filter(Boolean).filter(t => { const d = A.toolDef(t.id), w = h.feedWarn || {}; return d && ((w.drill && d.drill) || (w.minTier && d.tier >= w.minTier)); });   // 貴重警告：依工具 id／階級／鑽頭判斷（不看換算後的體力）
     const box = $("modalBox");
     box.innerHTML = `<div style="line-height:1.7">要把這 ${pv.count} 把鎬子餵給小精靈嗎？</div>
       <div style="margin-top:6px">體力 +${num(pv.n)}</div>
@@ -291,12 +298,16 @@
       <div class="btns"><button class="px-btn gold" id="feedYes">餵食</button><button class="px-btn" id="feedBack">再想想</button></div>`;
     $("feedBack").onclick = showFeed;
     $("feedYes").onclick = () => {
-      const res = MH.feed(SV(), H(), A.toolDef, uids);   // 原子：再查一次、移除鎬子、清裝備、加體力
+      let res = null;
+      const c = A.commit(() => {   // 原子：再查一次、移除鎬子、清裝備、加體力（停住時自動回到原處，不重抽、不重播）＋存檔；寫入失敗會回到餵食前
+        res = MH.feed(SV(), H(), A.toolDef, uids);
+        const r = RUN();
+        if (res.ok && r.phase === "hunt" && !r.mon && !r.anim) MH.spawn(SV(), H());
+        return res;
+      });
       closeFeed();
-      if (!res.ok) { A.toast("沒辦法餵食，請再試一次", 2000); render(); return; }
-      const r = RUN();
-      if (r.phase === "hunt" && !r.mon && !r.anim) MH.spawn(SV(), H());   // 停住時餵食：自動回到原處，不重抽、不重播
-      A.persist();
+      if (c && c.failed) { A.stopAuto(); render(); return; }
+      if (!res.ok) { A.toast(res.reason === "cap" ? T().feedFull : res.reason === "phase" ? T().feedPhase : "沒辦法餵食，請再試一次", 2000); render(); return; }
       A.toast(fill(T().feedOk, { n: num(res.gained) }), 2200);
       render();
     };
@@ -308,7 +319,14 @@
     box.innerHTML = html + `<div class="btns hunt-btns">${buttons.map(b => `<button class="px-btn${b.gold ? " gold" : ""}" id="${b.id}">${b.label}</button>`).join("")}</div>`;
     $("modal").classList.remove("hidden");
   }
+  /* 延後到這一輪事件結束再判斷：go() 離開礦坑畫面時會先重畫一次（那時 currentScreen 還是挖礦），
+     不延後的話，按「到帳號頁看看」會讓初見禮視窗蓋在帳號頁上 */
+  let introTimer = 0;
   function maybeIntro() {
+    if (introTimer || ui.introBusy) return;
+    introTimer = setTimeout(() => { introTimer = 0; introNow(); }, 0);
+  }
+  function introNow() {
     if (ui.introBusy || !A.onMine() || A.modalOpen()) return;
     const M = SV().huntMeta, tx = T();
     if (!M.seenLight) {
@@ -316,7 +334,7 @@
       const L = tx.light;
       modalNote(`<div style="color:#ffcc33">${L.title}</div><div class="sub" style="margin-top:8px;text-align:left;line-height:1.7">${L.body}</div>`,
         [{ id: "hlOn", label: L.on, gold: true }, { id: "hlGo", label: L.go }, { id: "hlOk", label: L.ok }]);
-      const close = fn => { M.seenLight = true; A.persist(); $("modal").classList.add("hidden"); ui.introBusy = false; if (fn) fn(); else render(); };
+      const close = fn => { const c = A.commit(() => { SV().huntMeta.seenLight = true; }); $("modal").classList.add("hidden"); ui.introBusy = false; if (c && c.failed) { render(); return; } if (fn) fn(); else render(); };
       $("hlOn").onclick = () => close(() => { setFxPref("on"); A.toast("已開啟減少特效", 1800); render(); });
       $("hlGo").onclick = () => close(() => A.openAcct());
       $("hlOk").onclick = () => close();
@@ -324,7 +342,9 @@
     }
     if (!M.gifted) {
       ui.introBusy = true;
-      const n = MH.gift(SV(), H()); A.persist(); A.renderHud();
+      const n = A.commit(() => MH.gift(SV(), H()));
+      if (n && n.failed) { ui.introBusy = false; return; }
+      A.renderHud();
       modalNote(`<div style="color:#7fe3ff">${tx.giftTitle}</div><div class="sub" style="margin-top:8px;text-align:left;line-height:1.7">${fill(tx.gift, { n })}</div>`, [{ id: "hgOk", label: "收下", gold: true }]);
       $("hgOk").onclick = () => { $("modal").classList.add("hidden"); ui.introBusy = false; render(); };
     }
@@ -333,14 +353,17 @@
   /* ---------- 離開／換礦坑 ---------- */
   function leaveWarn() { const sv = SV(); return MH.inProgress(sv, H()) ? T().leaveWarn : ""; }
   function leave() {
+    let res = null;
+    const c = A.commit(() => { res = MH.leave(SV(), H()); return res; });   // 金幣入帳＋刪本輪紀錄＝一次原子寫入
+    if (c && c.failed) return { failed: true };
     abortFx();
-    const res = MH.leave(SV(), H());
-    ui.flash = null; ui.devSeen = ui.resSeen = ui.doneSeen = false;
-    A.persist();
+    ui.flash = null; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false;
     return res;
   }
+  function dropRun() { delete SV().huntRuns[H().mine.id]; A.persist(); }   // 離開畫面時被重畫建回來的空紀錄，再清一次
 
   /* ---------- 開發者／測試 ---------- */
+  const persistRender = () => { A.persist(); render(); };   // 開發者工具用（不需要失敗回滾）
   const dev = {
     get state() { return { meta: SV().huntMeta, run: MH.peek(SV(), H()) }; },
     addStamina(n) { const M = SV().huntMeta; M.stamina = Math.max(0, Math.min(H().stamina.cap, M.stamina + (n | 0))); persistRender(); return M.stamina; },
@@ -355,5 +378,5 @@
     A = api;
     $("btnFeed").addEventListener("click", () => { if (!root.Editor?.isPicking() && A.isHere()) openFeed(); });
   }
-  root.HuntUI = { init, render, chrome, tap, onBtn, auto, leave, leaveWarn, abortFx, renderFxPanel, fxPref, reduced, dev, maybeIntro, busy };
+  root.HuntUI = { init, render, chrome, tap, onBtn, auto, leave, dropRun, leaveWarn, abortFx, renderFxPanel, fxPref, reduced, dev, maybeIntro, busy };
 })(typeof window !== "undefined" ? window : globalThis);

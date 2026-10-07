@@ -208,6 +208,21 @@ console.log("=== 10. 餵食：原子、二次檢查、無套利、不可餵 ==="
   ok(keep.stat.toolsBroken === 7 && keep.ruby.dig === 5, "餵食不算用壞、不動紅晶進度");
 }
 
+console.log("=== 10b. 餵食時機：只有旅途、發展揭曉後、停住時 ===");
+{
+  const mk = () => { const sv = fresh(50); sv.tools = [{ uid: 1, id: "wood", dur: 60, max: 60 }]; return sv; };
+  const t = (sv, label, want) => { const before = sv.huntMeta.stamina, r = MH.feed(sv, H, defOf, [1]); ok(want ? r.ok : (!r.ok && r.reason === "phase" && sv.tools.length === 1 && sv.huntMeta.stamina === before), label + (want ? "：可餵" : "：不可餵（整筆不成立）")); ok(MH.canFeed(want ? mk() : sv, H) === want, label + " canFeed"); };
+  t(mk(), "旅途", true);
+  const d = mk(); MH.devSet(d, H, { phase: "dev", kind: "cave", ok: true }); t(d, "發展揭曉後", true);
+  const c = mk(); MH.devSet(c, H, { phase: "country", kind: "cave", ok: true }); t(c, "國度中", false);
+  const m = mk(); toHunt(m, true, 1); t(m, "狩獵中有怪物等著出招", false);
+  const dn = mk(); MH.devSet(dn, H, { phase: "walk" }); R(dn).phase = "done"; R(dn).last = { gold: 0, kills: 0, why: "empty" }; t(dn, "凱旋畫面", false);
+  const h = fresh(0); h.tools = [{ uid: 1, id: "wood", dur: 60, max: 60 }]; MH.devSet(h, H, { phase: "hunt", kills: 1 });
+  ok(MH.halted(h, H) && MH.canFeed(h, H) && MH.feed(h, H, defOf, [1]).ok, "狩獵中沒體力（停住）：可餵");
+  const full = fresh(ST.cap - 5); full.tools = [{ uid: 1, id: "wood", dur: 60, max: 60 }];
+  ok(MH.feed(full, H, defOf, [1]).reason === "cap" && full.tools.length === 1, "體力快滿：回 cap（UI 顯示「體力已滿」）");
+}
+
 console.log("=== 11. 開發者設定、種子、雜湊 ===");
 {
   const vals = []; for (let i = 0; i < 20000; i++) vals.push(MH.mix(123, i));

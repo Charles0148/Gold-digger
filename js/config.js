@@ -1072,7 +1072,8 @@
               scopeEligible: true, boardEligible: false, toolsBrokenEligible: false },
       /* 體力：每走一步一律 1；國度進入 2。1 體力＝6 金幣的鎬子價值（valuePer）。
          餵食：體力＝無條件捨去(Σ 剩餘耐久×原價÷標準耐久÷valuePer)，多把先加總再捨去；鑽頭沒有原價，照耐久比例換（滿耐久＝drillTotal）。 */
-      stamina: { perStep: 1, countryCost: 2, valuePer: 6, cap: 100000000, intro: 18, drillTotal: 1380, barRef: 200, warnAt: 250 },   // barRef：體力條滿格的參考值；warnAt：餵食單把換算 ≥ 這個數就加強警告（金鎬以上、鑽頭）
+      stamina: { perStep: 1, countryCost: 2, valuePer: 6, cap: 100000000, intro: 18, drillTotal: 1380, barRef: 200 },   // barRef：體力條滿格的參考值
+      feedWarn: { minTier: 4, drill: true },       // 餵食二次確認的加強警告：標準鎬子階級 ≥ minTier（金鎬以上），或紅岩鑽頭（drill）；依工具 id／階級判斷，不看換算後的體力
       walk: { guarantee: 30, caveShare: 0.8 },   // 30 步內必定遇到發展；發展裡洞窟 80%／藏寶圖 20%
       /* 每日設定一～六只動「入口」（規格 3.4 方案 E1）：dev＝每步遇到發展的機率；cave／map＝揭曉時國度成功率。打進去之後與設定無關 */
       settings: [
@@ -1128,6 +1129,10 @@
         feedTrial: "試用版不能餵",
         feedWarn: "這把鎬子很貴重，真的要餵掉嗎？",
         feedOk: "小精靈吃得很開心。體力 +{n}",
+        feedFull: "體力已滿，餵不下了",
+        saveFail: "存檔失敗，剛才演出後的結果還沒記下來。",
+        retry: "再試一次",
+        feedPhase: "現在不能餵食",
         gift: "小精靈從草叢裡探出頭來，送給你一點體力當作見面禮。（體力 +{n}）",
         giftTitle: "小精靈",
         leaveNote: "已累積的金幣會帶走，這一輪的進度會消失，體力會保留。",

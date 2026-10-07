@@ -281,8 +281,14 @@
     });
     return { n: floorEps(sum), count, bad };
   }
+  /* 只能在旅途、發展揭曉後、或停住（體力不夠付下一步）時餵食；演出中、國度、有怪物等著出招時不行 */
+  function canFeed(sv, H) {
+    const r = peek(sv, H);
+    return !!r && !r.anim && (r.phase === "walk" || r.phase === "dev" || halted(sv, H));
+  }
   function feed(sv, H, defOf, uids) {
     if (busy(sv, H)) return { ok: false, reason: "busy" };
+    if (!canFeed(sv, H)) return { ok: false, reason: "phase" };
     const p = feedPreview(sv, H, defOf, uids);
     if (!p.count || p.bad || p.n < 1) return { ok: false, reason: "invalid" };
     const M = sv.huntMeta;
@@ -307,7 +313,7 @@
   }
 
   const api = { PHASES, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
-    spawn, strike, finishAnim, settle, again, leave, inProgress, feedExact, feedable, feedPreview, feed, devSet };
+    spawn, strike, finishAnim, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
   root.MineHunt = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
