@@ -914,8 +914,9 @@
   }
 
   /* ---------------- 挖礦畫面 ---------------- */
-  let veinGain = 0;
-  let veinRun = null;   // 這一趟礦脈的結算資料（第一台）：揮數、各種礦脈次數、是否進入核心層
+  /* 這一趟礦脈的結算資料（第一台）：揮數、各種礦脈次數、是否進入核心層、收穫。
+     存在存檔 save.veinRuns[礦坑id]（2026-10-07：原本只在記憶體，礦脈中途關 App／重新整理就遺失，結算缺內容、收穫少算） */
+  function veinRunOf(id) { const all = save.veinRuns || (save.veinRuns = {}); return all[id] || null; }
   const TYPE_COLOR = { RB: "#4f9dff", BB: "#ffaa00", SBB: "rainbow" };
   const veinName = t => (config.texts.veinName || {})[t] || t;
   function renderMine() { renderMineBase(); storySync(); renderProbeTag(); }
@@ -949,7 +950,7 @@
       if (st.atHigh > 0) $("vbChain").innerHTML += (st.chain >= config.rules.bonus.cont.boostAfter
         ? ` <span class="rainbow-text">≋深層共鳴${st.atHigh}</span>`
         : ` <span style="color:${config.rules.omen.colors[6] || "#ffcc33"}">≋共鳴${st.atHigh}</span>`);
-      $("vbGain").textContent = money(veinGain);
+      $("vbGain").textContent = money((veinRunOf(mine.id) || {}).gain || 0);
     }
     const t = activeTool();
     if (t) {
@@ -1495,7 +1496,8 @@
     $("sumOk").onclick = () => $("modal").classList.add("hidden");
   }
   // 第一台：一趟礦脈結束的結算畫面（樣式同三位前輩台）
-  function showVeinSummary(e, run, gain) {
+  function showVeinSummary(e, run, mineName) {
+    const gain = run ? run.gain : 0;
     const box = $("modalBox"), types = (run && run.types) || {};
     const kinds = ["SBB", "BB", "RB"].filter(t => types[t]).map(t => colored(`${veinName(t)}×${types[t]}`, TYPE_COLOR[t])).join("・");
     box.innerHTML = `<div class="boss-name">結算</div>
@@ -1504,7 +1506,7 @@
         ${run ? `礦脈中揮了　<b>${fmt(run.swings)}</b> 揮<br>` : ""}
         這趟總收穫　<b style="color:${config.theme.accent}">$${money(gain)}</b><br>
         ${run && run.core ? '<span style="color:#ffcc33">※ 這一趟礦脈進入過核心層</span><br>' : ""}
-        <span class="sub">${esc(curMine().name)}</span>
+        <span class="sub">${esc(mineName)}</span>
       </div>
       <div class="btns"><button class="px-btn" id="sumOk">回去挖礦</button></div>`;
     $("modal").classList.remove("hidden");
@@ -1543,7 +1545,8 @@
     statSwing(mine.id);
     if (r.stateBefore !== "bonus") { ms.normalSwings++; if (r.cat === "epic") ms.epic++; if (r.cat === "legend") ms.legend = (ms.legend || 0) + 1; }
     const ev = t => r.events.find(e => e.t === t);
-    if (ev("bonusStart")) { ms.hits++; veinGain = 0; veinRun = { swings: 0, types: {}, core: false }; }
+    if (ev("bonusStart")) { ms.hits++; veinRunOf(mine.id); save.veinRuns[mine.id] = { swings: 0, types: {}, core: false, gain: 0 }; }
+    const veinRun = veinRunOf(mine.id);
     if (r.stateBefore === "bonus" && veinRun) veinRun.swings++;
 
     const lines = [];
@@ -1571,7 +1574,7 @@
       if (!save.dex[name]) { save.dex[name] = { count: 0, first: dayOrLast() }; newFind = true; }
       save.dex[name].count++;
       const price = itemPrice(name);
-      if (r.stateBefore === "bonus") veinGain += price;
+      if (r.stateBefore === "bonus" && veinRun) veinRun.gain += price;
       lines.push(sfx + " " + colored(name, rarityColor(cat.rarity)) + ` <span style="color:${sub}">$${money(price)}</span>` + (newFind ? colored(" NEW", config.theme.accent) : ""));
       bigHtml = colored(name, rarityColor(cat.rarity));
     }
@@ -1608,13 +1611,12 @@
       if (e.t === "bonusChain") lines.push(colored((e.surprise ? T.bonusChainSurprise : T.bonusChain) + " " + T.bonusStart[e.type], TYPE_COLOR[e.type]));
       if (e.t === "upperStart") lines.push(colored(T.upperStart, "rainbow"));
       if (e.t === "veinCap") lines.push(colored(T.veinCap, "#ff7755"));
-      if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　共${e.chain}脈　收穫 $${money(veinGain)}`, config.theme.accent));
-      if (veinRun) {   // 結算用：記下這一趟出現過的礦脈種類
+      if (e.t === "bonusEnd") lines.push(colored(`${T.bonusEnd}　共${e.chain}脈　收穫 $${money(veinRun ? veinRun.gain : 0)}`, config.theme.accent));
+      if (veinRun) {   // 結算用：記下這一趟出現過的礦脈種類（升格改的是還沒開始的下一脈，開始時 bonusChain 已是升格後的種類，不另外調整）
         if (e.t === "bonusStart" || e.t === "bonusChain") veinRun.types[e.type] = (veinRun.types[e.type] || 0) + 1;
-        if (e.t === "upgrade" && e.shown) { veinRun.types[e.from] = Math.max(0, (veinRun.types[e.from] || 0) - 1); veinRun.types[e.to] = (veinRun.types[e.to] || 0) + 1; }
         if (e.t === "upperStart") veinRun.core = true;
       }
-      if (e.t === "bonusEnd") { const run = veinRun, gain = veinGain; veinRun = null; setTimeout(() => showVeinSummary(e, run, gain), 400); }
+      if (e.t === "bonusEnd") { const run = veinRun, mname = mine.name; delete save.veinRuns[mine.id]; setTimeout(() => showVeinSummary(e, run, mname), 400); }
     }
 
     // 工具掉落：恩惠加成另外補抽；工具太弱時也會打折
