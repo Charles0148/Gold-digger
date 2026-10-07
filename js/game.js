@@ -261,8 +261,9 @@
   }
   const TS = window.TitleSystem;
   const TITLE_RANK = ["一般", "珍貴", "稀有", "傳說"];
-  let titleBooting = true, titleStartupAdds = [];
-  function titleDefs() { return Array.isArray(config.titles) ? config.titles : []; }
+  let titleBooting = true, titleStartupAdds = [], cosStartupAdds = [];
+  /* 頭銜清單一律用程式內建值：編輯器存的設定檔會整個蓋掉陣列，舊設定檔裡的清單會跟不上（條件、文字改了也不會生效） */
+  function titleDefs() { const t = (window.DEFAULT_CONFIG || {}).titles; return Array.isArray(t) ? t : []; }
   function titleDef(id) { return titleDefs().find(t => t.id === id) || null; }
   function titleContext() {
     const idx = itemIndex(), dexCats = new Set(), dex = save.dex || {};
@@ -284,13 +285,20 @@
     });
     return got;
   }
+  /* 頭銜與成就外觀常常同時達成（條件相同）：合成一則提示，免得後一則把前一則蓋掉 */
+  function gainText(added, cos) {
+    const parts = [];
+    if (added.length) parts.push(added.length === 1 ? `頭銜：${added[0].name}` : `${added.length} 個頭銜`);
+    if (cos.length) parts.push(cos.length === 1 ? `外觀：${cos[0].label}` : `${cos.length} 件外觀`);
+    return "獲得" + (/^\d/.test(parts[0]) ? " " : "") + parts.join("、");
+  }
   function awardTitles(notify) {
     const ctx = titleContext(), cos = awardAchCos(ctx);
-    if (cos.length && notify !== false && !titleBooting) setTimeout(() => toast(cos.length === 1 ? `獲得外觀：${cos[0].label}` : `獲得 ${cos.length} 件外觀`), 0);
     const added = TS.check(save, titleDefs(), ctx);
-    if (!added.length) return added;
+    if (titleBooting) cosStartupAdds.push(...cos);
+    if (!added.length && !cos.length) return added;
     if (notify !== false && titleBooting) titleStartupAdds.push(...added);
-    else if (notify !== false) setTimeout(() => toast(added.length === 1 ? `獲得頭銜：${added[0].name}` : `獲得 ${added.length} 個頭銜`), 0);
+    else if (notify !== false) setTimeout(() => toast(gainText(added, cos)), 0);
     return added;
   }
   function currentTitle() { return titleDef(((save.titles || {}).equipped)) || null; }
@@ -324,8 +332,8 @@
   fixAds(save);
   const titleFixedAtLoad = TS.fix(save);
   titleStartupAdds = awardTitles(false);
-  if (needStarter) titleStartupAdds = [];
-  if (titleFixedAtLoad || titleStartupAdds.length) store.set(SAVE_KEY, save);
+  if (needStarter) { titleStartupAdds = []; cosStartupAdds = []; }
+  if (titleFixedAtLoad || titleStartupAdds.length || cosStartupAdds.length) store.set(SAVE_KEY, save);
   delete save.upgrades;
   /* v0.10.3：存檔一律「立即寫入」。
      舊版是 400ms debounce，但自動挖礦間隔 350ms < 400ms，clearTimeout 會一直把寫入往後推，
@@ -3502,6 +3510,7 @@
       if (!RY.spend(save, price)) { toast("紅晶不夠"); return null; }
       let out;
       try { out = give(); } catch (e) { save = snap; toast("購買失敗，沒有扣紅晶"); return null; }
+      awardTitles();   // 買外觀可能剛好湊滿「衣櫃」頭銜
       if (!store.set(SAVE_KEY, save)) { save = snap; toast("存檔失敗，沒有扣紅晶"); return null; }
       cloudLater();
       return out == null ? true : out;
@@ -3531,14 +3540,13 @@
     const sec = t => `<div class="ruby-sec">${t}</div>`;
     const buy = (id, price, dis, label) => `<button class="px-btn small ruby-buy" data-ruby-buy="${id}" ${dis || R.bal < price ? "disabled" : ""}>${label || `${RUBY_ICO} ${fmt(price)}`}</button>`;
     const row = (name, note, btn) => `<div class="row"><div class="grow">${name}<div class="sub">${note}</div></div>${btn}</div>`;
-    const soon = '<span class="sub">準備中</span>';
     const bar = p => `<span class="ruby-bar"><i style="width:${Math.round(Math.max(0, Math.min(1, p)) * 100)}%"></i></span>`;
     const src = !day ? '<div class="sub">需要連上網路確認今天的日期（台灣時間）後才會累積。</div>' : `
       <div class="ruby-src"><span>挖礦</span>${bar(T.dig.pct)}<span class="sub">${T.dig.got}／${T.dig.cap} 顆</span></div>
       <div class="ruby-src"><span>委託</span><span class="sub grow">今天第一張委託板全部完成 +${T.board.amount}</span><span class="sub">${T.board.got ? "✔ 已領" : "—"}</span></div>
       <div class="ruby-src"><span>恩惠</span><span class="sub grow">每升 1 級 +1</span><span class="sub">本週 ${T.boon.week}／${T.boon.weekCap}</span></div>
       <div class="ruby-src"><span>凍結</span><span class="sub grow">地底凍結 +${(RC().freeze || {}).per || 0}（每天 ${T.freeze.cap} 次）</span><span class="sub">今天 ${T.freeze.times}／${T.freeze.cap}｜本週 ${T.freeze.week}／${T.freeze.weekCap}</span></div>
-      <div class="ruby-src"><span>廣告</span><span class="sub grow">${T.ads.enabled ? `當天第 ${T.ads.at.join("、")} 次看完各 +1` : "上架後接上真的廣告才開放"}</span></div>`;
+      <div class="ruby-src"><span>廣告</span><span class="sub grow">${T.ads.enabled ? `當天第 ${T.ads.at.join("、")} 次看完各 +1` : "之後開放"}</span></div>`;
     return `<div class="board ruby-board"><div class="board-head">紅晶商店 <span class="sub ruby-num">持有 ${RUBY_ICO} ${fmt(R.bal)}</span></div>
       ${sec("今天的紅晶")}${src}
       ${sec("方便")}
@@ -3923,7 +3931,7 @@
   adLeftover();   // 上次關頁／當機留下的待完成廣告 → 取消（Q2＝A）
   renderAll();
   titleBooting = false;
-  if (titleStartupAdds.length) setTimeout(() => toast(`補發 ${titleStartupAdds.length} 個已達成頭銜`), 500);
+  if (titleStartupAdds.length || cosStartupAdds.length) setTimeout(() => toast("補發 " + [titleStartupAdds.length ? `${titleStartupAdds.length} 個已達成頭銜` : "", cosStartupAdds.length ? `${cosStartupAdds.length} 件外觀` : ""].filter(Boolean).join("、")), 500);
   renderClockTag();
   if (!todayKey()) showClockMsg();   // 還沒拿到台灣日期：先顯示確認中（被開場動畫蓋住；失敗時動畫收起後看得到重試）
   splashRun();
