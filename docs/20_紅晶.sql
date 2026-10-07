@@ -13,7 +13,7 @@
 --       跟恩惠世代（docs/16 milestone_claims）分開：恩惠重置不會讓人重領。
 --    3. 外觀：外觀清單 cosmetic_catalog、玩家擁有 player_cosmetics、player_profiles 的裝備欄位
 --       （equipped_name_color／equipped_frame），以及 RPC：my_cosmetics、claim_client_cosmetic、equip_my_cosmetic。
---       清單內容（有哪些顏色／外框）等擁有者看圖核准後另外加（本檔只建空表）。
+--       清單內容：14 件（紅晶版 8、成就版 6；擁有者 2026-10-07 定案），見第 3 節。
 --    4. 對外公開的玩家卡片 RPC public_player_card：只回玩家 ID、ID 樣式、名字顏色、外框（之後排行榜沿用）。
 --    5. 權限：玩家只能讀自己的擁有紀錄、只能改自己的裝備，而且只能裝備清單裡有、自己擁有、欄位相符的項目；
 --       資料庫只存白名單 id，不收顏色碼或程式碼。彩虹 ID（id_style）照舊只有管理員能改。
@@ -230,6 +230,23 @@ alter table public.cosmetic_catalog enable row level security;
 drop policy if exists "catalog readable" on public.cosmetic_catalog;
 create policy "catalog readable" on public.cosmetic_catalog for select using (true);
 grant select on public.cosmetic_catalog to anon, authenticated;   -- 清單公開；只有管理員（SQL Editor）能改
+-- 清單內容（擁有者 2026-10-07 定案；id 與 js/config.js 的 ruby.cosmetics 一致）。重複執行只會更新名稱／排序，不會重複新增
+insert into public.cosmetic_catalog (id, slot, source_type, display_name, sort) values
+  ('name_ruby',    'name_color', 'ruby',        '紅晶',   10),
+  ('name_gold',    'name_color', 'ruby',        '熔金',   20),
+  ('name_star',    'name_color', 'ruby',        '星辰紫', 30),
+  ('name_ice',     'name_color', 'ruby',        '冰晶',   40),
+  ('name_jade',    'name_color', 'ruby',        '翠脈',   50),
+  ('name_dusk',    'name_color', 'ruby',        '夕焰',   60),
+  ('name_moss',    'name_color', 'achievement', '苔綠',   70),
+  ('name_slate',   'name_color', 'achievement', '石青',   80),
+  ('name_amber',   'name_color', 'achievement', '琥珀',   90),
+  ('frame_ruby',   'frame',      'ruby',        '紅晶框', 110),
+  ('frame_gold',   'frame',      'ruby',        '金紋框', 120),
+  ('frame_iron',   'frame',      'achievement', '鐵框',   130),
+  ('frame_wood',   'frame',      'achievement', '木框',   140),
+  ('frame_bronze', 'frame',      'achievement', '銅框',   150)
+on conflict (id) do update set slot = excluded.slot, source_type = excluded.source_type, display_name = excluded.display_name, sort = excluded.sort;
 
 create table if not exists public.player_cosmetics (
   user_id     uuid not null references auth.users(id) on delete cascade,
