@@ -39,38 +39,12 @@
       <div class="btns fx-opts">${["auto", "on", "off"].map(k => `<button class="px-btn small ${cur === k ? "on" : ""}" data-hunt="fx:${k}">${o[k]}</button>`).join("")}</div>`;
   }
 
-  /* ---------- 像素史萊姆（程式現場畫，三種顏色輪流） ---------- */
-  const PAL = [{ o: "#0f3d14", g: "#3fcf4f", l: "#9dffa8", d: "#27963a" }, { o: "#0f2a4d", g: "#3f8fe0", l: "#a8d4ff", d: "#2a5fa8" }, { o: "#4d1a0f", g: "#e0623f", l: "#ffb8a0", d: "#a83a27" }];
-  const svgCache = {};
-  function monSvg(variant) {
-    if (svgCache[variant]) return svgCache[variant];
-    const W = 24, Hh = 19, P = Object.assign({ k: "#101010", w: "#ffffff", m: PAL[variant].o }, PAL[variant]);
-    const inside = (x, y) => y >= 0 && y <= 18 && x >= 0 && x < W && Math.pow((x - 11.5) / 12, 2) + Math.pow((y - 18) / 17.5, 2) <= 1;
-    const cell = {};
-    for (let y = 0; y < Hh; y++) for (let x = 0; x < W; x++) {
-      if (!inside(x, y)) continue;
-      const edge = y === 18 || !inside(x - 1, y) || !inside(x + 1, y) || !inside(x, y - 1);
-      let c = "g";
-      if (edge) c = "o"; else if ((x - 7) * (x - 7) + (y - 5) * (y - 5) < 8) c = "l"; else if (x > 16 || y >= 16) c = "d";
-      cell[x + "," + y] = c;
-    }
-    [[7, 9], [8, 9], [7, 10], [8, 10], [7, 11], [8, 11], [15, 9], [16, 9], [15, 10], [16, 10], [15, 11], [16, 11]].forEach(p => { cell[p] = "k"; });
-    cell["7,9"] = "w"; cell["15,9"] = "w";
-    [[10, 14], [11, 14], [12, 14], [13, 14], [9, 13], [14, 13]].forEach(p => { cell[p] = "m"; });
-    let s = `<svg viewBox="0 0 ${W} ${Hh}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">`;
-    for (let y = 0; y < Hh; y++) {
-      let x = 0;
-      while (x < W) {
-        const c = cell[x + "," + y];
-        if (!c) { x++; continue; }
-        let n = 1; while (cell[(x + n) + "," + y] === c) n++;
-        s += `<rect x="${x}" y="${y}" width="${n}" height="1" fill="${P[c]}"/>`;
-        x += n;
-      }
-    }
-    return (svgCache[variant] = s + "</svg>");
-  }
-  const monHtml = (variant, ghost) => `<div class="hunt-mon${ghost ? " ghost" : ""}">${monSvg(variant % PAL.length)}</div>`;
+  /* ---------- 怪物（暗影眼光，6 種變體：js/hunt-mon.js）。哪一隻由本輪種子＋第幾隻決定，重新整理不會換 ---------- */
+  const HM = root.HuntMon;
+  const monIdx = r => (r.anim ? r.kills - (r.anim.kind === "kill" ? 1 : 0) : r.kills);   // 這隻是本輪第幾隻（演出中 kills 已加過）
+  const variantOf = r => (((r.seed >>> 0) % HM.count) + monIdx(r)) % HM.count;
+  const monName = v => ((T().monNames || [])[v] || "怪物");
+  const monHtml = v => `<div class="hunt-mon"><img src="${HM.uri(v)}" alt=""></div>`;
 
   /* ---------- 畫面 ---------- */
   function chrome(on) {   // 每次 renderMine 都會呼叫：切換「冒險之地」專用的資訊列、按鈕
@@ -124,15 +98,15 @@
       if (r.country.pick === null) { lines = t.countryIntro.map(x => x); tap = ""; choices = t.countryOpts.map((l, i) => ({ c: "cpick:" + i, label: l })); }
       else { lines = [t.countryReply[r.country.pick], A.colored(r.country.ok ? t.countryOk : t.countryFail, r.country.ok ? "#55ff55" : sub())]; tap = t.countryNext; }
     } else if (r.phase === "hunt") {
-      const variant = r.anim ? r.kills - (r.anim.kind === "kill" ? 1 : 0) : r.kills;
+      const variant = variantOf(r), nm = monName(variant);
       bigHtml = r.mon ? monHtml(variant) : A.colored("…", sub());
-      subTxt = `第 ${Math.min(r.kills + 1, h.lower.count)} 隻`;
+      subTxt = `${nm}　第 ${Math.min(r.kills + 1, h.lower.count)} 隻`;
       if (stalled) {   // 演出後的結果寫入失敗，已回到操作前：不自動重播，讓玩家按「再試一次」
         lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
       } else if (r.anim) {
-        lines = [r.anim.kind === "kill" ? t.monHit[r.anim.pick] : t.downLine]; tap = "";
+        lines = [fill(r.anim.kind === "kill" ? t.monHit[r.anim.pick] : t.downLine, { name: nm })]; tap = "";
       } else if (r.mon) {
-        lines = [t.monAppear[r.kills % t.monAppear.length]]; tap = r.mon.pres === 0 ? "▼ 點擊出招" : "";
+        lines = [fill(t.monAppear[r.kills % t.monAppear.length], { name: nm })]; tap = r.mon.pres === 0 ? "▼ 點擊出招" : "";
         const names = r.mon.pres === 0 ? t.monSingle : r.mon.pres === 1 ? t.monTwo : t.monThree;
         choices = names.map((l, i) => ({ c: "strike:" + i, label: l, gold: r.mon.pres === 0 }));
         if (ui.flash && ui.flash.rid === r.rid) lines.unshift(A.colored(ui.flash.text, "#ffe0a0"));
@@ -166,7 +140,7 @@
       if (!r2 || !r2.anim || r2.anim.rid !== rid || FX.playing() || !A.onMine()) return;
       const a = r2.anim, fx = H().fx;
       try {
-        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), kind: a.kind, pick: a.pick, reduced: reduced(), scale: fx.reducedScale,
+        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), variant: variantOf(r2), kind: a.kind, pick: a.pick, reduced: reduced(), scale: fx.reducedScale,
           totalMs: fx.totalMs, downMs: fx.downMs, win: T().win, downText: T().down, onDone: () => fxDone(rid) });
       } catch (e) { console.error("斬擊演出失敗：" + (e && e.message)); FX.abort(); fxDone(rid); }
     });
@@ -174,11 +148,11 @@
   function fxDone(rid) {
     const sv = SV(), h = H(), r = MH.peek(sv, h);
     if (!r || !r.anim || r.anim.rid !== rid) { if (A.onMine()) render(); return; }   // 演出播放期間存檔被換掉（接回雲端等）：舊演出作廢，重畫並讓新存檔的待播演出接著播
-    const kind = r.anim.kind;
+    const kind = r.anim.kind, vname = monName(variantOf(r));
     const res = A.commit(() => MH.finishAnim(SV(), H(), rid));   // 原子：往下一隻／凱旋入帳＋存檔；寫入失敗會回到演出前
     if (res && res.failed) { ui.stalled = rid; A.stopAuto(); if (A.onMine()) render(); return; }
     ui.stalled = 0;
-    if (res.ok && kind === "kill") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: H().lower.gold }) };
+    if (res.ok && kind === "kill") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: H().lower.gold, name: vname }) };
     if (A.onMine()) render(); else A.renderHud();
   }
   function abortFx() { FX.abort(); }
@@ -369,7 +343,7 @@
     addStamina(n) { const M = SV().huntMeta; M.stamina = Math.max(0, Math.min(H().stamina.cap, M.stamina + (n | 0))); persistRender(); return M.stamina; },
     set(o) { MH.devSet(SV(), H(), o); persistRender(); },
     force(o) { const r = RUN(); r.force = o; A.persist(); },
-    fx(kind, pick, t) { FX.seek({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), kind: kind || "kill", pick: pick || 0, reduced: reduced(), scale: H().fx.reducedScale, totalMs: H().fx.totalMs, downMs: H().fx.downMs, win: T().win, downText: T().down }, t || 0); },
+    fx(kind, pick, t) { FX.seek({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), variant: variantOf(RUN()), kind: kind || "kill", pick: pick || 0, reduced: reduced(), scale: H().fx.reducedScale, totalMs: H().fx.totalMs, downMs: H().fx.downMs, win: T().win, downText: T().down }, t || 0); },
     fxRelease() { FX.release(); },
     fxPref, setFxPref, reduced
   };

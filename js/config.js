@@ -1090,7 +1090,7 @@
       later: { dragon: { win: 0.80, gold: 90 }, entryHeaven: 0.90, ember: 0.54,
                heaven: { cont: 0.854, cap: 20, gold: 34, nextHeaven: 0.9 }, hell: { cont: 0.92, cap: 10, gold: 68, nextHeaven: 0.1 } },
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
-      fx: { totalMs: 2400, reducedScale: 0.65, downMs: 1500 },
+      fx: { totalMs: 2400, reducedScale: 0.85, downMs: 1500 },   // 斬擊「丙」＋反黑（js/hunt-fx.js）；減少特效時整段縮短為 85%
       /* 玩家畫面文字（不寫機率、不寫「選對／猜中」、不要血；審查員 2026-10-08） */
       texts: {
         mineName: "轉生之間",
@@ -1108,15 +1108,17 @@
         countryOk: "城門緩緩打開，通往獵場的路出現在眼前。",
         countryFail: "城門沒有打開。你只好轉身，回到旅途。",
         countryNext: "▼ 點擊繼續",
-        monAppear: ["草地上跳出了一隻史萊姆！", "史萊姆從石縫裡鑽了出來！", "前方的灌木沙沙作響，史萊姆撲了過來！"],
+        /* 怪物（方向 2「暗影眼光」，順序對應 js/hunt-mon.js；名稱是美編候選稿的示意名，待企劃定稿） */
+        monNames: ["洞影蝠", "影蜘蛛", "幽影", "影菇", "影泥", "石影像"],
+        monAppear: ["{name}擋住了去路！你握緊了長劍。", "{name}從暗處竄了出來！", "前方的陰影晃了一下，{name}撲了過來！"],
         monSingle: ["出招"],
         monTwo: ["突刺", "橫掃"],
         monThree: ["突刺", "橫掃", "蓄力"],
-        monHit: ["突刺貫穿了史萊姆！", "橫掃的劍光掠過史萊姆！", "蓄好的一擊重重落下！"],
-        killLine: "史萊姆被打倒了。金幣 +{g}（凱旋時帶走）",
+        monHit: ["突刺貫穿了{name}！", "橫掃的劍光掠過{name}！", "蓄好的一擊重重落下！"],
+        killLine: "斬！{name}被打倒了。金幣 +{g}（凱旋時帶走）",
         win: "勝利",
         down: "倒下了……",
-        downLine: "史萊姆的一撞讓你站不穩，你倒了下去。同伴把你拖回旅途。",
+        downLine: "{name}的一撞讓你站不穩，你倒了下去。同伴把你拖回旅途。",
         doneFull: "凱旋！這一趟打倒了 {k} 隻，帶回金幣 {g}。",
         doneDown: "雖然倒下了，還是帶回了金幣 {g}。",
         doneEmpty: "這一趟空手而歸。再走一輪吧。",

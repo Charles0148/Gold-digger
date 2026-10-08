@@ -233,5 +233,17 @@ console.log("=== 11. 開發者設定、種子、雜湊 ===");
   ok(R(sv).phase === "dev" && R(sv).dev.kind === "map" && R(sv).country.ok === false, "devSet 跳到發展");
 }
 
+console.log("=== 12. 怪物（暗影眼光 6 種變體）===");
+{
+  const HM = require(path.join(ROOT, "js/hunt-mon.js"));
+  ok(HM.count === 6 && C.hunt.texts.monNames.length === HM.count, "怪物 6 種，名稱數量一致（洞影蝠、影蜘蛛、幽影、影菇、影泥、石影像）");
+  const uris = new Set(); let good = true;
+  for (let i = 0; i < 6; i++) { const m = HM.get(i); uris.add(m.uri); if (!(m.w > 8 && m.h > 8 && m.cell.length === m.h && m.cell.flat().some(Boolean) && m.svg.includes("<svg"))) good = false; }
+  ok(good && uris.size === 6, "每種都畫得出來（有像素格、有 SVG），6 種圖各不相同");
+  ok(HM.get(6) === HM.get(0) && HM.get(-1) === HM.get(5), "變體編號循環");
+  const txt = JSON.stringify(C.hunt.texts);
+  ok(!/史萊姆/.test(txt) && /\{name\}/.test(txt), "文字不再寫死史萊姆，改用 {name}");
+}
+
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);
