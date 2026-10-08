@@ -139,7 +139,7 @@
       } else if (halted) hungry();
     } else if (r.phase === "done") {
       const L = r.last, w = L.why;
-      bigHtml = A.colored(w === "empty" ? "空手" : "凱旋", w === "empty" ? sub() : "#ffcc33");
+      bigHtml = A.colored(w === "empty" ? "空手" : w === "down" ? "撤退" : "凱旋", w === "empty" ? sub() : "#ffcc33");
       lines = [A.colored(fill(w === "full" ? t.doneFull : w === "down" ? t.doneDown : t.doneEmpty, { k: L.kills, g: num(L.gold) }), w === "empty" ? sub() : "#ffcc33")];
       tap = t.doneTap;
     }
