@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { stage: null, stageTimers: [], introKey: "", scaleKey: "", turnKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
+  const ui = { stage: null, introKey: "", scaleKey: "", turnKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -44,24 +44,21 @@
   const monIdx = r => (r.anim ? r.kills - (r.anim.kind === "kill" ? 1 : 0) : r.kills);   // 這隻是本輪第幾隻（演出中 kills 已加過）
   const variantOf = r => (((r.seed >>> 0) % HM.count) + monIdx(r)) % HM.count;
   const monName = v => ((T().monNames || [])[v] || "怪物");
-  /* 第二階段：巨龍用石影像放大加骨白色當佔位；狹間怪天堂＝前 3 種（金白光暈）、地獄＝後 3 種（赤紅光暈）佔位，造型之後由美編換 */
-  const realmVariant = r => (r.realm.type === "hell" ? 3 : 0) + (((r.seed >>> 0) + r.realm.total - (r.anim && r.anim.kind === "kill" ? 1 : 0)) % 3 + 3) % 3;
-  const curVariant = r => (r.phase === "dragon" ? 5 : r.phase === "realm" ? realmVariant(r) : variantOf(r));
-  const curName = r => (r.phase === "dragon" ? T().dragonName : monName(curVariant(r)));
+  /* 第二階段（2026-10-08）：狹間怪天堂 3 種（曦羽梟、輝環水母、曦角鹿）、地獄 3 種（焰鬃犬、裂角魔影、熔瞳）；駭骨巨龍（12）、破鱗後的巨龍（13，擊殺演出用）。圖在 js/hunt-mon.js */
+  const realmIdx = r => ((((r.seed >>> 0) + r.realm.total - (r.anim && r.anim.kind === "kill" ? 1 : 0)) % 3) + 3) % 3;
+  const curVariant = r => (r.phase === "dragon" ? (r.anim && r.anim.kind === "kill" ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
+  const curName = r => (r.phase === "dragon" ? T().dragonName : r.phase === "realm" ? T().realmMonNames[r.realm.type][realmIdx(r)] : monName(variantOf(r)));
   const monCls = r => (r.phase === "dragon" ? " dragon" : r.phase === "realm" ? " " + r.realm.type : "");
   const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}"><img src="${HM.uri(v)}" alt=""></div>`;
   const akey = r => r.seed + ":" + (r.anim ? r.anim.rid : 0);
-  const clearStage = () => { ui.stageTimers.forEach(clearTimeout); ui.stageTimers = []; ui.stage = null; };
-  /* 簡單的計時演出（佔位）：steps＝[{at(0～1 的比例), lines, big, tint}]，依時間單向往後換畫面；結束後呼叫 then。減少特效時長度乘 reducedScale */
-  function runStage(ms, steps, o, then) {
-    clearStage();
-    const f = reduced() ? H().fx.reducedScale : 1, t0 = Date.now();
-    ui.stage = { steps, leaveOk: !!(o && o.leaveOk), t0, ms: ms * f };
-    steps.forEach(st => { if (st.at > 0) ui.stageTimers.push(setTimeout(() => { if (A.onMine()) render(); }, st.at * ms * f)); });
-    ui.stageTimers.push(setTimeout(() => { ui.stage = null; ui.stageTimers = []; then(); }, ms * f));
+  const SC = root.HuntScene;
+  const clearStage = () => { ui.stage = null; SC.abort(); };
+  /* 全螢幕像素演出（js/hunt-scene.js）。leaveOk＝演出中退出鈕可按（狹間每隻之間）；播完呼叫 then */
+  function playScene(o, then) {
+    ui.stage = { leaveOk: !!o.leaveOk };
+    SC.play(Object.assign({ app: $("app"), reduced: reduced(), texts: T().scene, onDone: () => { ui.stage = null; then(); } }, o));
     render();
   }
-  const stageStep = () => { const st = ui.stage, e = (Date.now() - st.t0) / st.ms; const cur = {}; st.steps.forEach(x => { if (e >= x.at || x === st.steps[0]) Object.assign(cur, x); }); return cur; };
 
   /* ---------- 畫面 ---------- */
   function chrome(on) {   // 每次 renderMine 都會呼叫：切換「冒險之地」專用的資訊列、按鈕
@@ -153,14 +150,11 @@
     } else if (r.phase === "done") {
       const L = r.last, w = L.why;
       bigHtml = A.colored(w === "empty" ? "空手" : w === "down" ? "撤退" : w === "ember" ? t.emberFailBig : "凱旋", w === "empty" || w === "ember" ? sub() : "#ffcc33");
-      lines = [A.colored(fill(w === "full" ? t.doneFull : w === "down" ? t.doneDown : w === "realm" ? t.doneRealm : w === "ember" ? t.doneEmber : t.doneEmpty, { k: L.kills, g: num(L.gold) }), w === "empty" ? sub() : "#ffcc33")];
+      lines = [A.colored(fill(w === "full" ? t.doneFull : w === "down" ? (L.dragon ? t.doneDragonDown : t.doneDown) : w === "realm" ? t.doneRealm : w === "ember" ? t.doneEmber : t.doneEmpty, { k: L.kills, g: num(L.gold) }), w === "empty" ? sub() : "#ffcc33")];
       tap = t.doneTap;
     }
     let tint = r.realm && (r.phase === "realm" || r.phase === "ember") && !(r.anim && r.anim.kind === "judge") ? r.realm.type : null;
-    if (ui.stage) {   // 計時演出中：畫面依時間單向往後換；沒有選項
-      const sp = stageStep(); lines = sp.lines || lines; bigHtml = sp.big !== undefined ? sp.big : bigHtml; subTxt = sp.sub !== undefined ? sp.sub : subTxt; choices = []; tap = " ";
-      tint = sp.tint || (sp.tint === null ? null : tint);
-    }
+    if (ui.stage) { choices = []; tap = " "; }   // 全螢幕演出中：底下的畫面不給選項
     $("scene").classList.toggle("realm-heaven", tint === "heaven"); $("scene").classList.toggle("realm-hell", tint === "hell");
     big.innerHTML = bigHtml; subEl.textContent = subTxt;
     A.setTextbox(lines, 0, { tap: tap || " " });   // 有選項時不顯示「▼ 點擊」
@@ -176,7 +170,6 @@
   }
 
   /* ---------- 斬擊／倒下演出（以及第二階段的判定、點燃、巨龍登場／破鱗、狹間轉場等計時佔位演出）---------- */
-  const lineArr = x => (Array.isArray(x) ? x : [x]);
   /* 巨龍登場：巨龍出現後、出招前播一次（只是演出；重新整理會再播，無害） */
   function maybeStage() {
     const r = MH.peek(SV(), H());
@@ -184,33 +177,25 @@
     const key = r.seed + ":" + r.n;
     if (ui.introKey === key) return;
     ui.introKey = key;
-    const t = T();
-    runStage(H().fx.dragonIntroMs, [{ at: 0, lines: [t.dragonIntro[0]], big: monHtml(5, " dragon") }, { at: .45, lines: t.dragonIntro, big: monHtml(5, " dragon") }], {}, () => { if (A.onMine()) render(); });
+    playScene({ id: "intro", ms: H().fx.dragonIntroMs }, () => { if (A.onMine()) render(); });
   }
-  /* 判定演出（佔位）：單向推進，沒有來回搖擺；地獄多一段「地面裂開」景象（加長景象、不加長懸念） */
+  /* 判定（單向推進）：天堂 6 秒、地獄 8 秒；點燃成功後的新一輪用短版（同一段畫面等比例縮短） */
   function judgeStage(a, rid) {
-    const t = T(), fx = H().fx, type = a.type, ms = a.first ? fx.judgeMs[type] : fx.judgeMs.again, hell = type === "hell";
-    const reveal = { at: .7, big: A.colored(t.realmName[type], hell ? "#ff6b4a" : "#ffe9a0"), lines: hell ? t.judgeHell : t.judgeHeaven, tint: type };
-    const steps = [{ at: 0, big: A.colored("·", sub()), lines: a.first ? t.judgeTug : t.judgeTugAgain, tint: null }, { at: .2, big: A.colored("· ·", sub()) }, { at: .4, big: A.colored("· · ·", sub()) }];
-    if (hell && a.first) steps.push({ at: .55, big: A.colored("· · ·", "#ff9a6a"), lines: [t.judgeHellExtra] });
-    steps.push(reveal);
-    runStage(ms, steps, {}, () => fxDone(rid));
+    const fx = H().fx;
+    playScene({ id: a.type, ms: a.first ? fx.judgeMs[a.type] : fx.judgeMs.again }, () => fxDone(rid));
   }
-  /* 點燃演出（佔位）：蓄力一路穩定變亮；成敗只在最後約 1.5 秒內分開，之前沒有任何差別 */
+  /* 點燃：蓄力一路穩定變亮，成敗只在最後約 1.5 秒分開 */
   function emberStage(r, rid) {
-    const t = T(), ms = H().fx.emberMs, ok = r.ember.ok, rev = 1 - 1500 / ms;
-    const glow = ["#6a5a3a", "#8f7a45", "#b89c58", "#dcc073", "#fff0b0"];
-    const steps = glow.map((c, i) => ({ at: i * rev / glow.length, big: A.colored("✦", c), lines: [t.emberCharge], tint: null }));
-    steps.push(ok ? { at: rev, big: A.colored(t.emberOkBig, "#fff0b0"), lines: [t.emberOk] } : { at: rev, big: A.colored(t.emberFailBig, sub()), lines: [t.emberFail, A.colored(fill(t.emberFailGold, { g: num(r.gold) }), "#ffcc33")] });
-    runStage(ms, steps, {}, () => fxDone(rid));
+    playScene({ id: "ember", ms: H().fx.emberMs, ok: r.ember.ok, gold: r.gold }, () => fxDone(rid));
   }
-  /* 狹間每隻之間：場景文字（12 句輪流，不連續重複）→ 繼續／結束揭曉（兩者同樣一句、同樣長度）。退出鈕可按 */
+  /* 狹間每隻之間：5 種場景輪流（天堂金白／地獄赤紅），繼續與結束用同一段畫面、只換句子；退出鈕可按 */
+  const TURN_IDS = ["tunnel", "buddy", "glyph", "roar", "fx"];
   function turnStage(r, rid) {
-    const t = T(), RT = r.realm.type, pool = RT === "hell" ? t.turnHell : t.turnHeaven;
-    const line = pool[((r.seed >>> 0) % pool.length + r.realm.total * 5) % pool.length];
-    const rev = r.after === "rspawn" ? t.turnGo : r.after === "rend" ? t.turnEnd : t.turnFull;
-    const sub0 = fill(t.realmKill, { name: curName(r), g: H().realm[RT].gold });
-    runStage(H().fx.turnMs, [{ at: 0, lines: [line], big: A.colored("…", sub()), sub: sub0 }, { at: .5, lines: [line, rev], big: A.colored("…", sub()), sub: sub0 }], { leaveOk: true }, () => { ui.turnKey = akey(MH.peek(SV(), H()) || r); fxDone(rid); });
+    const t = T().scene.turn, RT = r.realm.type, id = TURN_IDS[(((r.seed >>> 0) % 5) + r.realm.total) % 5];
+    const res = r.after === "rend" ? "end" : "cont", pool = t[id === "fx" ? (RT === "hell" ? "fxD" : "fxH") : id][res];   // 撐滿那隻（接餘燼）用「繼續」的句子，不透露上限
+    const ln = pool[(Math.floor(r.realm.total / 5) + (r.seed >>> 0)) % pool.length];
+    playScene({ id, ms: H().fx.turnScenes[id], realm: RT, res, line: ln, leaveOk: true, leaveText: "離開", onLeave: () => $("btnLeave").click() },
+      () => { ui.turnKey = akey(MH.peek(SV(), H()) || r); fxDone(rid); });
   }
   function maybeFx() {
     const sv = SV(), r = MH.peek(sv, H());
@@ -225,11 +210,11 @@
       if (a.kind === "ember") return emberStage(r2, rid);
       if (r2.phase === "dragon" && a.kind === "kill" && ui.scaleKey !== akey(r2)) {   // 破鱗過場（佔位文字），然後才是標準 5 秒擊殺
         ui.scaleKey = akey(r2);
-        return runStage(fx.dragonScaleMs, [{ at: 0, lines: lineArr(t.dragonScale), big: monHtml(5, " dragon") }], {}, () => { if (A.onMine()) maybeFx(); });
+        return playScene({ id: "brk", ms: fx.dragonScaleMs }, () => { if (A.onMine()) maybeFx(); });
       }
       const dragonDown = r2.phase === "dragon" && a.kind === "down";
       try {
-        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: curVariant(r2), kind: a.kind, combo: a.combo, comboText: t.combo, reduced: reduced(), scale: fx.reducedScale,
+        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: curVariant(r2), tone: r2.phase === "realm" ? r2.realm.type : "", kind: a.kind, combo: a.combo, comboText: t.combo, reduced: reduced(), scale: fx.reducedScale,
           totalMs: fx.totalMs, downMs: dragonDown ? fx.dragonDownMs : fx.downMs, win: t.win, downText: dragonDown ? t.dragonDownText : t.down, onDone: () => fxDone(rid) });
       } catch (e) { console.error("斬擊演出失敗：" + (e && e.message)); FX.abort(); fxDone(rid); }
     });

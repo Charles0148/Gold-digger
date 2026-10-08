@@ -186,6 +186,9 @@
     }
     return out;
   }
+  /* 狹間色調：天堂把冷色刀光換成金白、地獄換成赤橙（只換刀光顏色，結構不變） */
+  const TONE = { heaven: { "#7fe3ff": "#fff2c0", "#ffffff": "#fffbe8", "#ffcc33": "#ffe9a8" }, hell: { "#7fe3ff": "#ff9a6a", "#ffffff": "#ffd9c0", "#ffcc33": "#ff7a2a", "#ff9a1f": "#ff4a2a" } };
+  const toneCol = (tone, c) => (tone && TONE[tone] && TONE[tone][c]) || c;
   function drawBurst(g2, cx, cy, size, spikes) {
     for (let k = 0; k < spikes; k++) {
       const a = k * Math.PI * 2 / spikes + .39, cardinal = (spikes === 4) || k % 2 === 0; g2.fillStyle = k % 2 ? "#ffe0a0" : "#ffffff";
@@ -304,7 +307,7 @@
         slashes(ctx, h).forEach(s => {   // 刀痕
           const ts = te - s.t0; if (ts < 0 || ts > s.dur + s.fade) return;
           const head = s.lin ? clamp01(ts / s.dur) : eOut(clamp01(ts / s.dur)), fade = seg(ts, s.dur, s.dur + s.fade), u0 = fade * fade * head;
-          drawPath(g2, s.P, s.len, u0, head, s.th, fade, reduced ? "#ffcf70" : h.col, reduced ? "#fff3c9" : "#ffffff");
+          drawPath(g2, s.P, s.len, u0, head, s.th, fade, reduced ? "#ffcf70" : toneCol(ctx.tone, h.col), reduced ? "#fff3c9" : toneCol(ctx.tone, "#ffffff"));
         });
         if (u < 0) return;
         const hx = ctx.cm[0] + h.off[0], hy = ctx.cm[1] + h.off[1], age = u;   // 命中的星芒、火花、碎片
@@ -468,7 +471,8 @@
     const combo = COMBOS[Math.max(0, Math.min(2, opts.combo | 0))];
     const roots = ["hud", "screens", "nav"].map(id => document.getElementById(id)).filter(Boolean).map(el => ({ el, orig: el.style.transform || "" }));
     const mon = opts.monEl || null;
-    const ctx = { L, rect, W, H, cv, g2, reduced, combo, mon, roots, monOrig: mon ? { transform: mon.style.transform || "", animation: mon.style.animation || "" } : null,
+    L.dataset.realm = opts.tone || "";   // 狹間的擊殺演出：天堂（金白）／地獄（赤紅）色調（CSS 與刀光顏色）
+    const ctx = { L, rect, W, H, cv, g2, reduced, combo, mon, tone: opts.tone || "", roots, monOrig: mon ? { transform: mon.style.transform || "", animation: mon.style.animation || "" } : null,
       ic: [W / 2, Math.round(H * .46)], wy: Math.round(H * .30), hf: [], hp: [], tones: [], shards: [], chips: [], deb: [], vl: [], sh: [], dms: [], eyes: [] };
     S = { ctx, onDone: opts.onDone, start: 0, kind: opts.kind, raf: 0 };
     let total;

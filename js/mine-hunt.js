@@ -143,7 +143,7 @@
         if (!(k === "ember" && r.ember.pressed && (af === "judge" || af === "emberfail"))) return false;
       } else return false;
     } else if (r.phase === "ember") r.ember.pressed = false;   // 按了點燃卻沒有演出待播：回到可再按
-    if (r.phase === "done") { if (!isObj(r.last)) return false; r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6); if (!["full", "down", "empty", "realm", "ember"].includes(r.last.why)) return false; if (r.last.realmKills !== undefined) r.last.realmKills = int(r.last.realmKills, 0, 1e6); if (r.last.rounds !== undefined) r.last.rounds = int(r.last.rounds, 0, 1e6); }
+    if (r.phase === "done") { if (!isObj(r.last)) return false; r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6); if (!["full", "down", "empty", "realm", "ember"].includes(r.last.why)) return false; r.last.dragon = r.last.dragon === true; if (r.last.realmKills !== undefined) r.last.realmKills = int(r.last.realmKills, 0, 1e6); if (r.last.rounds !== undefined) r.last.rounds = int(r.last.rounds, 0, 1e6); }
     if (r.force !== undefined && !isObj(r.force)) delete r.force;
     return true;
   }
@@ -337,6 +337,7 @@
     const g = int(r.gold, 0, GOLD_MAX);
     sv.coins = (Number(sv.coins) || 0) + g;
     r.last = { gold: g, kills: r.kills, why };
+    if (why === "down" && r.phase === "dragon") r.last.dragon = true;   // 巨龍打輸：結算用專屬句子
     if (r.realm) { r.last.realmKills = r.realm.total; r.last.rounds = r.realm.round; }
     r.gold = 0; r.mon = null; r.anim = null; r.after = null; r.dev = null; r.country = null; r.realm = null; r.ember = null;
     r.phase = "done";

@@ -239,7 +239,13 @@ console.log("=== 12. 怪物（暗影眼光 6 種變體）===");
   const uris = new Set(); let good = true;
   for (let i = 0; i < 6; i++) { const m = HM.get(i); uris.add(m.uri); if (!(m.w > 8 && m.h > 8 && m.cell.length === m.h && m.cell.flat().some(Boolean) && m.svg.includes("<svg"))) good = false; }
   ok(good && uris.size === 6, "每種都畫得出來（有像素格、有 SVG），6 種圖各不相同");
-  ok(HM.get(6) === HM.get(0) && HM.get(-1) === HM.get(5), "變體編號循環");
+  ok(HM.total === 14 && HM.get(14) === HM.get(0) && HM.get(-1) === HM.get(13), "變體編號循環（6 種下位怪＋6 種狹間怪＋巨龍 2 種共 14）");
+  const rm = [...HM.realm.heaven, ...HM.realm.hell].concat([HM.DRAGON, HM.DRAGON_BROKEN]);
+  ok(rm.every(i => { const m = HM.get(i); return m.w > 8 && m.h > 8 && m.eyes.length > 0 && m.cell.flat().some(Boolean); }) && new Set(rm.map(i => HM.get(i).uri)).size === 8, "狹間 6 種新怪＋巨龍 2 種都畫得出來、各不相同、有眼睛可供擊殺演出使用");
+  ok(C.hunt.texts.realmMonNames.heaven.length === 3 && C.hunt.texts.realmMonNames.hell.length === 3, "狹間怪名稱天堂 3／地獄 3");
+  const tt = C.hunt.texts.scene.turn, all = Object.keys(tt).reduce((n, k) => n + tt[k].cont.length + tt[k].end.length, 0);
+  ok(Object.keys(tt).length === 6 && all === 36 && Object.keys(tt).every(k => tt[k].cont.length === 3 && tt[k].end.length === 3), "狹間場景 5 種（光羽／焰流分兩組）共 36 句：繼續 3＋結束 3");
+  ok(!/再一次|可惜|中獎|大當|稀有|超強|第 ?\{?\w*\}? ?隻/.test(JSON.stringify(C.hunt.texts.scene)), "演出文字沒有審查員禁用字眼（再一次／可惜／中獎／大當／稀有／超強／第 N 隻）");
   const txt = JSON.stringify(C.hunt.texts);
   ok(!/史萊姆/.test(txt) && /\{name\}/.test(txt), "文字不再寫死史萊姆，改用 {name}");
 }
@@ -304,6 +310,7 @@ console.log("=== 14. 第二階段：巨龍、判定、狹間、餘燼（規格 �
   { const sv = toDragon(100, { win: false, entry: "heaven" }); sv.coins = 500; R(sv).gold = 33;
     ok(MH.strike(sv, H, 1).ok && R(sv).anim.kind === "down" && R(sv).gold === 33 && R(sv).after === "down", "巨龍敗：倒下演出，不加金幣");
     MH.finishAnim(sv, H, R(sv).anim.rid);
+    ok(R(sv).last.dragon === true, "巨龍敗北：結算標記 dragon（用專屬句子）");
     ok(R(sv).phase === "done" && R(sv).last.why === "down" && sv.coins === 533 && R(sv).last.gold === 33 && !R(sv).realm, "巨龍敗 → 撤退結算，下位 33 金幣照拿，沒有進狹間"); }
   // 巨龍前沒體力：停住、餵食後原處接上、不重抽
   { const sv = fresh(1, 0); toHunt(sv, true, 0); MH.strike(sv, H, 0); R(sv).kills = 2; R(sv).after = "full";
