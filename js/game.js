@@ -407,7 +407,7 @@
     if (!huntVisible()) return "";   // 一般玩家看不到這座礦坑：衝突視窗也不露出
     const M = d && d.huntMeta, r = d && d.huntRuns && d.huntRuns[(HC().mine || {}).id];
     const st = M ? Math.floor(Number(M.stamina) || 0) : 0, g = r ? Math.floor(Number(r.gold) || 0) : 0;
-    return st > 0 || g > 0 ? `<br><span class="sub">冒險之地　體力 ${fmt(st)}　本輪金幣 ${fmt(g)}</span>` : "";
+    return st > 0 || g > 0 ? `<br><span class="sub">轉生之間　體力 ${fmt(st)}　本輪金幣 ${fmt(g)}</span>` : "";
   }
   function showConflict(row) {
     if (conflictOpen) return;

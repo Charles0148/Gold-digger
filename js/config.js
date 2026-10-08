@@ -1068,7 +1068,7 @@
        遊戲一律讀程式內建值（game.js 的 HC()），編輯器存的設定檔改不動。畫面文字不得顯示任何機率。 */
     hunt: {
       enabled: true,
-      mine: { id: "m7", name: "冒險之地（暫名）", tier: 3, mult: 1, unlock: 0, runPolicy: "adventure", devOnly: true,
+      mine: { id: "m7", name: "轉生之間", tier: 3, mult: 1, unlock: 0, runPolicy: "adventure", devOnly: true,
               scopeEligible: true, boardEligible: false, toolsBrokenEligible: false },
       /* 體力：每走一步一律 1；國度進入 2。1 體力＝6 金幣的鎬子價值（valuePer）。
          餵食：體力＝無條件捨去(Σ 剩餘耐久×原價÷標準耐久÷valuePer)，多把先加總再捨去；鑽頭沒有原價，照耐久比例換（滿耐久＝drillTotal）。 */
@@ -1093,7 +1093,7 @@
       fx: { totalMs: 2400, reducedScale: 0.65, downMs: 1500 },
       /* 玩家畫面文字（不寫機率、不寫「選對／猜中」、不要血；審查員 2026-10-08） */
       texts: {
-        mineName: "冒險之地（暫名）",
+        mineName: "轉生之間",
         walk: ["旅途平靜，小精靈在前面一蹦一蹦地帶路。", "風吹過原野，遠方有些什麼在動。", "你踩著碎石向前走，小精靈跟在腳邊。", "一步，又一步。路還很長。"],
         hungry: ["小精靈的肚子咕嚕咕嚕叫……", "牠需要吃點東西，才有力氣繼續往前。"],
         hungryNeed: "還差 {n} 步的體力。把鎬子餵給小精靈吧。",
@@ -1137,7 +1137,7 @@
         giftTitle: "小精靈",
         leaveNote: "已累積的金幣會帶走，這一輪的進度會消失，體力會保留。",
         leaveWarn: "這一輪還沒結束！離開的話，進度會消失（已累積的金幣會帶走）。",
-        leaveToast: "離開了冒險之地，帶走了金幣 {g}",
+        leaveToast: "離開了轉生之間，帶走了金幣 {g}",
         light: { title: "閃光提醒", body: "這座礦坑的演出含有短暫的強光與畫面晃動。若你對閃光敏感，建議先開啟「減少特效」；之後也可以在帳號頁的「顯示」區改。", on: "開啟減少特效", go: "到帳號頁看看", ok: "知道了" },
         fxTitle: "顯示", fxLabel: "減少特效", fxHelp: "不閃白光、不晃動畫面，演出也縮短。預設跟隨手機的「減少動態效果」。",
         fxOpts: { auto: "跟隨系統", on: "開", off: "關" },
