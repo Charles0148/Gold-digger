@@ -1086,6 +1086,17 @@
       ],
       lower: { count: 3, win: 0.92, gold: 11 },   // 下位狩獵：指定隻數、每隻擊倒率、每隻金幣（凱旋才入帳）
       present: [0.5, 0.35, 0.15],                 // 普通怪呈現：單鈕／二選一／三選一（只改演出，不影響勝負）
+      /* 回合戰鬥（2026-10-08，規格 新礦坑_冒險狩獵_回合戰鬥規格；擁有者決定 44、45）：怪物出現那一刻依預抽的勝負排出「來回」劇本，只影響演出，不影響勝負與金幣（120% 不用重算）。內部資料，玩家畫面不顯示任何數字。
+         rounds＝每隻怪的輪數範圍（厚重）；pMiss／mMiss＝玩家打空／怪物被閃開的機率；mDmg＝怪物單擊傷害（血條滿格 hpMax＝100）；pDmg＝玩家傷害數字（顯示用）；mult＝招式對傷害數字的倍率（突刺、橫掃、蓄力，純演出）；
+         勝的劇本一路至少剩 winFloor；負的劇本最後一輪之前不低於 loseFloor、至少先挨 loseMinHits 下。血量：下位到巨龍連續累積，進狹間每隻回滿 */
+      battle: {
+        hpMax: 100, winFloor: 20, loseFloor: 15,
+        rounds: { lower: [3, 4], heaven: [4, 6], hell: [5, 7], dragon: [8, 10] },
+        pMiss: 0.20, mMiss: 0.40,
+        mDmg: { lower: [18, 28], heaven: [14, 22], hell: [18, 28], dragon: [12, 20] },
+        pDmg: [12, 26], mult: [0.8, 1.0, 1.4],
+        loseMinHits: { lower: 1, dragon: 3 }
+      },
       /* 第二階段（2026-10-08）：駭骨巨龍與轉生狹間。tools/sim.js 與 js/mine-hunt.js 都讀這裡（原 later 已刪）。內部資料，玩家畫面不得出現任何數字 */
       dragon: { win: 0.80, gold: 90, warnStamina: 25 },   // 巨龍：勝率、金幣；體力低於 warnStamina 時登場後小精靈提醒一句（不顯示數字）
       realm: {
@@ -1097,6 +1108,7 @@
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
       fx: { totalMs: 5000, reducedScale: 0.75, downMs: 1500,
              dragonIntroMs: 3000, dragonScaleMs: 2500, dragonDownMs: 3000, judgeMs: { heaven: 6000, hell: 8000, again: 4000 }, emberMs: 8000,
+             battle: { playerHitMs: 600, playerMissMs: 500, monHitMs: 600, monMissMs: 500, blowExtraMs: 200 },   // 回合戰鬥每輪的小演出長度（毫秒）；減少特效時乘 reducedScale
              turnScenes: { tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600 } },   // 第二階段演出長度（毫秒，js/hunt-scene.js；擁有者 2026-10-08 核准的美編候選稿）。turnScenes＝狹間每隻擊殺後的 5 種場景；again＝點燃成功後新一輪判定的短版（等比例縮短）   // 「五秒擊殺」（js/hunt-fx.js）：連斬 5 刀 0～2200、反黑蓄力 2200～2900、斬開 2900～3850、勝利 3900～5000；減少特效時整段縮短為 75%。套路：突刺→C、橫掃→A、蓄力→B
       /* 玩家畫面文字（不寫機率、不寫「選對／猜中」、不要血；審查員 2026-10-08） */
       texts: {
@@ -1137,6 +1149,14 @@
         doneDragonDown: "駭骨巨龍的一爪揮下，你退了回來。帶回了金幣 {g}。",
         realmMonNames: { heaven: ["曦羽梟", "輝環水母", "曦角鹿"], hell: ["焰鬃犬", "裂角魔影", "熔瞳"] },   // 暫名，待擁有者確認
         /* 全螢幕演出的字（js/hunt-scene.js）。沒有血、機率、「第 N 隻」、累積金幣大字；判定單向推進、點燃不寫「再一次」「可惜」 */
+        /* 回合戰鬥每輪的一句話（事件描述，不寫輸贏預告、不寫「選對／運氣」；依本趟種子與輪次輪替，重新整理不變）。{name}＝怪物名 */
+        battle: {
+          playerHit: ["劍鋒掃過{name}的側身。", "一擊正中，{name}退了半步。", "你抓準空檔，劍光劃過{name}。", "劍刃貼著{name}斬了過去。", "手上一沉，這一劍結結實實落在{name}身上。", "你踏步向前，{name}被逼得往後讓。"],
+          playerMiss: ["劍光落了空，{name}輕巧地晃開。", "揮空了，趕緊重新站穩。", "{name}往旁邊一閃，劍擦著影子劃過。", "這一劍落在了空處，你收劍再來。", "{name}飄了開去，劍鋒只掃到風。", "腳步沒跟上，劍落在{name}身旁。"],
+          monHit: ["{name}猛撲過來，你被撞得退了一步。", "一道黑影掠過，你咬牙撐住。", "{name}的一擊擦過肩頭，你晃了晃。", "你擋得慢了半拍，{name}得手了。", "{name}逼近，你被推開了幾步。", "衝擊從側面襲來，你穩住了腳步。"],
+          monMiss: ["你側身一閃，{name}撲了個空。", "攻擊貼著衣角擦過。", "你向後一躍，穩穩落地。", "{name}的一擊落在地上，濺起碎石。", "你低頭避開，{name}從頭上掠過。", "{name}撲來的時候，你已經不在原地。"],
+          miss: "揮空", dodge: "閃開了"
+        },
         scene: {
           dragonTitle: "駭骨巨龍", dragonSub: "沉睡的骨之王", breakTitle: "破鱗", breakSub: "堅硬的護殼片片剝落",
           heaven: { l1: "雲層的縫隙裡，有光落了下來", l2: "光安靜地、一步一步往下鋪開", title: "天堂", sub: "光的國度" },

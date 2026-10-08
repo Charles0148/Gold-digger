@@ -964,3 +964,16 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 #huntFx[data-realm="hell"] .hfx-back { background: linear-gradient(#0e0507 0 22%, #1c080c 22% 46%, #2c0c10 46% 70%, #401014 70% 100%); }
 #huntScene.out { pointer-events: none; animation: hsOut .4s linear forwards; }
 @keyframes hsOut { from { opacity: 1; } to { opacity: 0; } }
+/* 回合戰鬥（2026-10-08）：角色血條（10 格，無數字，缺的格子變暗灰、不用紅色）、角色剪影、每輪的小數字。不做全螢幕閃白 */
+.hunt-hp { position: absolute; left: 10px; top: 6px; display: none; gap: 2px; z-index: 2; }
+.hunt-hp.on { display: flex; }
+.hunt-hp .c { width: 11px; height: 9px; background: #3a3a42; border: 1px solid #14141a; transition: background-color .25s steps(3); }
+.hunt-hp .c.on { background: #55dd66; }
+.hunt-hp.low .c.on { background: #ffcc33; }
+.hunt-hero { position: absolute; left: 12px; bottom: 6px; height: min(60px, 34cqh); display: none; z-index: 1; }
+.hunt-hero.on { display: block; }
+.hunt-hero img { display: block; height: 100%; width: auto; image-rendering: pixelated; }
+@container (max-height: 130px) { .hunt-hero { display: none !important; } }
+.hunt-num { position: absolute; z-index: 3; font-size: 15px; color: #e8e8e8; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; pointer-events: none; white-space: nowrap; }
+.hunt-num.sub { color: var(--sub); }
+.hunt-slash { position: absolute; z-index: 2; height: 3px; background: #fff; pointer-events: none; transform-origin: left center; }

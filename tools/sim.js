@@ -63,6 +63,7 @@ function huntSection(runs) {
       const st = solve(Hv.m, Gv.m), gd = solve(Hv.gold, Gv.gold), ent = x => RM.entryHeaven * x.Eh + (1 - RM.entryHeaven) * x.Eg;
       spent += Q * enter * ent(st) * ST.perStep; gold += Q * enter * ent(gd);
       out.full = gold / (spent * ST.valuePer);
+      out.Eh = st.Eh; out.Eg = st.Eg; out.enter = enter;   // 耗時估算用：從天堂／地獄進場每次平均擊倒隻數
     }
     return out;
   }
@@ -105,14 +106,14 @@ function huntSection(runs) {
           if (r.anim.kind === "judge") { const t = r.anim.type; if (r.anim.first) { c.entryN++; if (t === "heaven") c.entryHeaven++; } c.rmRounds[t]++; }
           MH.finishAnim(sv, H, r.anim.rid);
         } else if (r.phase === "hunt") {
-          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; if (r.mon.pres === 0) c.combo[r.mon.combo]++; MH.strike(sv, H, 0); }
+          if (r.mon) { if (!r.mon.t) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; if (r.mon.pres === 0) c.combo[r.mon.combo]++; } MH.strike(sv, H, 0); }   // 回合戰鬥：每隻怪只在第 1 輪計一次（劇本不影響勝負）
           else { ck(false, "狩獵中沒有怪物"); break; }
         } else if (r.phase === "dragon") {
           if (!r.mon) { ck(false, "巨龍階段沒有怪物"); break; }
-          c.dragonN++; if (r.mon.win) c.dragonWin++; MH.strike(sv, H, 0);
+          if (!r.mon.t) { c.dragonN++; if (r.mon.win) c.dragonWin++; } MH.strike(sv, H, 0);
         } else if (r.phase === "realm") {
           if (!r.mon) { ck(false, "狹間中沒有怪物"); break; }
-          c.rmKills++; MH.strike(sv, H, 0);
+          if (!r.mon.t) c.rmKills++; MH.strike(sv, H, 0);
           const rr = MH.peek(sv, H).realm; c.rmMax[rr.type] = Math.max(c.rmMax[rr.type], rr.n);
         } else if (r.phase === "ember") {
           c.emberN++; if (r.ember.ok) c.emberOk++; c.rmFull[r.realm.type]++; c.nextN[r.realm.type]++; if (r.ember.next === "heaven") c.nextHeaven[r.realm.type]++;
@@ -154,6 +155,22 @@ function huntSection(runs) {
     const per = (killSecs) => e3.walk * .5 + 2 * .5 + 2 + 8 + 2.5 + e3.Q * (wins * (react + killSecs) + (1 - reach) * (.6 + 2.5));
     console.log(`  --- 每輪耗時（設定三，手動，階段 1）：每隻怪演出 2.5 秒 → ${per(2.5).toFixed(1)} 秒；五秒擊殺 ${kt} 秒 → ${per(kt).toFixed(1)} 秒（每輪平均擊倒 ${(e3.Q * wins).toFixed(2)} 隻，每隻多 ${(kt - 2.5).toFixed(1)} 秒）`);
     console.log(`  --- 完整遊戲（規格 5：每輪平均擊倒約 3.3 隻，原手動 35.6 秒）：約 ${(35.6 + 3.3 * (kt - 2.5)).toFixed(1)} 秒；每隻怪約 ${kt} 秒、點擊數不變（每隻怪仍是按一下）`);
+    // 回合戰鬥耗時（手動；config.hunt.battle 的輪數，演出長度 config.hunt.fx）：一般一輪＝反應＋玩家小演出＋怪物小演出；勝的最後一輪＝反應＋5 秒擊殺；每隻怪出現 0.6、狹間轉場取 5 種場景平均
+    {
+      const B = H.battle, F = H.fx, BF = F.battle, avgR = k => (B.rounds[k][0] + B.rounds[k][1]) / 2, pH = 1 - B.pMiss, mH = 1 - B.mMiss;
+      const playerT = pH * BF.playerHitMs / 1000 + (1 - pH) * BF.playerMissMs / 1000, monT = mH * BF.monHitMs / 1000 + (1 - mH) * BF.monMissMs / 1000, rd = react + playerT + monT;
+      const turnT = Object.values(F.turnScenes).reduce((a, b) => a + b, 0) / Object.keys(F.turnScenes).length / 1000;
+      const fight = (k, extra) => .6 + (avgR(k) - 1) * rd + react + kt + extra;           // 勝的一隻（不含轉場）
+      const loseFight = k => .6 + (avgR(k) - 1) * rd + react + playerT + (BF.monHitMs + BF.blowExtraMs) / 1000 + F.downMs / 1000;
+      const tH = fight("heaven", turnT), tG = fight("hell", turnT);
+      const heavenFull = RM.heaven.cap * tH + F.judgeMs.heaven / 1000 + F.emberMs / 1000, hellFull = RM.hell.cap * tG + F.judgeMs.hell / 1000 + F.emberMs / 1000;
+      let lowerT = 0, reach = 1; for (let i = 0; i < K; i++) { lowerT += reach * (k * fight("lower", 0) + (1 - k) * loseFight("lower")); reach *= k; }
+      const dragonWin = F.dragonIntroMs / 1000 + fight("dragon", 0) + F.dragonScaleMs / 1000, dragonLose = F.dragonIntroMs / 1000 + loseFight("dragon") - F.downMs / 1000 + F.dragonDownMs / 1000;
+      const dragonT = DR.win * dragonWin + (1 - DR.win) * dragonLose;
+      const realmT = RM.entryHeaven * e3.Eh * tH + (1 - RM.entryHeaven) * e3.Eg * tG + (RM.entryHeaven * (F.judgeMs.heaven) + (1 - RM.entryHeaven) * F.judgeMs.hell) / 1000;
+      const total = e3.walk * .5 + 2 * .5 + 2 + 8 + 2.5 + e3.Q * (lowerT + e3.passL * (dragonT + DR.win * realmT));
+      console.log(`  --- 回合戰鬥耗時（設定三，手動；一般一輪 ${rd.toFixed(2)} 秒、每隻狹間怪天堂 ${tH.toFixed(1)}／地獄 ${tG.toFixed(1)} 秒）：整個遊戲每輪約 ${total.toFixed(0)} 秒｜天堂撐滿 20 隻約 ${Math.floor(heavenFull / 60)} 分 ${Math.round(heavenFull % 60)} 秒｜地獄撐滿 10 隻約 ${Math.floor(hellFull / 60)} 分 ${Math.round(hellFull % 60)} 秒｜巨龍整段（勝）約 ${dragonWin.toFixed(0)} 秒／（敗）約 ${dragonLose.toFixed(0)} 秒｜每次進狹間平均約 ${realmT.toFixed(0)} 秒`);
+    }
   }
   // 打進去之後的機率與設定無關：第一階段只有「下位擊倒率」，固定寫在 config.hunt.lower；每日設定只能有入口三個欄位
   ck(H.settings.every(S => Object.keys(S).sort().join() === "cave,dev,map"), "每日設定只能有 dev／cave／map 三個入口欄位（打進去之後不隨設定變）");

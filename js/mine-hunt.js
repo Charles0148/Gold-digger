@@ -20,6 +20,8 @@
          mon 擴充  巨龍多 entry（預抽的入口類型）、pres 固定 2；狹間多 cont（這隻打完是否繼續）、win 固定 true
          anim.kind 新增 "judge"（帶 type、first）｜"ember"；after 新增 "judge"｜"rspawn"｜"rend"｜"ember"｜"emberfail"；hunt 的 "full" 現在＝接到巨龍
          抽選次數（寫死，不得改順序）：巨龍 draw×2（勝負、入口天堂）；狹間每隻 draw×1（繼續）＋drawP×1（呈現＋套路）；進餘燼 draw×2（成功、下一輪天堂）；判定 0
+         回合戰鬥（2026-10-08，規格 新礦坑_冒險狩獵_回合戰鬥規格）：mon.sc＝{ R, hp0, rs:[[pHit,pDmg,mHit,mDmg,var]…] } 劇本（spawn 那一刻用獨立種子流 seedB／nB 排好、整份存檔；勝負與其他抽選一個字不動）、mon.t＝目前第幾輪（0 起算）；
+                  anim.kind "round"（中途一輪，anim.t＝輪次、after "round"）；run.hp＝下位到巨龍連續累積的角色血量（進狹間每隻回滿）。舊戰鬥（沒有 sc）視為只有 1 輪
          last      { gold, kills, why:"full"(舊)|"down"|"empty"|"realm"|"ember", realmKills?, rounds? }  凱旋統計
    - 防作弊：任何影響結果的隨機，在「付出體力的那一刻」抽好、寫進存檔，呼叫端 persist 之後才演出。
    - 金幣：只累積在 run.gold，settle() 才一次進 save.coins；餵食（feed）是原子操作，不扣耐久、不算用壞、不累積紅晶。
@@ -49,7 +51,7 @@
   function newMeta() { return { v: 1, stamina: 0, visits: 0, claimed: {}, seenLight: false, gifted: false }; }
   function newRun(rng) {
     return { phase: "walk", seed: newSeed(rng), n: 0, seedP: newSeed(rng), nP: 0, since: 0, dev: null, country: null,
-      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null };
+      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null, seedB: newSeed(rng), nB: 0, hp: 100 };
   }
   const mineId = H => (H.mine || {}).id || "m7";
 
@@ -85,6 +87,10 @@
     if (!Number.isInteger(r.seed) && !(typeof r.seed === "number" && Number.isFinite(r.seed))) return false;
     if (!Number.isInteger(r.seedP) && !(typeof r.seedP === "number" && Number.isFinite(r.seedP))) return false;
     r.seed = r.seed >>> 0; r.seedP = r.seedP >>> 0;
+    // 回合戰鬥（2026-10-08）：劇本種子流與角色血量。舊存檔沒有時由舊 seed 推出（不消耗它）；血量缺就補滿
+    r.seedB = Number.isFinite(r.seedB) ? r.seedB >>> 0 : (mix(r.seed, 0x0B477135) * 4294967296) >>> 0;
+    r.nB = int(r.nB === undefined ? 0 : r.nB, 0, 1e9);
+    r.hp = int(r.hp === undefined ? ((H.battle || {}).hpMax || 100) : r.hp, 1, (H.battle || {}).hpMax || 100);
     r.n = int(r.n, 0, 1e9); r.nP = int(r.nP, 0, 1e9);
     r.since = int(r.since, 0, 1e6); r.kills = int(r.kills, 0, 1e6); r.rid = int(r.rid, 0, 1e9);
     r.gold = int(r.gold, 0, GOLD_MAX);
@@ -119,6 +125,11 @@
         if (!(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
         if (r.phase === "dragon" && (r.mon.pres !== 2 || !KINDS.includes(r.mon.entry))) return false;
         if (r.phase === "realm" && (r.mon.win !== true || typeof r.mon.cont !== "boolean")) return false;
+        // 回合劇本：壞了就丟掉（變成「只有 1 輪」的舊戰鬥），勝負還在 mon.win，不作廢整趟
+        if (r.mon.sc !== undefined) {
+          if (scOk(r.mon.sc, r.mon.win) && Number.isInteger(r.mon.t) && r.mon.t >= 0 && r.mon.t < r.mon.sc.R) { /* 保留 */ }
+          else { delete r.mon.sc; delete r.mon.t; }
+        } else delete r.mon.t;
       }
     } else if (r.mon !== null) return false;
     if (r.phase === "realm" && !r.realm) return false;
@@ -126,7 +137,9 @@
     if (r.anim !== null) {
       if (!isObj(r.anim) || !Number.isInteger(r.anim.rid)) return false;
       const k = r.anim.kind, af = r.after;
-      if (r.phase === "hunt" || r.phase === "dragon") {
+      if (k === "round" && (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm")) {
+        if (!(r.mon && r.mon.sc && af === "round" && pick(r.anim.pick) && r.anim.t === r.mon.t && r.mon.t < r.mon.sc.R - 1)) return false;
+      } else if (r.phase === "hunt" || r.phase === "dragon") {
         if (!((k === "kill" || k === "down") && pick(r.anim.pick) && r.mon)) return false;
         if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = r.anim.pick === null ? 0 : r.anim.pick;   // 舊存檔沒有套路：照選項
         if (r.phase === "hunt" && af !== "spawn" && af !== "full" && af !== "down") return false;
@@ -224,6 +237,53 @@
     return spawn(sv, H);
   }
 
+  /* ---- 回合戰鬥劇本（只影響演出，不影響勝負與金幣）。j 的分配寫死：0＝輪數；1+5i 玩家中／miss；2+5i 玩家傷害（顯示值）；3+5i 怪物中／閃開；4+5i 怪物傷害；5+5i 單鈕怪小動畫款式 ---- */
+  function makeScript(H, kind, win, sB, hp0, forceR) {
+    const B = H.battle, [lo, hi] = B.rounds[kind], [ma, mb] = B.mDmg[kind], [pa, pb] = B.pDmg, u = j => mix(sB, j);
+    const R = forceR ? int(forceR, 1, 12) : lo + Math.floor(u(0) * (hi - lo + 1)), last = R - 1, rs = [];
+    for (let i = 0; i < R; i++) rs.push([u(1 + 5 * i) >= B.pMiss ? 1 : 0, pa + Math.floor(u(2 + 5 * i) * (pb - pa + 1)), u(3 + 5 * i) >= B.mMiss ? 1 : 0, ma + Math.floor(u(4 + 5 * i) * (mb - ma + 1)), Math.min(2, Math.floor(u(5 + 5 * i) * 3))]);
+    for (let i = 1; i < R; i++) if (!rs[i - 1][0] && !rs[i][0]) rs[i][0] = 1;   // 玩家不連續兩輪 miss
+    const sum = () => { let t = 0; for (let i = 0; i < last; i++) if (rs[i][2] === 1) t += rs[i][3]; return t; };
+    const lastHit = () => { for (let i = last - 1; i >= 0; i--) if (rs[i][2] === 1) return i; return -1; };
+    if (win) {   // 勝：最後一輪玩家必中、怪物不反擊；一路撐住（最低剩 winFloor）
+      rs[last][0] = 1; rs[last][2] = null; rs[last][3] = null;
+      while (sum() > hp0 - B.winFloor) { const i = lastHit(); if (i < 0) break; rs[i][2] = 0; }
+    } else {     // 負：最後一輪怪物必中、血量剛好歸零；之前至少挨幾下
+      rs[last][2] = 1;
+      const budget = hp0 - B.loseFloor, need = Math.min((B.loseMinHits || {})[kind] || 0, last);
+      let hits = 0; for (let i = 0; i < last; i++) if (rs[i][2] === 1) hits++;
+      for (let i = 0; i < last && hits < need; i++) if (rs[i][2] !== 1) { rs[i][2] = 1; hits++; }
+      while (sum() > budget && hits > need) { const i = lastHit(); rs[i][2] = 0; hits--; }
+      while (sum() > budget) { let k = -1; for (let i = 0; i < last; i++) if (rs[i][2] === 1 && rs[i][3] > 1 && (k < 0 || rs[i][3] > rs[k][3])) k = i; if (k < 0) break; rs[k][3]--; }
+      rs[last][3] = hp0 - sum();
+    }
+    const sc = { R, hp0, rs };
+    if (!scOk(sc, win)) throw new Error("回合劇本自驗失敗");
+    return sc;
+  }
+  /* 劇本結構與一致性檢查（讀檔也用）：勝＝最後一輪沒有反擊且剩血 > 0；負＝最後一輪怪物命中且累計剛好歸零 */
+  function scOk(sc, win) {
+    if (!isObj(sc) || !Number.isInteger(sc.R) || sc.R < 1 || sc.R > 12 || !Number.isInteger(sc.hp0) || sc.hp0 < 1 || !Array.isArray(sc.rs) || sc.rs.length !== sc.R) return false;
+    let sum = 0;
+    for (let i = 0; i < sc.R; i++) {
+      const x = sc.rs[i], lastR = i === sc.R - 1;
+      if (!Array.isArray(x) || x.length !== 5 || !(x[0] === 0 || x[0] === 1) || !Number.isInteger(x[1]) || !Number.isInteger(x[4]) || x[4] < 0 || x[4] > 2) return false;
+      if (win && lastR) { if (x[0] !== 1 || x[2] !== null || x[3] !== null) return false; continue; }
+      if (!(x[2] === 0 || x[2] === 1) || !Number.isInteger(x[3]) || x[3] < 0) return false;
+      if (x[2] === 1) sum += x[3];
+    }
+    if (win) return sc.hp0 - sum >= 1;
+    return sc.rs[sc.R - 1][2] === 1 && sum === sc.hp0;
+  }
+  /* 第 t 輪開始前的血量（t＝R 時＝這場打完後）。單一來源：由劇本推得，不另存 */
+  function hpAt(mon, t) {
+    if (!mon || !mon.sc) return null;
+    let hp = mon.sc.hp0; const n = Math.min(t, mon.sc.R);
+    for (let i = 0; i < n; i++) { const x = mon.sc.rs[i]; if (x[2] === 1) hp -= x[3]; }
+    return Math.max(0, hp);
+  }
+  const kindOf = r => (r.phase === "hunt" ? "lower" : r.phase === "dragon" ? "dragon" : r.realm.type);
+
   /* 開發者強制值只用一次（spawn／進餘燼各取自己的欄位，用完就刪） */
   function takeForce(r, keys) {
     const f = r.force; if (!f) return {};
@@ -233,6 +293,12 @@
   }
   const presOf = (H, uP) => { const P = H.present; return uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2; };
 
+  /* 排這隻怪的回合劇本：獨立種子流 seedB／nB（每隻怪 +1），勝負確定之後才排，所以強制勝負（開發者）也會得到對應劇本 */
+  function addScript(r, H, forceR) {
+    const hp0 = r.phase === "realm" ? H.battle.hpMax : int(r.hp, 1, H.battle.hpMax);   // 下位到巨龍連續累積；狹間每隻回滿
+    r.mon.sc = makeScript(H, kindOf(r), r.mon.win, (mix(r.seedB, r.nB) * 4294967296) >>> 0, hp0, forceR); r.mon.t = 0; r.nB = int(r.nB + 1, 0, 1e9);
+  }
+
   /* ---- 遇到一隻怪＝付 1 體力＋預抽。下位／巨龍／狹間三種（抽選次數見檔頭，寫死）---- */
   function spawn(sv, H) {
     const r = peek(sv, H), M = sv.huntMeta;
@@ -241,10 +307,11 @@
     M.stamina -= H.stamina.perStep;
     if (r.phase === "dragon") {   // 勝負、入口天堂各 1 抽；呈現不抽（固定三選一，套路＝玩家選的）
       let win = draw(r) < H.dragon.win, entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
-      const f = takeForce(r, ["win", "entry"]);
+      const f = takeForce(r, ["win", "entry", "rounds"]);
       if (typeof f.win === "boolean") win = f.win;
       if (KINDS.includes(f.entry)) entry = f.entry;
       r.mon = { win, pres: 2, combo: 0, entry };
+      addScript(r, H, f.rounds);
       return { ok: true, ev: "mon", pres: 2 };
     }
     let win = true, cont = false;
@@ -252,12 +319,13 @@
     const uP = drawP(r), P = H.present;
     let pres = presOf(H, uP);
     let combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));   // 單鈕怪的套路：用「單鈕那一段」的 uP 三等分（pres 0 時 uP<P[0]），不多抽一次，所以不改變抽選次數
-    const f = takeForce(r, ["win", "pres", "combo", "cont"]);   // 開發者測試用
+    const f = takeForce(r, ["win", "pres", "combo", "cont", "rounds"]);   // 開發者測試用
     if (typeof f.win === "boolean" && r.phase === "hunt") win = f.win;
     if (typeof f.cont === "boolean" && r.phase === "realm") cont = f.cont;
     if (Number.isInteger(f.pres)) pres = Math.max(0, Math.min(2, f.pres));
     if (Number.isInteger(f.combo)) combo = Math.max(0, Math.min(2, f.combo));
     r.mon = r.phase === "hunt" ? { win, pres, combo } : { win: true, pres, combo, cont };
+    addScript(r, H, f.rounds);
     return { ok: true, ev: "mon", pres };
   }
   /* 出招：選項只改演出（斬擊方向與顏色），勝負早在 spawn 決定。結果一次落地，動畫之後才播 */
@@ -265,10 +333,13 @@
     const r = peek(sv, H);
     if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || !r.mon || r.anim) return { ok: false, reason: "state" };
     if (!(Number.isInteger(idx) && idx >= 0 && idx <= r.mon.pres)) return { ok: false, reason: "arg" };
+    const sc = r.mon.sc, lastRound = !sc || r.mon.t >= sc.R - 1;
     r.rid++;
-    const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 選項怪：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
+    if (!lastRound) { r.anim = { kind: "round", pick: idx, rid: r.rid, t: r.mon.t }; r.after = "round"; return { ok: true, anim: r.anim }; }   // 中途一輪：只是來回的演出
+    const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 最後一輪的招式決定 5 秒擊殺的套路：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
     if (r.mon.win) {
       r.kills++;
+      if (sc && r.phase === "hunt") r.hp = Math.max(1, hpAt(r.mon, sc.R));   // 血量帶到下一隻（下位 → 巨龍）
       if (r.phase === "hunt") { r.gold = int(r.gold + H.lower.gold, 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
       else if (r.phase === "dragon") { r.gold = int(r.gold + H.dragon.gold, 0, GOLD_MAX); r.after = "judge"; }
       else {
@@ -314,6 +385,7 @@
     const r = peek(sv, H);
     if (!r || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
     if (r.phase === "done" || !PHASES.includes(r.phase)) return { ok: false, reason: "state" };
+    if (r.after === "round" && r.anim.kind === "round" && r.mon) { r.anim = null; r.after = null; r.mon.t++; return { ok: true, ev: "round" }; }   // 這一輪播完 → 回到等待選招
     const after = r.after, entry = r.mon && r.mon.entry;
     r.anim = null; r.mon = null; r.after = null;
     if (after === "spawn" || after === "rspawn") return spawn(sv, H);
@@ -428,12 +500,13 @@
       Object.assign(r, { phase: o.phase, dev: null, country: null, mon: null, anim: null, after: null, kills: H.lower.count + 1 + n, realm: { type, n, round: int(o.round || 1, 1, 1e6), total: n },
         ember: o.phase === "ember" ? { ok: o.ok !== false, next: o.next === "hell" ? "hell" : "heaven", pressed: false } : null });
     }
+    if (Number.isInteger(o.hp)) r.hp = int(o.hp, 1, H.battle.hpMax);
     if (o.force) r.force = o.force;
     return r;
   }
 
   const api = { PHASES, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
-    spawn, strike, ignite, finishAnim, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
+    spawn, strike, ignite, finishAnim, makeScript, scOk, hpAt, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
   root.MineHunt = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

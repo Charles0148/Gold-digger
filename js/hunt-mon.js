@@ -114,6 +114,9 @@
   function mHound() { const o = Grid(28, 26); o.mln(8, 7, 5, 3, "h"); o.mln(10, 6, 9, 1, "h"); o.mln(6, 10, 2, 8, "h"); o.mln(7, 12, 2, 13, "h"); o.el(13.5, 12, 6, 5, "a"); o.mln(9, 8, 8, 4, "a"); o.mln(8, 4, 11, 7, "a"); o.rc(11, 14, 6, 4, "a"); o.mset(9, 11, "e"); o.mset(10, 10, "e"); o.mset(11, 10, "e"); o.el(13.5, 21, 7, 4, "a"); o.mrc(8, 24, 3, 2, "a"); o.mset(12, 18, "n"); return o.G; }
   function mImp() { const o = Grid(26, 28); o.mln(8, 9, 4, 6, "h"); o.mln(4, 6, 3, 2, "h"); o.mln(3, 2, 6, 1, "h"); o.el(12.5, 12, 6, 5, "a"); o.mset(9, 12, "e"); o.mset(10, 11, "e"); o.mset(11, 11, "e"); o.mrc(10, 16, 6, 1, "n"); o.el(12.5, 21, 5, 5, "a"); o.mln(8, 19, 3, 14, "a"); o.mln(3, 14, 6, 22, "a"); o.ln(17, 24, 22, 26, "a"); o.ln(22, 26, 23, 22, "a"); o.mrc(9, 25, 2, 2, "a"); o.mset(12, 20, "h"); return o.G; }
   function mOrb() { const o = Grid(26, 28); o.el(12.5, 12, 9, 9, "a"); for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283; o.ln(12.5 + Math.cos(a) * 9.5, 12 + Math.sin(a) * 9.5, 12.5 + Math.cos(a) * 12.5, 12 + Math.sin(a) * 12.5, "a"); } o.el(12.5, 12, 5, 4, "e"); o.rc(12, 9, 2, 6, "n"); o.ln(8, 22, 7, 26, "h"); o.ln(12, 22, 12, 27, "h"); o.ln(17, 22, 18, 26, "h"); return o.G; }
+  /* 角色（回合戰鬥畫面左下角，佔位造型：暗影眼光風格的小劍士剪影，之後由美編換）：編號 14 */
+  const PALHERO = { body: "#2d4a7a", rim: "#9ec3ff", eye: "#fff4c0", O: "#07070b", acc: "#ffd24a", mem: "#1b1838", mrim: "#3d3a73", hole: "#0f0e22" };
+  function mHero() { const o = Grid(14, 20); o.el(6.5, 4, 3.2, 3.2, "a"); o.set(5, 4, "e"); o.set(8, 4, "e"); o.rc(4, 8, 6, 7, "a"); o.rc(4, 8, 6, 1, "h"); o.rc(2, 9, 2, 5, "a"); o.rc(10, 9, 2, 4, "a"); o.rc(4, 15, 2, 5, "a"); o.rc(8, 15, 2, 5, "a"); o.ln(12, 2, 12, 13, "h"); o.set(11, 13, "h"); o.set(13, 13, "h"); return o.G; }
   const REALM_MON = [{ g: mOwl, p: PALH }, { g: mJelly, p: PALH }, { g: mDeer, p: PALH }, { g: mHound, p: PALD }, { g: mImp, p: PALD }, { g: mOrb, p: PALD }];
 
   /* 駭骨巨龍（骨架、無血肉；暗影眼光配色）。plates＝覆在身上的骨甲磚（破鱗過場一片片碎裂） */
@@ -166,11 +169,12 @@
   }
   function buildX(k) {
     if (k <= 11) { const m = REALM_MON[k - 6]; return fromCells(toCells(m.g(), m.p), c => c.col, m.p.eye); }
+    if (k === 14) return fromCells(toCells(mHero(), PALHERO), c => c.col, PALHERO.eye);
     const D = dragonData();
     if (k === 12) return fromCells(D.C, c => (c.plate != null ? plateCol(c, D.plates[c.plate]) : c.col), "#7fe3ff");
     return fromCells(D.C, c => mix(c.col, "#7fe3ff", c.k === "a" ? .25 * clamp01(1 - c.d / 60) : 0), "#ff4f6a");   // 13：破鱗後（骨甲碎裂、骨髓光、赤眼）
   }
-  const TOTAL = 14;
+  const TOTAL = 15;
   const cache = [];
   /* 回傳 { svg, w, h, cell, uri }；cell[y][x]＝該格顏色（沒有就 null） */
   function build(i) {
@@ -201,7 +205,7 @@
     return { svg, w, h, cell, eyes, eye: pal.eye, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) };
   }
   const get = i => { const k = ((i % TOTAL) + TOTAL) % TOTAL; return cache[k] || (cache[k] = k < MONS.length ? build(k) : buildX(k)); };
-  const api = { count: MONS.length, total: TOTAL, realm: { heaven: [6, 7, 8], hell: [9, 10, 11] }, DRAGON: 12, DRAGON_BROKEN: 13, get, uri: i => get(i).uri, cells: i => get(i), kit: { Grid, toCells, dragonData, plateCol, mix } };
+  const api = { count: MONS.length, total: TOTAL, realm: { heaven: [6, 7, 8], hell: [9, 10, 11] }, DRAGON: 12, DRAGON_BROKEN: 13, HERO: 14, get, uri: i => get(i).uri, cells: i => get(i), kit: { Grid, toCells, dragonData, plateCol, mix } };
   root.HuntMon = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

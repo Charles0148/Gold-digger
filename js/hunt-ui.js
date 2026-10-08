@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { stage: null, introKey: "", scaleKey: "", turnKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -46,18 +46,90 @@
   const monName = v => ((T().monNames || [])[v] || "怪物");
   /* 第二階段（2026-10-08）：狹間怪天堂 3 種（曦羽梟、輝環水母、曦角鹿）、地獄 3 種（焰鬃犬、裂角魔影、熔瞳）；駭骨巨龍（12）、破鱗後的巨龍（13，擊殺演出用）。圖在 js/hunt-mon.js */
   const realmIdx = r => ((((r.seed >>> 0) + r.realm.total - (r.anim && r.anim.kind === "kill" ? 1 : 0)) % 3) + 3) % 3;
-  const curVariant = r => (r.phase === "dragon" ? (r.anim && r.anim.kind === "kill" ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
+  const isLast = r => !r.mon || !r.mon.sc || r.mon.t >= r.mon.sc.R - 1;   // 這是最後一輪（沒有劇本的舊戰鬥視為 1 輪）
+  const curVariant = r => (r.phase === "dragon" ? ((r.anim && r.anim.kind === "kill") || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
   const curName = r => (r.phase === "dragon" ? T().dragonName : r.phase === "realm" ? T().realmMonNames[r.realm.type][realmIdx(r)] : monName(variantOf(r)));
   const monCls = r => (r.phase === "dragon" ? " dragon" : r.phase === "realm" ? " " + r.realm.type : "");
   const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}"><img src="${HM.uri(v)}" alt=""></div>`;
   const akey = r => r.seed + ":" + (r.anim ? r.anim.rid : 0);
   const SC = root.HuntScene;
-  const clearStage = () => { ui.stage = null; SC.abort(); };
+  const later = (ms, f) => { ui.timers.push(setTimeout(f, ms)); };
+  const clearStage = () => { ui.timers.forEach(clearTimeout); ui.timers = []; ui.stage = null; SC.abort(); };
   /* 全螢幕像素演出（js/hunt-scene.js）。leaveOk＝演出中退出鈕可按（狹間每隻之間）；播完呼叫 then */
   function playScene(o, then) {
     ui.stage = { leaveOk: !!o.leaveOk };
     SC.play(Object.assign({ app: $("app"), reduced: reduced(), texts: T().scene, onDone: () => { ui.stage = null; then(); } }, o));
     render();
+  }
+
+  /* ---------- 回合戰鬥：血條、角色、每一輪的句子 ---------- */
+  const pickLine = (arr, r, t, salt) => arr[(((r.seed >>> 0) + t * 7 + salt) % arr.length + arr.length) % arr.length];
+  /* 第 t 輪發生的事（玩家一句、怪物一句；最後一輪勝時怪物不反擊）。依種子與輪次取句，重新整理不變 */
+  function roundLines(r, t) {
+    const x = r.mon.sc.rs[t], B = T().battle, nm = curName(r), out = [fill(pickLine(x[0] ? B.playerHit : B.playerMiss, r, t, 1), { name: nm })];
+    if (x[2] !== null) out.push(fill(pickLine(x[2] ? B.monHit : B.monMiss, r, t, 3), { name: nm }));
+    return out;
+  }
+  function battleEls() {
+    const st = $("sceneStage");
+    if (!$("huntHp") || $("huntHp").parentNode !== st) {
+      const hp = document.createElement("div"); hp.id = "huntHp"; hp.className = "hunt-hp"; hp.innerHTML = '<i class="c"></i>'.repeat(10); st.appendChild(hp);
+      const hero = document.createElement("div"); hero.id = "huntHero"; hero.className = "hunt-hero"; hero.innerHTML = `<img src="${HM.uri(HM.HERO)}" alt="">`; st.appendChild(hero);
+    }
+    return { hp: $("huntHp"), hero: $("huntHero") };
+  }
+  function setHp(hp) {
+    const e = battleEls(), n = Math.ceil(hp / 10);
+    [...e.hp.children].forEach((c, i) => c.classList.toggle("on", i < n));
+    e.hp.classList.toggle("low", hp <= 40);
+  }
+  function showBattle(r) {   // 戰鬥中（有怪、或擊殺／倒下／來回演出）才顯示血條與角色；旅途、判定、餘燼不顯示。怪物沒有血條
+    const e = battleEls(), fight = (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !!r.mon;
+    e.hp.classList.toggle("on", fight); e.hero.classList.toggle("on", fight);
+    if (fight) setHp(r.mon.sc ? MH.hpAt(r.mon, r.mon.t) : H().battle.hpMax);
+  }
+  function floatNum(text, cls, el, dx, dy) {
+    const st = $("sceneStage"), sr = st.getBoundingClientRect(), r = el.getBoundingClientRect(), d = document.createElement("div");
+    d.className = "hunt-num" + (cls ? " " + cls : ""); d.textContent = text;
+    d.style.left = Math.round(r.left - sr.left + r.width / 2 - 14 + (dx || 0)) + "px"; d.style.top = Math.round(r.top - sr.top + (dy || 0)) + "px";
+    st.appendChild(d);
+    d.animate([{ transform: "translateY(0)", opacity: 1 }, { transform: "translateY(-16px)", opacity: 1, offset: .6 }, { transform: "translateY(-18px)", opacity: 0 }], { duration: 700, easing: "steps(6)" }).onfinish = () => d.remove();
+  }
+  /* 一輪的小演出：玩家出招（命中／揮空）→ 怪物反擊（命中／被閃開）。只有角色閃爍與小數字，不做全螢幕閃白；減少特效時只有淡入淡出、不位移。
+     傷害數字＝劇本的數字 × 招式倍率（突刺／橫掃／蓄力，純演出，不影響勝負）。最後一輪是倒下時，怪物的反擊是重擊、血條歸零，接著才是倒下演出 */
+  function playRound(r, rid, then) {
+    const h = H(), BF = h.fx.battle, B = h.battle, mon = r.mon, t = mon.t, x = mon.sc.rs[t], red = reduced(), k = red ? h.fx.reducedScale : 1, final = r.anim.kind === "down";
+    const mi = mon.pres === 0 ? x[4] : (r.anim.pick | 0), pMs = (x[0] ? BF.playerHitMs : BF.playerMissMs) * k;
+    const mMs = (x[2] === null ? 0 : x[2] ? BF.monHitMs + (final ? BF.blowExtraMs : 0) : BF.monMissMs) * k;
+    ui.stage = { leaveOk: false };
+    render();   // 把按鈕鎖起來、血條畫到這一輪開始前
+    const monEl = document.querySelector("#sceneBig .hunt-mon"), hero = battleEls().hero, st = $("sceneStage"), L = roundLines(r, t), mv = (dx) => (red ? [] : [{ transform: "translateX(0)" }, { transform: `translateX(${dx}px)` }, { transform: "translateX(0)" }]);
+    A.setTextbox([L[0]], 0, { tap: " " });
+    // 玩家出招
+    if (x[0]) {
+      const slash = document.createElement("div"); slash.className = "hunt-slash"; const mr = monEl ? monEl.getBoundingClientRect() : null, sr = st.getBoundingClientRect();
+      if (mr) { slash.style.left = Math.round(mr.left - sr.left) + "px"; slash.style.top = Math.round(mr.top - sr.top + mr.height * (mi === 1 ? .5 : mi === 0 ? .35 : .6)) + "px"; slash.style.width = Math.round(mr.width) + "px"; slash.style.transform = `rotate(${mi === 1 ? 0 : mi === 0 ? -14 : 12}deg)`; st.appendChild(slash); slash.animate([{ opacity: 1 }, { opacity: 0 }], { duration: pMs * .7, easing: "steps(3)" }).onfinish = () => slash.remove(); }
+      if (monEl) { if (red) monEl.animate([{ opacity: 1 }, { opacity: .5 }, { opacity: 1 }], { duration: pMs * .8, delay: pMs * .15, easing: "steps(3)" }); else monEl.animate(mv(8), { duration: pMs * .7, delay: pMs * .15, easing: "steps(4)" }); }
+      if (monEl) floatNum("-" + Math.max(1, Math.round(x[1] * B.mult[mi])), "", monEl, 0, 4);
+    } else if (monEl) {
+      if (!red) monEl.animate(mv(-10), { duration: pMs * .7, delay: pMs * .15, easing: "steps(4)" });
+      floatNum(T().battle.miss, "sub", monEl, 0, 4);
+    }
+    // 怪物反擊
+    if (x[2] !== null) later(pMs, () => {
+      A.setTextbox(L, 0, { tap: " " });
+      if (x[2] === 1) {
+        if (monEl) monEl.animate(red ? [{ opacity: 1 }, { opacity: .6 }, { opacity: 1 }] : [{ transform: "translateX(0)" }, { transform: "translateX(-16px)" }, { transform: "translateX(0)" }], { duration: mMs * .6, easing: "steps(4)" });
+        hero.animate([{ opacity: 1 }, { opacity: .25 }, { opacity: 1 }, { opacity: .25 }, { opacity: 1 }], { duration: mMs * .9, delay: mMs * .1, easing: "steps(1)" });
+        if (!red) hero.animate([{ transform: "translateX(0)" }, { transform: "translateX(-6px)" }, { transform: "translateX(0)" }], { duration: mMs * .6, delay: mMs * .1, easing: "steps(3)" });
+        floatNum("-" + x[3], "", hero, 4, -6);
+        later(mMs * .45, () => setHp(MH.hpAt(mon, t + 1)));   // 血條缺格（逐格變暗灰）
+      } else {
+        if (!red) hero.animate([{ transform: "translateX(0)" }, { transform: "translateX(-9px)" }, { transform: "translateX(0)" }], { duration: mMs * .8, easing: "steps(4)" });
+        floatNum(T().battle.dodge, "sub", hero, 4, -6);
+      }
+    });
+    later(pMs + mMs + 60, () => { ui.stage = null; then(); });
   }
 
   /* ---------- 畫面 ---------- */
@@ -125,6 +197,8 @@
         lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
       } else if (judging) {
         bigHtml = A.colored("· ·", sub()); lines = [t.judgeTug[0]]; tap = "";
+      } else if (r.anim && r.anim.kind === "round") {
+        lines = [roundLines(r, r.anim.t)[0]]; tap = "";
       } else if (r.anim) {
         if (r.anim.kind === "kill") lines = [dragon ? fill(t.dragonKill, { g: h.dragon.gold }) : realm ? fill(t.realmKill, { name: nm, g: h.realm[r.realm.type].gold }) : fill(t.monHit[r.anim.combo === undefined ? r.anim.pick : r.anim.combo], { name: nm })];
         else lines = [dragon ? t.dragonDownLine : fill(t.downLine, { name: nm })];
@@ -132,6 +206,7 @@
       } else if (r.mon) {
         lines = dragon ? t.dragonIntro.slice() : [fill(realm ? (r.realm.type === "hell" ? t.mobHell : t.mobHeaven) : t.monAppear[r.kills % t.monAppear.length], { name: nm })];
         if (realm && r.mon) lines.push(t.monAppear[(r.realm.total) % t.monAppear.length].replace(/\{name\}/g, nm));
+        if (r.mon.sc && r.mon.t > 0) lines = roundLines(r, r.mon.t - 1);   // 第 2 輪起：顯示上一輪發生的事（重新整理後也一樣）
         tap = r.mon.pres === 0 ? "▼ 點擊出招" : "";
         const names = r.mon.pres === 0 ? t.monSingle : r.mon.pres === 1 ? t.monTwo : t.monThree;
         choices = names.map((l, i) => ({ c: "strike:" + i, label: l, gold: r.mon.pres === 0 }));
@@ -155,6 +230,7 @@
     }
     let tint = r.realm && (r.phase === "realm" || r.phase === "ember") && !(r.anim && r.anim.kind === "judge") ? r.realm.type : null;
     if (ui.stage) { choices = []; tap = " "; }   // 全螢幕演出中：底下的畫面不給選項
+    showBattle(r);
     $("scene").classList.toggle("realm-heaven", tint === "heaven"); $("scene").classList.toggle("realm-hell", tint === "hell");
     big.innerHTML = bigHtml; subEl.textContent = subTxt;
     A.setTextbox(lines, 0, { tap: tap || " " });   // 有選項時不顯示「▼ 點擊」
@@ -175,9 +251,10 @@
     const r = MH.peek(SV(), H());
     if (!r || ui.stage || FX.playing() || !A.onMine() || r.phase !== "dragon" || !r.mon || r.anim || $("splash")) return;
     const key = r.seed + ":" + r.n;
-    if (ui.introKey === key) return;
-    ui.introKey = key;
-    playScene({ id: "intro", ms: H().fx.dragonIntroMs }, () => { if (A.onMine()) render(); });
+    if (ui.introKey !== key) { ui.introKey = key; playScene({ id: "intro", ms: H().fx.dragonIntroMs }, () => { if (A.onMine()) render(); }); return; }
+    if (r.mon.win && isLast(r) && ui.scaleKey !== key) {   // 破鱗過場放在「最後一輪開始前」（巨龍勝的劇本才會破鱗）；接著玩家選最後一招 → 5 秒擊殺
+      ui.scaleKey = key; playScene({ id: "brk", ms: H().fx.dragonScaleMs }, () => { if (A.onMine()) render(); });
+    }
   }
   /* 判定（單向推進）：天堂 6 秒、地獄 8 秒；點燃成功後的新一輪用短版（同一段畫面等比例縮短） */
   function judgeStage(a, rid) {
@@ -208,10 +285,9 @@
       const a = r2.anim, fx = H().fx, t = T();
       if (a.kind === "judge") return judgeStage(a, rid);
       if (a.kind === "ember") return emberStage(r2, rid);
-      if (r2.phase === "dragon" && a.kind === "kill" && ui.scaleKey !== akey(r2)) {   // 破鱗過場（佔位文字），然後才是標準 5 秒擊殺
-        ui.scaleKey = akey(r2);
-        return playScene({ id: "brk", ms: fx.dragonScaleMs }, () => { if (A.onMine()) maybeFx(); });
-      }
+      if (a.kind === "round") return playRound(r2, rid, () => fxDone(rid));   // 回合戰鬥的中途一輪
+      if (a.kind === "down" && r2.mon && r2.mon.sc && ui.preKey !== akey(r2)) return playRound(r2, rid, () => { ui.preKey = akey(r2); maybeFx(); });   // 最後一輪倒下：先播玩家出招＋怪物重擊（血條歸零），再播倒下演出
+      if (a.kind === "down" && !(r2.mon && r2.mon.sc)) setHp(0);
       const dragonDown = r2.phase === "dragon" && a.kind === "down";
       try {
         FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: curVariant(r2), tone: r2.phase === "realm" ? r2.realm.type : "", kind: a.kind, combo: a.combo, comboText: t.combo, reduced: reduced(), scale: fx.reducedScale,
@@ -410,7 +486,7 @@
     const c = A.commit(() => { res = MH.leave(SV(), H()); return res; });   // 金幣入帳＋刪本輪紀錄＝一次原子寫入
     if (c && c.failed) return { failed: true };
     abortFx();
-    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false;
+    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ui.preKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false;
     return res;
   }
   function dropRun() { delete SV().huntRuns[H().mine.id]; A.persist(); }   // 離開畫面時被重畫建回來的空紀錄，再清一次
