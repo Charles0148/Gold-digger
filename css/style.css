@@ -944,7 +944,7 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .fx-opts { display: flex; gap: 8px; }
 .fx-opts .px-btn { flex: 1; min-height: 40px; }
 
-/* 第二階段（2026-10-08）：巨龍、轉生狹間。怪物造型與色調先用佔位，美編候選稿核准後換 */
+/* 第二階段（2026-10-08）：已核准的巨龍、轉生狹間怪物與場景色調 */
 .hunt-mon.dragon { height: min(190px, calc(100cqh - 34px)); }
 .hunt-mon.heaven img { filter: drop-shadow(0 0 5px rgba(255,233,168,.85)) drop-shadow(0 0 2px #fff6d0); }
 .hunt-mon.hell img { filter: drop-shadow(0 0 5px rgba(255,58,42,.85)) drop-shadow(0 0 2px #ff9a6a); }

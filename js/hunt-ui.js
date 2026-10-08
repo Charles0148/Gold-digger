@@ -53,7 +53,15 @@
   const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}"><img src="${HM.uri(v)}" alt=""></div>`;
   const akey = r => r.seed + ":" + (r.anim ? r.anim.rid : 0);
   const SC = root.HuntScene;
-  const later = (ms, f) => { ui.timers.push(setTimeout(f, ms)); };
+  const later = (ms, f) => {
+    const id = setTimeout(() => {
+      const i = ui.timers.indexOf(id);
+      if (i >= 0) ui.timers.splice(i, 1);
+      f();
+    }, ms);
+    ui.timers.push(id);
+    return id;
+  };
   const clearStage = () => { ui.timers.forEach(clearTimeout); ui.timers = []; ui.stage = null; SC.abort(); };
   /* 全螢幕像素演出（js/hunt-scene.js）。leaveOk＝演出中退出鈕可按（狹間每隻之間）；播完呼叫 then */
   function playScene(o, then) {
@@ -245,7 +253,7 @@
     maybeIntro();
   }
 
-  /* ---------- 斬擊／倒下演出（以及第二階段的判定、點燃、巨龍登場／破鱗、狹間轉場等計時佔位演出）---------- */
+  /* ---------- 斬擊／倒下，以及第二階段的判定、點燃、巨龍登場／破鱗與狹間轉場演出 ---------- */
   /* 巨龍登場：巨龍出現後、出招前播一次（只是演出；重新整理會再播，無害） */
   function maybeStage() {
     const r = MH.peek(SV(), H());

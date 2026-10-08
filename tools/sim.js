@@ -88,7 +88,7 @@ function huntSection(runs) {
     const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} };
     sv.huntMeta.stamina = ST.cap;
     const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0,
-      dragonN: 0, dragonWin: 0, entryN: 0, entryHeaven: 0, rmKills: 0, rmMax: { heaven: 0, hell: 0 }, rmRounds: { heaven: 0, hell: 0 }, rmFull: { heaven: 0, hell: 0 }, emberN: 0, emberOk: 0, nextN: { heaven: 0, hell: 0 }, nextHeaven: { heaven: 0, hell: 0 }, lowerN: 0, lowerPass: 0 };
+      dragonN: 0, dragonWin: 0, entryN: 0, entryHeaven: 0, rmKills: 0, rmMax: { heaven: 0, hell: 0 }, rmRounds: { heaven: 0, hell: 0 }, rmFull: { heaven: 0, hell: 0 }, emberN: 0, emberOk: 0, nextN: { heaven: 0, hell: 0 }, nextHeaven: { heaven: 0, hell: 0 } };
     for (let n = 0; n < runs; n++) {
       MH.run(sv, H);
       const before = sv.huntMeta.stamina;
@@ -123,7 +123,6 @@ function huntSection(runs) {
       c.spent += before - sv.huntMeta.stamina;
     }
     const mcRtp = c.gold / (c.spent * ST.valuePer);
-    c.lowerN = c.monN; 
     wMc += mcRtp * dist[si];
     const totP = c.pres[0] + c.pres[1] + c.pres[2];
     console.log(`  ${si + 1}｜${pct(c.freeDev / c.free, 2)}（${pct(S.dev, 2)}）｜${pct(c.caveOk / c.caveN)}（${pct(S.cave)}）｜${pct(c.mapOk / c.mapN)}（${pct(S.map)}）｜${c.pres.map(x => pct(x / totP, 0)).join("/")}｜${pct(c.monWin / c.monN)}｜${c.maxStreak} 步｜${pct(mcRtp)}（${pct(ex[si].full)}）`);
@@ -153,8 +152,7 @@ function huntSection(runs) {
     const kt = H.fx.totalMs / 1000, react = H.present[0] * .6 + H.present[1] * 1.1 + H.present[2] * 1.5, S3 = H.settings[2], e3 = ex[2];
     const K = H.lower.count, k = H.lower.win; let wins = 0, reach = 1; for (let i = 0; i < K; i++) { wins += reach * k; reach *= k; }
     const per = (killSecs) => e3.walk * .5 + 2 * .5 + 2 + 8 + 2.5 + e3.Q * (wins * (react + killSecs) + (1 - reach) * (.6 + 2.5));
-    console.log(`  --- 每輪耗時（設定三，手動，階段 1）：每隻怪演出 2.5 秒 → ${per(2.5).toFixed(1)} 秒；五秒擊殺 ${kt} 秒 → ${per(kt).toFixed(1)} 秒（每輪平均擊倒 ${(e3.Q * wins).toFixed(2)} 隻，每隻多 ${(kt - 2.5).toFixed(1)} 秒）`);
-    console.log(`  --- 完整遊戲（規格 5：每輪平均擊倒約 3.3 隻，原手動 35.6 秒）：約 ${(35.6 + 3.3 * (kt - 2.5)).toFixed(1)} 秒；每隻怪約 ${kt} 秒、點擊數不變（每隻怪仍是按一下）`);
+    console.log(`  --- 每輪耗時（設定三，手動，階段 1；回合制前舊制對照）：每隻怪演出 2.5 秒 → ${per(2.5).toFixed(1)} 秒；五秒擊殺 ${kt} 秒 → ${per(kt).toFixed(1)} 秒（只供核對擊殺演出增加的時間，不代表現行完整流程）`);
     // 回合戰鬥耗時（手動；config.hunt.battle 的輪數，演出長度 config.hunt.fx）：一般一輪＝反應＋玩家小演出＋怪物小演出；勝的最後一輪＝反應＋5 秒擊殺；每隻怪出現 0.6、狹間轉場取 5 種場景平均
     {
       const B = H.battle, F = H.fx, BF = F.battle, avgR = k => (B.rounds[k][0] + B.rounds[k][1]) / 2, pH = 1 - B.pMiss, mH = 1 - B.mMiss;

@@ -13,7 +13,7 @@
      存檔 save.ruby（見 ruby.js 檔頭）；三個載入入口都經過 fixAds → RY.fix 補欄位。 */
   const RY = window.Ruby;
   function RC() { return (window.DEFAULT_CONFIG || {}).ruby || {}; }   // 函式宣告：檔頭載入存檔時就會用到
-  /* 冒險狩獵礦坑（第 7 座，2026-10-08；第一階段＝內部測試，一般玩家看不到）：純邏輯 js/mine-hunt.js（window.MineHunt）、畫面 js/hunt-ui.js、斬擊演出 js/hunt-fx.js。
+  /* 冒險狩獵礦坑（第 7 座，2026-10-08；第一、二階段內部測試已驗收，一般玩家看不到）：純邏輯 js/mine-hunt.js（window.MineHunt）、畫面 js/hunt-ui.js、斬擊演出 js/hunt-fx.js。
      數值讀程式內建的 DEFAULT_CONFIG.hunt（編輯器存的設定檔改不動）。存檔 save.huntMeta（永久）＋save.huntRuns（本趟，離開礦坑就刪）；頂層 save.v 維持 1。 */
   const MH = window.MineHunt, HU = window.HuntUI;
   function HC() { return (window.DEFAULT_CONFIG || {}).hunt || {}; }   // 函式宣告：檔頭載入存檔時就會用到
