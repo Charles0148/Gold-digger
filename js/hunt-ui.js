@@ -182,13 +182,11 @@
     const needN = MH.need(sv, h), lack = Math.max(0, needN - st);
     const hungry = () => { lines = t.hungry.map(x => A.colored(x, sub())).concat([A.colored(fill(t.hungryNeed, { n: lack }), "#ffcc33")]); tap = ""; choices = [{ c: "feed", label: t.feedBtn + "（餵鎬子）", gold: true }]; };
     if (r.itemOffer) {
-      const o = r.itemOffer, left = o.candidates[0] && MH.itemDef(h, o.candidates[0]), right = o.candidates[1] && MH.itemDef(h, o.candidates[1]);
-      bigHtml = A.colored(o.route === "empty" ? "旅途木箱" : "行囊", o.route === "empty" ? "#caa36a" : "#7fe3ff"); tap = "";
-      if (o.stage === "offer" && o.route === "choice") {
-        lines = ["小精靈找到了兩件東西。", "行囊只能先收下一件。"]; choices = [
-          { c: `item:left:${o.rid}`, label: `${left.name}｜${left.text}` }, { c: `item:right:${o.rid}`, label: `${right.name}｜${right.text}` }
-        ];
-      } else if (o.stage === "offer") {
+      const o = r.itemOffer;
+      // 二選一一律顯示兩個相同的關閉木箱（有物品／空箱外觀完全一樣，結果已預抽；擁有者 2026-10-08 決定）
+      const boxed = o.stage === "offer" || o.route === "empty";
+      bigHtml = A.colored(boxed ? "旅途木箱" : "行囊", boxed ? "#caa36a" : "#7fe3ff"); tap = "";
+      if (o.stage === "offer") {
         lines = ["路邊放著兩個外觀相同的木箱。", "要打開哪一個？"]; choices = [
           { c: `item:left:${o.rid}`, label: "打開左邊的箱子" }, { c: `item:right:${o.rid}`, label: "打開右邊的箱子" }
         ];
@@ -196,7 +194,7 @@
         lines = ["箱子裡只剩一些乾燥的碎草。"]; choices = [{ c: `itemdone:${o.rid}`, label: "繼續旅途" }];
       } else {
         const d = MH.itemDef(h, o.chosen);
-        lines = [o.route === "direct" ? "小精靈在路邊的碎石下，找到了一件東西。" : "已收進這一趟的行囊。", A.colored(d.name, "#ffe0a0"), d.text];
+        lines = [o.route === "direct" ? "小精靈在路邊的碎石下，找到了一件東西。" : "箱子裡放著一件東西，已收進這一趟的行囊。", A.colored(d.name, "#ffe0a0"), d.text];
         choices = [{ c: `itemdone:${o.rid}`, label: "收好並繼續", gold: true }];
       }
     } else if (r.awaiting) {
