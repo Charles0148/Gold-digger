@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", attrDraft: { hunt: 0, dragon: 0, realm: 0 } };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", attrDraft: { hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -17,6 +17,7 @@
   const sub = () => A.config().theme.sub;
   const fill = (s, o) => String(s).replace(/\{(\w+)\}/g, (_, k) => (o && o[k] !== undefined ? o[k] : ""));
   const num = n => Math.floor(n).toLocaleString("en-US");
+  const IA = root.HuntItemArt;   // 3C：道具圖示與演出場景（js/hunt-item-art.js）
   const SV = () => A.save();
   const RUN = () => MH.run(SV(), H());
 
@@ -142,6 +143,7 @@
 
   /* ---------- 畫面 ---------- */
   function chrome(on) {   // 每次 renderMine 都會呼叫：切換「冒險之地」專用的資訊列、按鈕
+    if (!on) itemStop();
     $("mbData").classList.toggle("hidden", on);
     $("huntData").classList.toggle("hidden", !on);
     $("btnFeed").classList.toggle("hidden", !on);
@@ -154,8 +156,19 @@
     return !!(r && r.anim && ui.stalled !== r.anim.rid);
   };
 
+  /* 敘述框文字與選項（render 與道具演出的逐格更新共用）。choice.hidden＝只佔位、看不見也按不到（演出中保留按鈕的高度，版面不跳） */
+  function paintText(lines, tap, choices) {
+    A.setTextbox(lines, 0, { tap: tap || " " });   // 有選項時不顯示「▼ 點擊」
+    const box = $("tbChoice");
+    if (choices.length) {
+      box.classList.remove("hidden");
+      box.innerHTML = choices.map(c => `<button class="px-btn wide${c.gold ? " gold" : ""}"${c.hidden ? ' style="visibility:hidden" tabindex="-1" aria-hidden="true" disabled' : ` data-hunt="${c.c}"`}>${c.label}</button>`).join("");
+    } else { box.classList.add("hidden"); box.innerHTML = ""; }
+  }
+
   function render() {
     const sv = SV(), h = H(), M = sv.huntMeta, r = RUN(), t = T();
+    if (!r.itemOffer && ui.item) itemStop();
     if ((r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim && !r.awaiting && !MH.halted(sv, h)) { MH.spawn(sv, h); A.persist(); }   // 自我修復：能力點提示中的安全停點不可越過
     const halted = MH.halted(sv, h), stalled = !!r.anim && ui.stalled === r.anim.rid, animating = !!r.anim && !stalled, st = M.stamina, locked = busy();
     chrome(true);
@@ -181,22 +194,9 @@
     let lines = [], tap = "▼ 點擊", choices = [], bigHtml = "", subTxt = "";
     const needN = MH.need(sv, h), lack = Math.max(0, needN - st);
     const hungry = () => { lines = t.hungry.map(x => A.colored(x, sub())).concat([A.colored(fill(t.hungryNeed, { n: lack }), "#ffcc33")]); tap = ""; choices = [{ c: "feed", label: t.feedBtn + "（餵鎬子）", gold: true }]; };
-    if (r.itemOffer) {
-      const o = r.itemOffer;
-      // 二選一一律顯示兩個相同的關閉木箱（有物品／空箱外觀完全一樣，結果已預抽；擁有者 2026-10-08 決定）
-      const boxed = o.stage === "offer" || o.route === "empty";
-      bigHtml = A.colored(boxed ? "旅途木箱" : "行囊", boxed ? "#caa36a" : "#7fe3ff"); tap = "";
-      if (o.stage === "offer") {
-        lines = ["路邊放著兩個外觀相同的木箱。", "要打開哪一個？"]; choices = [
-          { c: `item:left:${o.rid}`, label: "打開左邊的箱子" }, { c: `item:right:${o.rid}`, label: "打開右邊的箱子" }
-        ];
-      } else if (o.route === "empty") {
-        lines = ["箱子裡只剩一些乾燥的碎草。"]; choices = [{ c: `itemdone:${o.rid}`, label: "繼續旅途" }];
-      } else {
-        const d = MH.itemDef(h, o.chosen);
-        lines = [o.route === "direct" ? "小精靈在路邊的碎石下，找到了一件東西。" : "箱子裡放著一件東西，已收進這一趟的行囊。", A.colored(d.name, "#ffe0a0"), d.text];
-        choices = [{ c: `itemdone:${o.rid}`, label: "收好並繼續", gold: true }];
-      }
+    if (r.itemOffer) {   // 3C：旅途道具（直接取得／兩個相同的木箱）。畫面、時間軸、文字全在下方「旅途道具」一節；這裡只取目前這一格
+      itemSync(r);
+      const p = itemParts(r); lines = p.lines; choices = p.choices; tap = ""; bigHtml = ""; subTxt = "";
     } else if (r.awaiting) {
       bigHtml = A.colored("能力點 +", "#7fe3ff"); lines = ["這一趟獲得了新的能力點。", "可以先投入，也可以留到後面再決定。"]; tap = "";
       choices = [{ c: "panel", label: "查看本趟能力", gold: true }, { c: "continue", label: "繼續前進" }];
@@ -262,12 +262,8 @@
     showBattle(r);
     $("scene").classList.toggle("realm-heaven", tint === "heaven"); $("scene").classList.toggle("realm-hell", tint === "hell");
     big.innerHTML = bigHtml; subEl.textContent = subTxt;
-    A.setTextbox(lines, 0, { tap: tap || " " });   // 有選項時不顯示「▼ 點擊」
-    const box = $("tbChoice");
-    if (choices.length) {
-      box.classList.remove("hidden");
-      box.innerHTML = choices.map(c => `<button class="px-btn wide${c.gold ? " gold" : ""}" data-hunt="${c.c}">${c.label}</button>`).join("");
-    } else { box.classList.add("hidden"); box.innerHTML = ""; }
+    paintText(lines, tap, choices);
+    huntHud(r);
     A.renderHud();
     maybeFx();
     maybeStage();
@@ -335,7 +331,108 @@
     if (res.ok && kind === "kill" && !wasDragon && MH.peek(SV(), H()).phase === "hunt") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: MH.goldOf(MH.peek(SV(), H()), H(), "hunt"), name: vname }) };
     if (A.onMine()) render(); else A.renderHud();
   }
-  function abortFx() { FX.abort(); clearStage(); }
+  function abortFx() { FX.abort(); clearStage(); itemStop(); }
+
+  /* ---------- 旅途道具（3C）：直接取得（約 1.5 秒）、兩個相同的木箱（選後 2.1 秒，有道具與空箱同長）----------
+     只畫、不抽：結果在 mine-hunt.js 先存檔（itemOffer 的 rid／stage／chosen），這裡只依存檔重播演出，所以演出中重新整理不會重抽。
+     兩個木箱：待選是兩個相同的關閉木箱；選後 0～1240 毫秒畫面、文字、版面逐格相同，未選箱中性淡出；1250 毫秒之後才分出有道具或乾草 */
+  const q5 = a => Math.round(Math.max(0, Math.min(1, a)) * 5) / 5;
+  const ssub = (t, a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
+  const itemTime = () => { const f = H().fx.item || {}; return { direct: f.directMs || 1500, chest: f.chestMs || 2100, k: reduced() ? (f.reducedScale || 0.85) : 1 }; };
+  const qualOf = d => IA.QUALITY[d && d.quality] || 1;
+  const itemCardHtml = (id, a) => {
+    const d = MH.itemDef(H(), id), x = T().item;
+    return `<span class="hi-card${a > 0 ? "" : " sp"}" style="opacity:${q5(a)}"><img class="hi-ic" src="${IA.uri(id, 2, true, qualOf(d))}" alt=""><span class="hi-tx"><b>${d.name}</b><span>${x.quality[d.quality]}｜${d.text}</span></span></span>`;
+  };
+  function itemStop() {
+    const it = ui.item; if (!it) return;
+    if (it.raf) clearTimeout(it.raf);
+    if (it.wrap && it.wrap.parentNode) it.wrap.parentNode.removeChild(it.wrap);
+    ui.item = null;
+  }
+  /* 依存檔建立（或沿用）演出：同一個 rid／stage／chosen 不重來，所以 render 被其他事件呼叫也不會重播 */
+  function itemSync(r) {
+    const o = r.itemOffer, key = o.rid + ":" + o.stage + ":" + (o.chosen === null ? "" : o.chosen), cur = ui.item;
+    if (cur && cur.key === key && cur.wrap.isConnected) return cur;
+    itemStop();
+    const wrap = document.createElement("div"); wrap.id = "huntItem"; wrap.className = "hi-wrap"; wrap.innerHTML = '<canvas id="huntItemCv"></canvas><div class="hi-title"></div>';
+    $("sceneStage").appendChild(wrap);
+    const tm = itemTime(), show = o.stage === "show", direct = o.route === "direct";
+    const side = o.route === "empty" ? o.chosen : o.route === "choice" ? (o.candidates[0] === o.chosen ? "left" : "right") : null;
+    const it = ui.item = { key, wrap, cv: wrap.firstChild, title: wrap.lastChild, st: IA.Stage(wrap.firstChild), t: 0, playing: show, last: 0, raf: 0, htmlKey: "",
+      kind: !show ? "idle" : direct ? "direct" : "chest", dur: direct ? tm.direct : tm.chest,
+      P: { pick: side, res: o.route === "choice" || direct ? "item" : "empty", item: o.route === "empty" ? null : o.chosen } };
+    itemDraw(it); itemTitle(it, itemView(r, 0));
+    if (show) { it.last = performance.now(); it.raf = setTimeout(itemTick, 33); }
+    return it;
+  }
+  function itemDraw(it) { it.st.draw(it.kind, it.t, it.P, reduced()); }
+  /* 這一格該顯示的標題、文字、道具卡、按鈕（時間 t 的純函式；t 之前的逐字相同由 tools 之外的瀏覽器自測確認） */
+  function itemView(r, t) {
+    const o = r.itemOffer, x = T().item, boxed = o.stage === "offer" || o.route !== "direct", v = { title: boxed ? x.boxTitle : x.bagTitle, ta: 1, lines: [], card: null, btn: null };
+    if (o.stage === "offer") { v.lines = x.offer.map(s => ({ s, a: 1 })); v.btn = "offer"; return v; }
+    const it = ui.item, dur = it ? it.dur : 0;
+    if (o.route === "direct") {
+      v.ta = ssub(t, 700, 950); v.lines = [{ s: x.directLine, a: ssub(t, 900, 1200), m: 1 }]; v.card = { id: o.chosen, a: ssub(t, 1200, 1500) };
+      v.btn = t >= dur ? "take" : "wait"; return v;
+    }
+    const item = o.route === "choice", side = it && it.P.pick === "left" ? 0 : 1;
+    v.lines = [{ s: x.open[side], a: ssub(t, 200, 450) }, item ? { s: x.boxLine, a: ssub(t, 1500, 1800), m: 1 } : { s: x.emptyLine, a: ssub(t, 1450, 1750), m: 1 }];
+    v.card = item ? { id: o.chosen, a: ssub(t, 1750, 2050) } : { id: null, a: 0 };   // 空箱也保留同樣高度的空位，版面與有道具的一致
+    v.btn = t >= dur ? (item ? "take" : "go") : "wait";
+    return v;
+  }
+  function itemParts(r) {
+    const it = ui.item, v = itemView(r, it ? it.t : 0), x = T().item, o = r.itemOffer;
+    const lines = v.lines.map(l => `<span${l.m ? ' class="hi-m"' : ""}${q5(l.a) > 0 ? ` style="opacity:${q5(l.a)}">${l.s}` : ' style="visibility:hidden" aria-hidden="true">&nbsp;'}</span>`);   // 還沒出現的字只留空位（兩個結果在這之前的畫面與內容逐格相同；最多兩行高，字出現時版面不跳）
+    if (v.card) lines.push(v.card.id && v.card.a > 0 ? itemCardHtml(v.card.id, v.card.a) : `<span class="hi-card sp" aria-hidden="true"></span>`);
+    const choices = v.btn === "offer" ? [{ c: `item:left:${o.rid}`, label: x.pick[0] }, { c: `item:right:${o.rid}`, label: x.pick[1] }]
+      : v.btn === "take" ? [{ c: `itemdone:${o.rid}`, label: x.take, gold: true }] : v.btn === "go" ? [{ c: `itemdone:${o.rid}`, label: x.emptyBtn }]
+      : v.btn === "wait" ? [{ hidden: true, label: x.take }] : [];
+    return { lines, choices, v };
+  }
+  function itemTitle(it, v) { it.title.textContent = v.title; it.title.style.opacity = q5(v.ta); it.title.style.color = v.title === T().item.boxTitle ? "#caa36a" : "#7fe3ff"; }
+  function itemPaint(it) {   // 畫布＋標題＋敘述框文字（只在內容有變時才重寫敘述框，所以按鈕不會被打斷）
+    itemDraw(it);
+    const r = MH.peek(SV(), H());
+    if (!r || !r.itemOffer) return;
+    const p = itemParts(r), key = JSON.stringify([p.lines, p.choices]);
+    itemTitle(it, p.v);
+    if (key !== it.htmlKey) { it.htmlKey = key; if (A.onMine()) paintText(p.lines, " ", p.choices); }
+  }
+  function itemTick() {   // 約 30 張／秒（小畫布）；用 setTimeout 而不是 requestAnimationFrame：背景分頁自然變慢，時間差有上限，回來會從原處接著播
+    const it = ui.item; if (!it) return;
+    it.raf = 0;
+    const ts = performance.now();
+    if (!it.wrap.isConnected) { ui.item = null; return; }
+    const dt = Math.min(250, Math.max(0, ts - it.last)); it.last = ts;
+    if (it.playing) {
+      it.t = Math.min(it.dur, it.t + dt / itemTime().k);
+      if (it.t >= it.dur) it.playing = false;
+      itemPaint(it);
+    }
+    if (it.playing) it.raf = setTimeout(itemTick, 33);
+  }
+
+  /* ---------- 能力點提示條（3 秒、不彈窗、不擋點擊、不停自動）與「本趟能力」「行囊」鈕 ---------- */
+  function tipBar(n) {
+    const old = $("huntTip"); if (old) old.remove();
+    const x = T().item, el = document.createElement("div"), red = reduced(), ms = (H().fx.item || {}).tipMs || 3100;
+    el.id = "huntTip"; el.className = "hi-tip"; el.innerHTML = `<b>${x.tipMain}${num(n)}</b><span>${x.tipSub}</span>`;
+    $("sceneStage").appendChild(el);
+    const a = red ? [{ opacity: 0, offset: 0 }, { opacity: 1, offset: 150 / ms }, { opacity: 1, offset: 1 - 300 / ms }, { opacity: 0 }]
+      : [{ opacity: 1, transform: "translateY(-40px)", offset: 0 }, { opacity: 1, transform: "translateY(0)", offset: 200 / ms }, { opacity: 1, offset: 1 - 300 / ms }, { opacity: 0 }];
+    el.animate(a, { duration: ms, easing: "steps(5)", fill: "both" }).onfinish = () => el.remove();
+  }
+  function huntHud(r) {
+    const earned = r.attr ? r.attr.earned | 0 : 0;
+    if (ui.earnKey !== String(r.seed)) { ui.earnKey = String(r.seed); ui.earn = earned; }   // 第一次看到這一趟（含重新整理）只記基準，不重播提示
+    else if (earned > ui.earn) { tipBar(earned - ui.earn); ui.earn = earned; }
+    else ui.earn = earned;
+    const dot = $("huntDot"), bag = $("huntBagIc"), held = heldId(r);
+    if (dot) dot.classList.toggle("hidden", !(r.attr && r.attr.free > 0));
+    if (bag) { const d = held && MH.itemDef(H(), held); bag.src = d ? IA.uri(held, 1, true, qualOf(d)) : IA.slot(); bag.alt = d ? d.name : ""; }
+  }
 
   /* ---------- 操作 ---------- */
   /* 一個操作＝一次原子寫入（A.commit：先拍快照，寫入失敗就回到操作前、提示玩家）。失敗時停自動、中止演出、重畫 */
@@ -361,32 +458,46 @@
   function doItem(side, rid) { return act(() => MH.pickItem(SV(), H(), side, rid)); }
   function doItemDone(rid) { return act(() => MH.dismissItem(SV(), H(), rid)); }
 
+  /* ---------- 本趟能力面板／行囊（3C 正式樣式；邏輯與 3B 相同：草稿不存、確認後再問一次、確認後不可退） ---------- */
+  const ANAME = { hunt: "獵手本能", dragon: "破鱗技巧", realm: "遠行意志" }, ADESC = { hunt: "更容易解決旅途上的一般怪物", dragon: "更容易突破駭骨巨龍", realm: "在天堂與地獄走得更遠" };
+  /* 行囊裡看得到的道具：旅途道具演出還沒收好之前（itemOffer 還在）不顯示，免得開箱前就從行囊圖示看出結果 */
+  const heldId = r => (r.itemOffer ? null : MH.ITEM_IDS.find(id => r.items && r.items[id]) || null);
+  function bagBlock(r) {
+    const id = heldId(r), d = id && MH.itemDef(H(), id), x = T().item;
+    if (!d) return `<div class="ha-bag"><div class="ha-tx"><b>${x.bagTitle}</b><br><span class="sub">${x.bagNone}</span></div></div>`;
+    return `<div class="ha-bag"><img class="hi-ic" src="${IA.uri(id, 2, true, qualOf(d))}" alt=""><div class="ha-tx"><b>${x.bagTitle}｜${d.name}</b> <span class="q">${x.quality[d.quality]}</span><br><span class="sub">${d.text}</span></div></div>`;
+  }
   function attrPanel(reset) {
     A.stopAuto();
-    if (reset) ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 };
-    const r = RUN(), a = r.attr, safe = MH.attrSafe(r), names = { hunt: "獵手本能", dragon: "破鱗技巧", realm: "遠行意志" }, desc = {
-      hunt: "更容易解決旅途上的一般怪物", dragon: "更容易突破駭骨巨龍", realm: "在天堂與地獄走得更遠"
-    };
+    if (reset) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = ""; }
+    const r = RUN(), a = r.attr, safe = MH.attrSafe(r), x = T().item;
     const used = MH.ATTRS.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
+    const word = lv => (lv <= 0 ? "尚未投入" : lv <= 2 ? "稍微提升" : lv <= 5 ? "提升" : "明顯提升");   // 不顯示任何百分比
+    let pips = ""; for (let i = 0; i < Math.min(a.free, 12); i++) pips += `<i class="${i < remain ? "" : "u"}"></i>`; if (a.free > 12) pips += '<span class="sub">…</span>';
     const rows = MH.ATTRS.map(k => {
-      const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d, feel = level <= 0 ? "尚未投入" : level <= 2 ? "稍微提升" : level <= 5 ? "提升" : "明顯提升";
-      return `<div class="hunt-attr-row"><div><b>${names[k]}</b>　已確認 ${num(a[k])}${active ? "" : "　<span class=\"sub\">本趟後段已不會生效</span>"}<br><span class="sub">${desc[k]}｜${feel}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`;
+      const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d;
+      const fxt = !active ? x.dead : d ? `${word(a[k])} → ${word(level)}` : word(a[k]);
+      return `<div class="ha-row${active ? "" : " dead"}"><img class="ha-ic" src="${IA.uri(k, 2, false)}" alt=""><div class="ha-am"><b>${ANAME[k]}</b><span class="sub">${ADESC[k]}</span><span class="sub">已確認 ${num(a[k])}${d ? "　這次 +" + d : ""}</span><span class="ha-fx${active ? "" : " off"}">${fxt}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`;
     }).join("");
-    const held = MH.ITEM_IDS.find(id => r.items[id]), item = held && MH.itemDef(H(), held);
-    modalNote(`<div style="color:#7fe3ff">本趟能力</div><div class="sub" style="margin:6px 0 10px">這一趟結束後會消失。投入後不能重新分配。</div><div>可分配點數：<b>${num(Math.max(0, remain))}</b></div>${rows}<div class="hunt-bag"><b>行囊</b><br><span class="sub">${item ? item.name + "｜" + item.text : "目前沒有道具"}</span></div>${safe ? "" : '<div class="sub" style="margin-top:8px">現在只能查看，等這段行動結束後再投入。</div>'}`,
+    modalNote(`<div class="ha"><div class="ha-title">本趟能力</div><div class="sub ha-sub">${x.panelSub}</div><div>可分配點數：<b class="ha-n">${num(Math.max(0, remain))}</b></div><div class="ha-pips">${pips}</div>${rows}${bagBlock(r)}${safe ? "" : `<div class="sub" style="margin-top:8px">${x.viewOnly}</div>`}${ui.attrNote ? `<div class="ha-note">${ui.attrNote}</div>` : ""}</div>`,
       [{ id: "haCommit", label: "確認投入", gold: true }, { id: "haClose", label: "關閉" }]);
     $("haCommit").disabled = used <= 0 || used > a.free || !safe;
     MH.ATTRS.forEach(k => {
       $("haMinus-" + k).onclick = () => { ui.attrDraft[k] = Math.max(0, ui.attrDraft[k] - 1); attrPanel(false); };
-      $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; attrPanel(false); };
+      $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; ui.attrNote = ""; attrPanel(false); };
     });
     $("haClose").onclick = () => { $("modal").classList.add("hidden"); };
     $("haCommit").onclick = () => {
       const draft = Object.assign({}, ui.attrDraft);
-      modalNote(`<div style="color:#ffcc33">投入後，這一趟不能重新分配。</div><div class="sub" style="margin-top:8px">要確認投入這些能力點嗎？</div>`, [{ id: "haYes", label: "確認投入", gold: true }, { id: "haNo", label: "返回" }]);
+      modalNote(`<div class="ha"><div class="ha-ask">投入後，這一趟不能重新分配。</div><div class="sub" style="margin:10px 0 4px">要確認投入這些能力點嗎？</div></div>`, [{ id: "haYes", label: "確認投入", gold: true }, { id: "haNo", label: "返回" }]);
       $("haNo").onclick = () => attrPanel(false);
-      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; $("modal").classList.add("hidden"); } else if (!res.failed) attrPanel(false); };
+      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = x.panelDone; attrPanel(false); } else if (!res.failed) attrPanel(false); };   // 成功後面板留著顯示「已投入」，－全灰、不能退回
     };
+  }
+  function bagPanel() {
+    const r = RUN(), x = T().item, has = !!heldId(r);
+    modalNote(`<div class="ha"><div class="ha-title">${x.bagTitle}</div><div class="sub ha-sub">${x.bagNote}</div>${bagBlock(r)}<div class="sub" style="margin-top:8px">${has ? x.bagKeep : x.bagHint}</div></div>`, [{ id: "hbClose", label: "關閉" }]);
+    $("hbClose").onclick = () => { $("modal").classList.add("hidden"); };
   }
 
   /* 點敘述框（textbox）：依目前階段做「主要動作」。有選項的地方只能按按鈕 */
@@ -405,6 +516,7 @@
     const [k, v, x] = String(code).split(":");
     if (k === "feed") openFeed();
     else if (k === "panel") attrPanel(true);
+    else if (k === "bag") bagPanel();
     else if (k === "continue") doContinue();
     else if (k === "item") doItem(v, +x);
     else if (k === "itemdone") doItemDone(+v);
@@ -553,7 +665,7 @@
     const c = A.commit(() => { res = MH.leave(SV(), H()); return res; });   // 金幣入帳＋刪本輪紀錄＝一次原子寫入
     if (c && c.failed) return { failed: true };
     abortFx();
-    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ui.preKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false;
+    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ui.preKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false; ui.earnKey = "";
     return res;
   }
   function dropRun() { delete SV().huntRuns[H().mine.id]; A.persist(); }   // 離開畫面時被重畫建回來的空紀錄，再清一次
@@ -567,7 +679,9 @@
     force(o) { const r = RUN(); r.force = o; A.persist(); },
     fx(kind, combo, t) { FX.seek({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), comboText: T().combo, variant: curVariant(RUN()), kind: kind || "kill", combo: combo || 0, reduced: reduced(), scale: H().fx.reducedScale, totalMs: H().fx.totalMs, downMs: H().fx.downMs, win: T().win, downText: T().down }, t || 0); },
     fxRelease() { FX.release(); },
-    fxPref, setFxPref, reduced
+    fxPref, setFxPref, reduced,
+    /* 3C 測試用：把旅途道具演出停在第 t 毫秒（t 省略＝取目前畫面狀態）；回傳畫布圖與敘述框 HTML，供「開箱前逐格相同」比對與截圖 */
+    itemSeek(t) { const it = ui.item; if (!it) return null; if (t !== undefined) { it.playing = false; if (it.raf) clearTimeout(it.raf); it.raf = 0; it.t = Math.max(0, Math.min(it.dur, t)); it.htmlKey = ""; itemPaint(it); } return { t: it.t, dur: it.dur, cv: it.cv.toDataURL(), tx: $("tbLines").innerHTML + "|" + $("tbChoice").innerHTML, title: it.title.textContent + it.title.style.opacity }; }
   };
 
   function init(api) {

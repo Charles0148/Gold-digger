@@ -1109,22 +1109,24 @@
       attributes: {
         hunt: { cap: 0.97, decay: 0.065 }, dragon: { cap: 0.92, decay: 0.065 }, realm: { cap: 0.99, decay: 0.025 }
       },
-      /* 每趟一次的旅途道具機會。名稱是 3C 前暫名；玩家畫面只顯示白話效果，不顯示內部數字。 */
+      /* 每趟一次的旅途道具機會。名稱採用擁有者 2026-10-09 核准的暫名（不含「（暫名）」字樣）；玩家畫面只顯示白話效果，不顯示內部數字。 */
       itemEvent: { direct: 0.05, choice: 0.28, empty: 0.42, none: 0.25 },
       items: [
-        { id: "whetstone", quality: "common", name: "研鋒石（暫名）", text: "一般怪物更容易露出破綻", hunt: 0.010, dragon: 0, realm: 0 },
-        { id: "scale-wedge", quality: "common", name: "破鱗楔（暫名）", text: "對駭骨巨龍更有把握", hunt: 0, dragon: 0.020, realm: 0 },
-        { id: "guide-bell", quality: "common", name: "引路鈴（暫名）", text: "在轉生狹間更容易找到下一段路", hunt: 0, dragon: 0, realm: 0.006 },
-        { id: "twin-hunt", quality: "good", name: "雙獵護符（暫名）", text: "同時照顧旅途與巨龍", hunt: 0.006, dragon: 0.012, realm: 0 },
-        { id: "twin-realm", quality: "good", name: "雙界羅盤（暫名）", text: "對天堂與地獄都有效", hunt: 0, dragon: 0, realm: 0.010 },
-        { id: "star-ember", quality: "rare", name: "星火徽記（暫名）", text: "讓整趟冒險都更穩", hunt: 0.010, dragon: 0.020, realm: 0.006 }
+        { id: "whetstone", quality: "common", name: "研鋒石", text: "一般怪物更容易露出破綻", hunt: 0.010, dragon: 0, realm: 0 },
+        { id: "scale-wedge", quality: "common", name: "破鱗楔", text: "對駭骨巨龍更有把握", hunt: 0, dragon: 0.020, realm: 0 },
+        { id: "guide-bell", quality: "common", name: "引路鈴", text: "在轉生狹間更容易找到下一段路", hunt: 0, dragon: 0, realm: 0.006 },
+        { id: "twin-hunt", quality: "good", name: "雙獵護符", text: "同時照顧旅途與巨龍", hunt: 0.006, dragon: 0.012, realm: 0 },
+        { id: "twin-realm", quality: "good", name: "雙界羅盤", text: "對天堂與地獄都有效", hunt: 0, dragon: 0, realm: 0.010 },
+        { id: "star-ember", quality: "rare", name: "星火徽記", text: "讓整趟冒險都更穩", hunt: 0.010, dragon: 0.020, realm: 0.006 }
       ],
       itemQuality: { common: 0.70, good: 0.25, rare: 0.05 },
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
       fx: { totalMs: 5000, reducedScale: 0.75, downMs: 1500,
              dragonIntroMs: 3000, dragonScaleMs: 2500, dragonDownMs: 3000, judgeMs: { heaven: 6000, hell: 8000, again: 4000 }, emberMs: 8000,
              battle: { playerHitMs: 600, playerMissMs: 500, monHitMs: 600, monMissMs: 500, blowExtraMs: 200 },   // 回合戰鬥每輪的小演出長度（毫秒）；減少特效時乘 reducedScale
-             turnScenes: { tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600 } },   // 第二階段演出長度（毫秒，js/hunt-scene.js；擁有者 2026-10-08 核准的美編候選稿）。turnScenes＝狹間每隻擊殺後的 5 種場景；again＝點燃成功後新一輪判定的短版（等比例縮短）   // 「五秒擊殺」（js/hunt-fx.js）：連斬 5 刀 0～2200、反黑蓄力 2200～2900、斬開 2900～3850、勝利 3900～5000；減少特效時整段縮短為 75%。套路：突刺→C、橫掃→A、蓄力→B
+             turnScenes: { tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600 },
+             item: { directMs: 1500, chestMs: 2100, tipMs: 3100, reducedScale: 0.85 } },   // 第三階段 3C（js/hunt-ui.js、js/hunt-item-art.js）：直接取得 1.5 秒；木箱選後有道具與空箱一律 2.1 秒（拉成同長）；能力點提示條 3.1 秒；減少特效時乘 0.85（純畫面長度，與抽選無關）
+               // 第二階段演出長度（毫秒，js/hunt-scene.js；擁有者 2026-10-08 核准的美編候選稿）。turnScenes＝狹間每隻擊殺後的 5 種場景；again＝點燃成功後新一輪判定的短版（等比例縮短）   // 「五秒擊殺」（js/hunt-fx.js）：連斬 5 刀 0～2200、反黑蓄力 2200～2900、斬開 2900～3850、勝利 3900～5000；減少特效時整段縮短為 75%。套路：突刺→C、橫掃→A、蓄力→B
       /* 玩家畫面文字（不寫機率、不寫「選對／猜中」、不要血；審查員 2026-10-08） */
       texts: {
         mineName: "轉生之間",
@@ -1162,6 +1164,15 @@
         /* ---- 第二階段（2026-10-08）：駭骨巨龍、轉生狹間、輪迴的餘燼。不寫機率／上限／「第 N 隻」大字／「再一次」「可惜」「中獎」；審查員必改條件 ---- */
         dragonName: "駭骨巨龍",
         doneDragonDown: "駭骨巨龍的一爪揮下，你退了回來。帶回了金幣 {g}。",
+        item: {   // 3C：旅途道具、行囊、能力點提示的畫面字（擁有者 2026-10-09 核准；不含任何機率或「可惜／再試一次」）
+          quality: { common: "普通", good: "良好", rare: "珍貴" },
+          boxTitle: "旅途木箱", bagTitle: "行囊", offer: ["路邊放著兩個外觀相同的木箱。", "要打開哪一個？"], open: ["打開了左邊的箱子。", "打開了右邊的箱子。"],
+          pick: ["打開左邊的箱子", "打開右邊的箱子"], directLine: "小精靈在路邊的碎石下，找到了一件東西。", boxLine: "箱子裡放著一件東西，已收進這一趟的行囊。",
+          emptyLine: "箱子裡只剩一些乾燥的碎草。", take: "收好並繼續", emptyBtn: "繼續旅途",
+          abilityBtn: "本趟能力", bagBtn: "行囊", tipMain: "獲得能力點 +", tipSub: "可在「本趟能力」投入，也可以之後再決定",
+          bagNote: "這一趟最多帶一件道具，不能疊加、販賣或丟棄。", bagKeep: "道具取得後立即生效，這一趟結束後會消失。", bagNone: "目前沒有道具", bagHint: "旅途的平地上，也許會遇到。",
+          panelSub: "這一趟結束後會消失。投入後不能重新分配。", panelDone: "已投入。這一趟結束後會消失。", viewOnly: "現在只能查看，等這段行動結束後再投入。", dead: "這項能力在本趟後段已不會生效"
+        },
         realmMonNames: { heaven: ["曦羽梟", "輝環水母", "曦角鹿"], hell: ["焰鬃犬", "裂角魔影", "熔瞳"] },   // 暫名，待擁有者確認
         /* 全螢幕演出的字（js/hunt-scene.js）。沒有血、機率、「第 N 隻」、累積金幣大字；判定單向推進、點燃不寫「再一次」「可惜」 */
         /* 回合戰鬥每輪的一句話（事件描述，不寫輸贏預告、不寫「選對／運氣」；依本趟種子與輪次輪替，重新整理不變）。{name}＝怪物名 */

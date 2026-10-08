@@ -42,7 +42,8 @@
             <span>可走 <b id="hbStep">0</b> 步</span>
             <span>本輪金幣 <b id="hbGold">0</b></span>
             <span>去過國度 <b id="hbVisit">0</b> 次</span>
-            <button class="px-btn small" data-hunt="panel">本趟能力／行囊</button>
+            <div class="hb-btns"><button class="px-btn small hb-abi" data-hunt="panel">本趟能力<i class="hb-dot hidden" id="huntDot"></i></button>
+            <button class="px-btn small hb-bag" data-hunt="bag">行囊<img id="huntBagIc" class="hb-ic" alt=""></button></div>
           </div>
         </div>
         <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
@@ -239,6 +240,7 @@
 <script src="js/hunt-mon.js?v=1.04.01"></script>
 <script src="js/hunt-fx.js?v=1.04.01"></script>
 <script src="js/hunt-scene.js?v=1.04.01"></script>
+<script src="js/hunt-item-art.js?v=1.04.01"></script>
 <script src="js/hunt-ui.js?v=1.04.01"></script>
 <script src="js/boons.js?v=1.04.01"></script>
 <script src="js/ruby.js?v=1.04.01"></script>
