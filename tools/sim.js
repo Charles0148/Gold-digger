@@ -25,10 +25,9 @@ const R = C.rules;
 const pct = (x, d = 1) => (x * 100).toFixed(d) + "%";
 const HUNT_RUNS = HUNT_ONLY ? +(process.argv[3] || 400000) : Math.max(100000, Math.min(N, 600000));
 
-/* ---------- §8.10 冒險狩獵礦坑（第 7 座，2026-10-08；規格 Claude outputs/新礦坑_冒險狩獵_規格定案v2_2026-10-08.md） ----------
+/* ---------- §8.10 冒險狩獵礦坑（第 7 座，2026-10-08；第三階段規格 v3） ----------
    只跑這一節：node tools/sim.js hunt [輪數，預設 400000]
-   ① 精確期望值（不靠亂數）：第一階段單獨回收率、完整遊戲（加上巨龍／狹間，參數在 config.hunt.dragon／realm）回收率。
-      完整遊戲要落在規格 3.4 的表值（112.9／116.4／119.4／126.6／134.2／144.6）±1.0，依設定分佈加權 120%±1，設定六減設定一 28～36 點。
+   ① 基礎期望值（不含第三階段能力與道具）用來檢查入口與成本公式。
       第一階段（只有下位 3 隻怪、沒有巨龍和狹間）單獨回收率很低是預期的，全部不開放，不影響玩家。
    ② 蒙地卡羅：直接驅動 js/mine-hunt.js 的真實狀態機（不是另寫一份模型），驗證入口機率、30 步保底、呈現類型比例、擊倒率、第一階段回收率。
    ③ 餵食：換算只會少不會多（無套利）、多把先加總再捨去、單把換算為 0 不可餵、試用版不可餵、鑽頭 1,380。 */
@@ -38,6 +37,27 @@ function huntSection(runs) {
   let bad = 0;
   const ck = (ok, msg) => { if (!ok) { bad++; console.log(`  ✗ ${msg}`); } return ok; };
   console.log(`\n=== §8.10 冒險狩獵礦坑（${runs.toLocaleString()} 輪／設定）===`);
+  const quality = { common: 1, good: 2, rare: 3 };
+  const itemScore = d => (d.realm || 0) * 1000 + (d.dragon || 0) * 180 + (d.hunt || 0) * 60;
+  function resolveOffer(sv, policy, count) {
+    const r = MH.peek(sv, H), o = r.itemOffer; if (!o) return;
+    if (count) count[o.route]++;
+    if (o.stage === "offer") {
+      let side = "left";
+      if (o.route === "choice") {
+        const a = MH.itemDef(H, o.candidates[0]), b = MH.itemDef(H, o.candidates[1]);
+        if (policy === "best" ? itemScore(b) > itemScore(a) : quality[b.quality] > quality[a.quality]) side = "right";
+      }
+      MH.pickItem(sv, H, side, o.rid);
+    }
+    if (r.itemOffer && r.itemOffer.stage === "show") MH.dismissItem(sv, H, r.itemOffer.rid);
+  }
+  function spendPoints(sv, policy) {
+    const r = MH.peek(sv, H), free = r.attr.free; if (!free) return;
+    if (policy === "best" || r.phase !== "hunt") return void MH.allocate(sv, H, { realm: free });
+    const used = r.attr.hunt + r.attr.dragon + r.attr.realm, key = ["hunt", "dragon", "realm"][Math.min(2, used)];
+    MH.allocate(sv, H, { [key]: 1 });
+  }
 
   // ---- ① 精確期望值 ----
   function expect(S, full) {
@@ -67,15 +87,12 @@ function huntSection(runs) {
     }
     return out;
   }
-  const EXPECT_FULL = [1.129, 1.164, 1.194, 1.266, 1.342, 1.446];   // 規格 3.4 表值
   const ex = H.settings.map(S => expect(S, true));
-  console.log(`  設定｜每步發展率｜平均幾步遇發展｜洞窟成功｜藏寶圖成功｜國度成功合計｜階段1單獨回收率｜完整遊戲回收率（規格表值）`);
-  H.settings.forEach((S, i) => console.log(`  ${i + 1}｜${pct(S.dev, 2)}｜${ex[i].walk.toFixed(1)}｜${pct(S.cave)}｜${pct(S.map)}｜${pct(ex[i].Q)}｜${pct(ex[i].stage1)}｜${pct(ex[i].full)}（${pct(EXPECT_FULL[i])}）`));
+  console.log(`  設定｜每步發展率｜平均幾步遇發展｜洞窟成功｜藏寶圖成功｜國度成功合計｜階段1單獨回收率｜無能力／道具基礎回收率`);
+  H.settings.forEach((S, i) => console.log(`  ${i + 1}｜${pct(S.dev, 2)}｜${ex[i].walk.toFixed(1)}｜${pct(S.cave)}｜${pct(S.map)}｜${pct(ex[i].Q)}｜${pct(ex[i].stage1)}｜${pct(ex[i].full)}`));
   const wFull = ex.reduce((a, e, i) => a + e.full * dist[i], 0), wS1 = ex.reduce((a, e, i) => a + e.stage1 * dist[i], 0);
-  console.log(`  加權（settingDist）：完整遊戲 ${pct(wFull, 2)}｜階段 1 單獨 ${pct(wS1, 2)}（只有下位 ${H.lower.count} 隻怪，沒有巨龍與狹間，很低是預期的）｜設定六減設定一 ${((ex[5].full - ex[0].full) * 100).toFixed(1)} 點`);
-  ex.forEach((e, i) => ck(Math.abs(e.full - EXPECT_FULL[i]) <= 0.01, `設定${i + 1} 完整遊戲回收率 ${pct(e.full)} 與規格表值 ${pct(EXPECT_FULL[i])} 差超過 1.0 點`));
-  ck(Math.abs(wFull - 1.20) <= 0.01, `完整遊戲加權回收率 ${pct(wFull, 2)} 不在 120%±1`);
-  ck((ex[5].full - ex[0].full) * 100 >= 28 && (ex[5].full - ex[0].full) * 100 <= 36, `設定六減設定一 ${((ex[5].full - ex[0].full) * 100).toFixed(1)} 點不在 28～36`);
+  console.log(`  加權（settingDist）：無能力／道具基礎 ${pct(wFull, 2)}｜階段 1 單獨 ${pct(wS1, 2)}（只有下位 ${H.lower.count} 隻怪，沒有巨龍與狹間，很低是預期的）｜設定六減設定一 ${((ex[5].full - ex[0].full) * 100).toFixed(1)} 點`);
+  ck(Number.isFinite(wFull) && wFull > 0, "基礎期望值必須是正數");
   ck(wS1 > 0.05 && wS1 < 0.30, `階段 1 單獨回收率 ${pct(wS1)} 不在合理範圍（5%～30%）`);
   ck(H.settings.every(S => S.dev > 0 && S.dev < 1 && S.cave > 0 && S.cave < 1 && S.map > 0 && S.map < 1), "入口機率必須在 0～1 之間");
   ck(H.settings.length === 6 && dist.length === 6, "每日設定必須 6 種");
@@ -83,18 +100,20 @@ function huntSection(runs) {
   // ---- ② 蒙地卡羅：真實狀態機 ----
   console.log(`  --- 蒙地卡羅（真實 js/mine-hunt.js，每輪：旅途→發展→國度→下位→巨龍→狹間→餘燼→凱旋）---`);
   console.log(`  設定｜每步發展率(排除保底)｜洞窟成功｜藏寶圖成功｜單鈕/二選一/三選一｜擊倒率｜最長連續沒發展｜完整遊戲回收率（精確）`);
-  let wMc = 0;
+  let wMc = 0, mcRows = [];
   H.settings.forEach((S, si) => {
     const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} };
     sv.huntMeta.stamina = ST.cap;
-    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0,
+    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0, direct: 0, choice: 0, empty: 0,
       dragonN: 0, dragonWin: 0, entryN: 0, entryHeaven: 0, rmKills: 0, rmMax: { heaven: 0, hell: 0 }, rmRounds: { heaven: 0, hell: 0 }, rmFull: { heaven: 0, hell: 0 }, emberN: 0, emberOk: 0, nextN: { heaven: 0, hell: 0 }, nextHeaven: { heaven: 0, hell: 0 } };
     for (let n = 0; n < runs; n++) {
       MH.run(sv, H);
       const before = sv.huntMeta.stamina;
       for (let guard = 0; guard < 5000; guard++) {
         const r = MH.peek(sv, H);
-        if (r.phase === "walk") {
+        if (r.itemOffer) resolveOffer(sv, "general", c);
+        else if (r.awaiting) { spendPoints(sv, "general"); MH.continueRun(sv, H); }
+        else if (r.phase === "walk") {
           const since = r.since, res = MH.step(sv, H, { setting: si + 1 });
           if (!res.ok) { ck(false, "走路失敗：" + res.reason); break; }
           c.steps++; c.streak++;
@@ -123,6 +142,7 @@ function huntSection(runs) {
       c.spent += before - sv.huntMeta.stamina;
     }
     const mcRtp = c.gold / (c.spent * ST.valuePer);
+    mcRows[si] = mcRtp;
     wMc += mcRtp * dist[si];
     const totP = c.pres[0] + c.pres[1] + c.pres[2];
     console.log(`  ${si + 1}｜${pct(c.freeDev / c.free, 2)}（${pct(S.dev, 2)}）｜${pct(c.caveOk / c.caveN)}（${pct(S.cave)}）｜${pct(c.mapOk / c.mapN)}（${pct(S.map)}）｜${c.pres.map(x => pct(x / totP, 0)).join("/")}｜${pct(c.monWin / c.monN)}｜${c.maxStreak} 步｜${pct(mcRtp)}（${pct(ex[si].full)}）`);
@@ -133,20 +153,50 @@ function huntSection(runs) {
     ck(c.maxStreak <= H.walk.guarantee, `設定${si + 1} 連續 ${c.maxStreak} 步沒遇到發展，超過保底 ${H.walk.guarantee}`);
     H.present.forEach((p, k) => ck(Math.abs(c.pres[k] / totP - p) <= 0.01, `設定${si + 1} 呈現類型 ${k} 實測 ${pct(c.pres[k] / totP)} 與設定值 ${pct(p)} 差超過 1 點`));
     { const n0 = c.combo[0] + c.combo[1] + c.combo[2]; c.combo.forEach((x, k) => ck(Math.abs(x / n0 - 1 / 3) <= 0.01, `設定${si + 1} 單鈕怪斬擊套路 ${k} 實測 ${pct(x / n0)} 與三分之一差超過 1 點`)); }
-    ck(Math.abs(c.monWin / c.monN - H.lower.win) <= 0.005, `設定${si + 1} 擊倒率實測 ${pct(c.monWin / c.monN)} 與設定值差超過 0.5 點`);
-    ck(Math.abs(mcRtp - ex[si].full) <= 0.015, `設定${si + 1} 完整遊戲回收率實測 ${pct(mcRtp)} 與精確值 ${pct(ex[si].full)} 差超過 1.5 點`);
+    const routeN = c.direct + c.choice + c.empty;
+    ck(Math.abs(c.direct / runs - .05) <= .01 && Math.abs(c.choice / runs - .28) <= .01 && Math.abs(c.empty / runs - .42) <= .01 && Math.abs((runs - routeN) / runs - .25) <= .01, `設定${si + 1} 道具事件路線不是 5／28／42／25`);
+    ck(c.monWin / c.monN >= H.lower.win - .005 && c.monWin / c.monN < H.attributes.hunt.cap, `設定${si + 1} 下位動態門檻不在基礎值與硬頂之間`);
     // 第二階段：巨龍／判定／狹間／餘燼（打進去之後與設定無關，六個設定都要通過同一套門檻）
     const pr = (a, b) => (b ? a / b : 0);
     console.log(`     巨龍勝 ${pct(pr(c.dragonWin, c.dragonN))}｜首次天堂 ${pct(pr(c.entryHeaven, c.entryN))}｜每次進狹間平均擊倒 ${pr(c.rmKills, c.entryN).toFixed(2)} 隻｜撐滿天堂 ${pct(pr(c.rmFull.heaven, c.rmRounds.heaven), 2)}／地獄 ${pct(pr(c.rmFull.hell, c.rmRounds.hell), 1)}｜餘燼成功 ${pct(pr(c.emberOk, c.emberN))}｜撐滿後下一輪天堂 天堂者 ${pct(pr(c.nextHeaven.heaven, c.nextN.heaven))}／地獄者 ${pct(pr(c.nextHeaven.hell, c.nextN.hell))}｜單輪最多 天堂 ${c.rmMax.heaven}／地獄 ${c.rmMax.hell}`);
-    ck(Math.abs(pr(c.dragonWin, c.dragonN) - DR.win) <= 0.005, `設定${si + 1} 巨龍勝率實測 ${pct(pr(c.dragonWin, c.dragonN))} 與 ${pct(DR.win)} 差超過 0.5 點`);
+    ck(pr(c.dragonWin, c.dragonN) >= DR.win - .005 && pr(c.dragonWin, c.dragonN) < H.attributes.dragon.cap, `設定${si + 1} 巨龍動態門檻不在基礎值與硬頂之間`);
     ck(Math.abs(pr(c.entryHeaven, c.entryN) - RM.entryHeaven) <= 0.005, `設定${si + 1} 首次天堂比例實測 ${pct(pr(c.entryHeaven, c.entryN))} 與 ${pct(RM.entryHeaven)} 差超過 0.5 點`);
     ck(c.emberN > 100 && Math.abs(pr(c.emberOk, c.emberN) - RM.ember) <= 0.02, `設定${si + 1} 餘燼成功率實測 ${pct(pr(c.emberOk, c.emberN))}（${c.emberN} 次）與 ${pct(RM.ember)} 差超過 2 點`);
-    ck(Math.abs(pr(c.rmKills, c.entryN) - 7.01) <= 0.15, `設定${si + 1} 每次進狹間平均擊倒 ${pr(c.rmKills, c.entryN).toFixed(2)} 隻，與 7.01 差超過 0.15`);
+    ck(pr(c.rmKills, c.entryN) > 5 && pr(c.rmKills, c.entryN) < 12, `設定${si + 1} 每次進狹間平均擊倒數異常：${pr(c.rmKills, c.entryN).toFixed(2)}`);
     ck(c.rmMax.heaven <= RM.heaven.cap && c.rmMax.hell <= RM.hell.cap, `設定${si + 1} 單輪擊倒超過上限（天堂 ${c.rmMax.heaven}／地獄 ${c.rmMax.hell}）`);
     ck(Math.abs(pr(c.nextHeaven.heaven, c.nextN.heaven) - RM.heaven.nextHeaven) <= 0.03 && Math.abs(pr(c.nextHeaven.hell, c.nextN.hell) - RM.hell.nextHeaven) <= 0.03, `設定${si + 1} 撐滿後下一輪天堂比例偏離（樣本 ${c.nextN.heaven}／${c.nextN.hell}）`);
   });
-  console.log(`  完整遊戲加權回收率（蒙地卡羅，真實狀態機）${pct(wMc, 2)}（精確 ${pct(wFull, 2)}）`);
-  ck(Math.abs(wMc - 1.20) <= 0.015, `蒙地卡羅完整遊戲加權回收率 ${pct(wMc, 2)} 不在 120%±1.5`);
+  console.log(`  一般策略加權回收率（蒙地卡羅，真實狀態機）${pct(wMc, 2)}（v3 目標 119.58%）`);
+  ck(Math.abs(wMc - 1.1958) <= 0.01, `一般策略加權回收率 ${pct(wMc, 2)} 與 v3 119.58% 差超過 1 點`);
+  ck((mcRows[5] - mcRows[0]) * 100 >= 29 && (mcRows[5] - mcRows[0]) * 100 <= 33, `一般策略設定六減一不在 29～33 點`);
+
+  // 最佳策略：道具取後段期望較高者，所有能力點投遠行意志。仍直接驅動同一狀態機。
+  function policyRtp(si) {
+    const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} }; sv.huntMeta.stamina = ST.cap;
+    let gold = 0, spent = 0;
+    for (let n = 0; n < runs; n++) {
+      MH.run(sv, H); const before = sv.huntMeta.stamina;
+      for (let guard = 0; guard < 5000; guard++) {
+        const r = MH.peek(sv, H);
+        if (r.itemOffer) resolveOffer(sv, "best");
+        else if (r.awaiting) { spendPoints(sv, "best"); MH.continueRun(sv, H); }
+        else if (r.phase === "walk") MH.step(sv, H, { setting: si + 1 });
+        else if (r.phase === "dev") MH.enterCountry(sv, H);
+        else if (r.phase === "country") { MH.pickCountry(sv, H, 0); MH.afterCountry(sv, H); }
+        else if (r.anim) MH.finishAnim(sv, H, r.anim.rid);
+        else if (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") MH.strike(sv, H, 0);
+        else if (r.phase === "ember") MH.ignite(sv, H);
+        else if (r.phase === "done") { gold += r.last.gold; MH.again(sv, H); break; }
+      }
+      spent += before - sv.huntMeta.stamina;
+    }
+    return gold / (spent * ST.valuePer);
+  }
+  const bestRows = H.settings.map((_, i) => policyRtp(i)), wBest = bestRows.reduce((s, x, i) => s + x * dist[i], 0);
+  console.log(`  最佳策略：${bestRows.map(x => pct(x)).join("｜")}｜加權 ${pct(wBest, 2)}（v3 目標 120.33%）`);
+  ck(Math.abs(wBest - 1.2033) <= 0.01, `最佳策略加權回收率 ${pct(wBest, 2)} 與 v3 120.33% 差超過 1 點`);
+  ck((wBest - wMc) * 100 <= 2, `最佳與一般策略差 ${((wBest - wMc) * 100).toFixed(2)} 點超過 2 點`);
+  ck((bestRows[5] - bestRows[0]) * 100 >= 29 && (bestRows[5] - bestRows[0]) * 100 <= 33, `最佳策略設定六減一不在 29～33 點`);
   // 每輪耗時（「五秒擊殺」演出：每隻怪不能跳過的演出 ${H.fx.totalMs / 1000} 秒，規格原估 2.5 秒）。時間常數沿用規格第 5 節：走一步 0.5、發展 2、國度 8、結算 2.5、選擇反應 單鈕0.6／二選一1.1／三選一1.5、倒下 2.5
   {
     const kt = H.fx.totalMs / 1000, react = H.present[0] * .6 + H.present[1] * 1.1 + H.present[2] * 1.5, S3 = H.settings[2], e3 = ex[2];
@@ -205,7 +255,7 @@ function huntSection(runs) {
   ck(arbBad === 0, `餵食換算有 ${arbBad} 個耐久值會多拿體力或誤判不可餵`);
   ck(multiBad === 0, `多把一起餵有 ${multiBad} 組不符合「先加總再捨去、不超過精確值」`);
   ck(!MH.feedable(H, defOf("wood"), { uid: 1, id: "wood", dur: 3, max: 60 }).ok, "耐久 3 的木鎬（換算 0.55 體力）應為不可餵");
-  console.log(bad ? `  ⚠️ §8.10 共 ${bad} 項不合格` : `  ✓ §8.10：入口機率／保底／呈現比例／擊倒率／完整遊戲回收率（加權 ${pct(wFull, 2)}）／餵食無套利 全部正確`);
+  console.log(bad ? `  ⚠️ §8.10 共 ${bad} 項不合格` : `  ✓ §8.10：入口／保底／道具 5/28/42/25／動態門檻／一般 ${pct(wMc, 2)}／最佳 ${pct(wBest, 2)}／餵食無套利 全部正確`);
   if (bad) process.exitCode = 1;
 }
 if (HUNT_ONLY) { console.log("深層礦脈 模擬報表（只跑 §8.10）｜gameVersion " + VER); huntSection(HUNT_RUNS); process.exit(process.exitCode || 0); }

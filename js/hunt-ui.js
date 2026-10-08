@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "" };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", attrDraft: { hunt: 0, dragon: 0, realm: 0 } };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -156,7 +156,7 @@
 
   function render() {
     const sv = SV(), h = H(), M = sv.huntMeta, r = RUN(), t = T();
-    if ((r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim && !MH.halted(sv, h)) { MH.spawn(sv, h); A.persist(); }   // 自我修復：狩獵中卻沒有怪（例如開發者跳狀態、舊版留下的狀態）→ 付 1 體力遇一隻
+    if ((r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim && !r.awaiting && !MH.halted(sv, h)) { MH.spawn(sv, h); A.persist(); }   // 自我修復：能力點提示中的安全停點不可越過
     const halted = MH.halted(sv, h), stalled = !!r.anim && ui.stalled === r.anim.rid, animating = !!r.anim && !stalled, st = M.stamina, locked = busy();
     chrome(true);
     $("mbName").textContent = h.mine.name;
@@ -181,7 +181,28 @@
     let lines = [], tap = "▼ 點擊", choices = [], bigHtml = "", subTxt = "";
     const needN = MH.need(sv, h), lack = Math.max(0, needN - st);
     const hungry = () => { lines = t.hungry.map(x => A.colored(x, sub())).concat([A.colored(fill(t.hungryNeed, { n: lack }), "#ffcc33")]); tap = ""; choices = [{ c: "feed", label: t.feedBtn + "（餵鎬子）", gold: true }]; };
-    if (r.phase === "walk") {
+    if (r.itemOffer) {
+      const o = r.itemOffer, left = o.candidates[0] && MH.itemDef(h, o.candidates[0]), right = o.candidates[1] && MH.itemDef(h, o.candidates[1]);
+      bigHtml = A.colored(o.route === "empty" ? "旅途木箱" : "行囊", o.route === "empty" ? "#caa36a" : "#7fe3ff"); tap = "";
+      if (o.stage === "offer" && o.route === "choice") {
+        lines = ["小精靈找到了兩件東西。", "行囊只能先收下一件。"]; choices = [
+          { c: `item:left:${o.rid}`, label: `${left.name}｜${left.text}` }, { c: `item:right:${o.rid}`, label: `${right.name}｜${right.text}` }
+        ];
+      } else if (o.stage === "offer") {
+        lines = ["路邊放著兩個外觀相同的木箱。", "要打開哪一個？"]; choices = [
+          { c: `item:left:${o.rid}`, label: "打開左邊的箱子" }, { c: `item:right:${o.rid}`, label: "打開右邊的箱子" }
+        ];
+      } else if (o.route === "empty") {
+        lines = ["箱子裡只剩一些乾燥的碎草。"]; choices = [{ c: `itemdone:${o.rid}`, label: "繼續旅途" }];
+      } else {
+        const d = MH.itemDef(h, o.chosen);
+        lines = [o.route === "direct" ? "小精靈在路邊的碎石下，找到了一件東西。" : "已收進這一趟的行囊。", A.colored(d.name, "#ffe0a0"), d.text];
+        choices = [{ c: `itemdone:${o.rid}`, label: "收好並繼續", gold: true }];
+      }
+    } else if (r.awaiting) {
+      bigHtml = A.colored("能力點 +", "#7fe3ff"); lines = ["這一趟獲得了新的能力點。", "可以先投入，也可以留到後面再決定。"]; tap = "";
+      choices = [{ c: "panel", label: "查看本趟能力", gold: true }, { c: "continue", label: "繼續前進" }];
+    } else if (r.phase === "walk") {
       bigHtml = A.colored((r.n + r.since) % 2 ? "· ·" : "·  ·", sub());
       lines = [ui.flash && ui.flash.rid === r.rid ? A.colored(ui.flash.text, "#ffe0a0") : "", t.walk[(r.n + r.since) % t.walk.length]].filter(Boolean);
       tap = "▼ 點擊前進";
@@ -208,7 +229,7 @@
       } else if (r.anim && r.anim.kind === "round") {
         lines = [roundLines(r, r.anim.t)[0]]; tap = "";
       } else if (r.anim) {
-        if (r.anim.kind === "kill") lines = [dragon ? fill(t.dragonKill, { g: h.dragon.gold }) : realm ? fill(t.realmKill, { name: nm, g: h.realm[r.realm.type].gold }) : fill(t.monHit[r.anim.combo === undefined ? r.anim.pick : r.anim.combo], { name: nm })];
+        if (r.anim.kind === "kill") lines = [dragon ? fill(t.dragonKill, { g: MH.goldOf(r, h, "dragon") }) : realm ? fill(t.realmKill, { name: nm, g: MH.goldOf(r, h, r.realm.type) }) : fill(t.monHit[r.anim.combo === undefined ? r.anim.pick : r.anim.combo], { name: nm })];
         else lines = [dragon ? t.dragonDownLine : fill(t.downLine, { name: nm })];
         tap = "";
       } else if (r.mon) {
@@ -234,6 +255,8 @@
       const L = r.last, w = L.why;
       bigHtml = A.colored(w === "empty" ? "空手" : w === "down" ? "撤退" : w === "ember" ? t.emberFailBig : "凱旋", w === "empty" || w === "ember" ? sub() : "#ffcc33");
       lines = [A.colored(fill(w === "full" ? t.doneFull : w === "down" ? (L.dragon ? t.doneDragonDown : t.doneDown) : w === "realm" ? t.doneRealm : w === "ember" ? t.doneEmber : t.doneEmpty, { k: L.kills, g: num(L.gold) }), w === "empty" ? sub() : "#ffcc33")];
+      lines.push(`這一趟獲得能力點 ${num(L.attrEarned || 0)}。`);
+      if (L.itemId) { const d = MH.itemDef(h, L.itemId); if (d) lines.push(`行囊裡帶過：${d.name}`); }
       tap = t.doneTap;
     }
     let tint = r.realm && (r.phase === "realm" || r.phase === "ember") && !(r.anim && r.anim.kind === "judge") ? r.realm.type : null;
@@ -311,7 +334,7 @@
     const res = A.commit(() => MH.finishAnim(SV(), H(), rid));   // 原子：往下一隻／凱旋入帳＋存檔；寫入失敗會回到演出前
     if (res && res.failed) { ui.stalled = rid; A.stopAuto(); if (A.onMine()) render(); return; }
     ui.stalled = 0;
-    if (res.ok && kind === "kill" && !wasDragon && MH.peek(SV(), H()).phase === "hunt") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: H().lower.gold, name: vname }) };
+    if (res.ok && kind === "kill" && !wasDragon && MH.peek(SV(), H()).phase === "hunt") ui.flash = { rid: MH.peek(SV(), H()).rid, text: fill(T().killLine, { g: MH.goldOf(MH.peek(SV(), H()), H(), "hunt"), name: vname }) };
     if (A.onMine()) render(); else A.renderHud();
   }
   function abortFx() { FX.abort(); clearStage(); }
@@ -336,11 +359,43 @@
   function doStrike(i) { return act(() => MH.strike(SV(), H(), i)); }
   function doIgnite() { return act(() => MH.ignite(SV(), H())); }
   function doAgain() { ui.doneSeen = false; ui.flash = null; return act(() => MH.again(SV(), H())); }
+  function doContinue() { return act(() => MH.continueRun(SV(), H())); }
+  function doItem(side, rid) { return act(() => MH.pickItem(SV(), H(), side, rid)); }
+  function doItemDone(rid) { return act(() => MH.dismissItem(SV(), H(), rid)); }
+
+  function attrPanel(reset) {
+    A.stopAuto();
+    if (reset) ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 };
+    const r = RUN(), a = r.attr, safe = MH.attrSafe(r), names = { hunt: "獵手本能", dragon: "破鱗技巧", realm: "遠行意志" }, desc = {
+      hunt: "更容易解決旅途上的一般怪物", dragon: "更容易突破駭骨巨龍", realm: "在天堂與地獄走得更遠"
+    };
+    const used = MH.ATTRS.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
+    const rows = MH.ATTRS.map(k => {
+      const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d, feel = level <= 0 ? "尚未投入" : level <= 2 ? "稍微提升" : level <= 5 ? "提升" : "明顯提升";
+      return `<div class="hunt-attr-row"><div><b>${names[k]}</b>　已確認 ${num(a[k])}${active ? "" : "　<span class=\"sub\">本趟後段已不會生效</span>"}<br><span class="sub">${desc[k]}｜${feel}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`;
+    }).join("");
+    const held = MH.ITEM_IDS.find(id => r.items[id]), item = held && MH.itemDef(H(), held);
+    modalNote(`<div style="color:#7fe3ff">本趟能力</div><div class="sub" style="margin:6px 0 10px">這一趟結束後會消失。投入後不能重新分配。</div><div>可分配點數：<b>${num(Math.max(0, remain))}</b></div>${rows}<div class="hunt-bag"><b>行囊</b><br><span class="sub">${item ? item.name + "｜" + item.text : "目前沒有道具"}</span></div>${safe ? "" : '<div class="sub" style="margin-top:8px">現在只能查看，等這段行動結束後再投入。</div>'}`,
+      [{ id: "haCommit", label: "確認投入", gold: true }, { id: "haClose", label: "關閉" }]);
+    $("haCommit").disabled = used <= 0 || used > a.free || !safe;
+    MH.ATTRS.forEach(k => {
+      $("haMinus-" + k).onclick = () => { ui.attrDraft[k] = Math.max(0, ui.attrDraft[k] - 1); attrPanel(false); };
+      $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; attrPanel(false); };
+    });
+    $("haClose").onclick = () => { $("modal").classList.add("hidden"); };
+    $("haCommit").onclick = () => {
+      const draft = Object.assign({}, ui.attrDraft);
+      modalNote(`<div style="color:#ffcc33">投入後，這一趟不能重新分配。</div><div class="sub" style="margin-top:8px">要確認投入這些能力點嗎？</div>`, [{ id: "haYes", label: "確認投入", gold: true }, { id: "haNo", label: "返回" }]);
+      $("haNo").onclick = () => attrPanel(false);
+      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; $("modal").classList.add("hidden"); } else if (!res.failed) attrPanel(false); };
+    };
+  }
 
   /* 點敘述框（textbox）：依目前階段做「主要動作」。有選項的地方只能按按鈕 */
   function tap() {
     const sv = SV(), r = RUN();
     if (r.anim || FX.playing() || ui.stage) return;
+    if (r.itemOffer || r.awaiting) return;
     if (r.phase === "walk") { if (A.dayBlocked()) return; if (MH.halted(sv, H())) { A.toast(T().hungry[0], 1600); return; } doStep(); }
     else if (r.phase === "dev") { if (MH.halted(sv, H())) { A.toast(T().goInHungry, 1600); return; } doEnter(); }
     else if (r.phase === "country") { if (r.country.pick !== null) doAfterCountry(); }
@@ -349,8 +404,12 @@
     else if (r.phase === "done") doAgain();
   }
   function onBtn(code) {
-    const [k, v] = String(code).split(":");
+    const [k, v, x] = String(code).split(":");
     if (k === "feed") openFeed();
+    else if (k === "panel") attrPanel(true);
+    else if (k === "continue") doContinue();
+    else if (k === "item") doItem(v, +x);
+    else if (k === "itemdone") doItemDone(+v);
     else if (k === "cpick") doPick(+v);
     else if (k === "strike") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doStrike(+v); }
     else if (k === "ignite") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doIgnite(); }
@@ -364,6 +423,8 @@
     if (FX.playing() || r.anim || ui.stage) return { wait: 300 };
     if (A.modalOpen()) return { wait: 400 };
     if (MH.halted(sv, h)) { A.toast("體力用完了，餵鎬子才能繼續走", 2400); return { stop: true }; }
+    if (r.itemOffer) return { wait: 400 };   // 道具二選一／空箱由玩家決定；直接取得也等玩家看完
+    if (r.awaiting) { doContinue(); return { wait: 400 }; }   // 取得能力點不強制停自動，未投入點數保留
     if (r.phase === "walk") { if (A.dayBlocked()) return { stop: true }; doStep(); return { wait: A.autoWait() }; }
     if (r.phase === "dev") { if (!ui.devSeen) { ui.devSeen = true; return { wait: 1100 }; } ui.devSeen = false; doEnter(); return { wait: 400 }; }
     if (r.phase === "country") {

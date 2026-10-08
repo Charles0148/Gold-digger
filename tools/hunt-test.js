@@ -6,6 +6,7 @@
    數值讀 js/config.js 的 hunt（唯一來源）。畫面（hunt-ui／hunt-fx）請用 ?sandbox=名稱 在瀏覽器測。
    ========================================================= */
 const path = require("path");
+const fs = require("fs");
 const ROOT = path.join(__dirname, "..");
 const C = require(path.join(ROOT, "js/config.js"));
 const MH = require(path.join(ROOT, "js/mine-hunt.js"));
@@ -18,7 +19,9 @@ let pass = 0, fail = 0;
 const ok = (cond, name) => { if (cond) pass++; else { fail++; console.log("  ✘ FAIL " + name); } };
 const J = o => JSON.parse(JSON.stringify(o));
 const defOf = id => C.tools.find(t => t.id === id);
-const fresh = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H); return sv; };
+/* 既有第 1～15 節固定跑第二階段相容行程；第三階段另在後段用 fresh3 驗證，避免把舊回歸的期望值偷偷改掉。 */
+const fresh = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H).rv = 2; return sv; };
+const fresh3 = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H); return sv; };
 const R = sv => MH.peek(sv, H);
 /* 一路走到「發展」：回傳步數。setting 預設 3 */
 function walkToDev(sv, setting = 3) { let n = 0; while (R(sv).phase === "walk") { const r = MH.step(sv, H, { setting }); if (!r.ok) throw new Error("walk " + r.reason); n++; if (n > 100) throw new Error("no dev"); } return n; }
@@ -30,7 +33,7 @@ function seedWhere(country, stamina = 500, setting = 3) {
 
 console.log("=== 1. 設定值 ===");
 ok(ST.perStep === 1 && ST.countryCost === 2 && ST.valuePer === 6 && ST.intro === 18 && ST.drillTotal === 1380, "每步 1／國度 2／1 體力＝6 金幣／初見禮 18／鑽頭 1380");
-ok(H.walk.guarantee === 30 && H.lower.count === 3 && H.lower.win === 0.92 && H.lower.gold === 11 && H.present.join() === "0.5,0.35,0.15", "保底 30／下位 3 隻 92%／11 金幣／呈現 50/35/15");
+ok(H.walk.guarantee === 30 && H.lower.count === 3 && H.lower.win === 0.895 && H.lower.gold === 10 && H.dragon.win === 0.755 && H.dragon.gold === 83 && H.realm.heaven.cont === 0.83 && H.realm.heaven.gold === 44 && H.realm.hell.cont === 0.895 && H.realm.hell.gold === 65, "第三階段重新校準：下位 89.5/10、巨龍 75.5/83、天堂 83/44、地獄 89.5/65");
 ok(H.mine.id === "m7" && H.mine.devOnly === true && H.mine.boardEligible === false && H.mine.toolsBrokenEligible === false, "m7 devOnly、不進委託板、不算用壞");
 ok(!C.mines.some(m => m.id === "m7"), "m7 不在 config.mines（不會被委託板／圖鑑／模擬器誤算）");
 
@@ -285,7 +288,7 @@ console.log("=== 13. 斬擊套路（突刺→C、橫掃→A、蓄力→B；單�
 console.log("=== 14. 第二階段：巨龍、判定、狹間、餘燼（規格 第二階段規格_2026-10-08）===");
 {
   const D = H.dragon, RM = H.realm;
-  ok(D.win === 0.80 && D.gold === 90 && D.warnStamina === 25 && RM.entryHeaven === 0.90 && RM.ember === 0.54 && RM.heaven.cap === 20 && RM.hell.cap === 10 && RM.heaven.gold === 34 && RM.hell.gold === 68 && !H.later, "巨龍／狹間數值在 config.hunt.dragon／realm，later 已刪");
+  ok(D.win === 0.755 && D.gold === 83 && D.warnStamina === 25 && RM.entryHeaven === 0.90 && RM.ember === 0.54 && RM.heaven.cap === 20 && RM.hell.cap === 10 && RM.heaven.gold === 44 && RM.hell.gold === 65 && !H.later, "巨龍／狹間採第三階段校準值，later 已刪");
   const toDragon = (st = 100, force) => { const sv = fresh(st, 1000); MH.devSet(sv, H, { phase: "dragon", force }); MH.spawn(sv, H); return sv; };
   // 抽選次數寫死：巨龍 draw×2、drawP×0；狹間每隻 draw×1、drawP×1；進餘燼 draw×2
   { const sv = fresh(100); MH.devSet(sv, H, { phase: "dragon" }); const n0 = R(sv).n, p0 = R(sv).nP; MH.spawn(sv, H);
@@ -384,11 +387,11 @@ console.log("=== 15. 回合戰鬥（厚重輪數）：劇本、血量、存檔�
     for (let i = 0; i < 1500; i++) {
       const sv = fresh(50); const seed = i * 7919 + 3, seedP = i * 104729 + 11; MH.devSet(sv, H, { phase: "hunt", kills: 0 }); R(sv).seed = seed; R(sv).seedP = seedP; R(sv).n = 0; R(sv).nP = 0; const nB0 = R(sv).nB;
       MH.spawn(sv, H);
-      const win = MH.mix(seed, 0) < H.lower.win, uP = MH.mix(seedP, 0), P = H.present, pres = uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2, combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));
+      const win = MH.mix(seed, 0) < MH.chance(R(sv), H, "hunt"), uP = MH.mix(seedP, 0), P = H.present, pres = uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2, combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));
       if (R(sv).mon.win !== win || R(sv).mon.pres !== pres || R(sv).mon.combo !== combo) same = false;
       if (R(sv).n !== 1 || R(sv).nP !== 1 || R(sv).nB !== nB0 + 1) drawsOk = false;
       const dv = fresh(50); MH.devSet(dv, H, { phase: "dragon" }); R(dv).seed = seed; R(dv).n = 0; MH.spawn(dv, H);
-      if (R(dv).mon.win !== (MH.mix(seed, 0) < H.dragon.win) || R(dv).mon.entry !== (MH.mix(seed, 1) < H.realm.entryHeaven ? "heaven" : "hell") || R(dv).n !== 2 || R(dv).nP !== 0) same = false;
+      if (R(dv).mon.win !== (MH.mix(seed, 0) < MH.chance(R(dv), H, "dragon")) || R(dv).mon.entry !== (MH.mix(seed, 1) < H.realm.entryHeaven ? "heaven" : "hell") || R(dv).n !== 2 || R(dv).nP !== 0) same = false;
     }
     ok(same, "加了劇本之後，下位／巨龍的勝負、呈現、套路、入口與抽選次數逐筆和直接用 mix 算的一致（對照表 1500 組）");
     ok(drawsOk, "每隻怪只多用劇本種子流 nB +1，draw／drawP 次數不變"); }
@@ -460,6 +463,54 @@ console.log("=== 15. 回合戰鬥（厚重輪數）：劇本、血量、存檔�
   { const sv = fresh(50); sv.coins = 5; MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, rounds: 4 } }); R(sv).gold = 22; MH.spawn(sv, H); MH.strike(sv, H, 0); ok(MH.leave(sv, H).gold === 22 && sv.coins === 27, "戰鬥中退出：先前累積的金幣入帳，這隻不給"); }
   ok(MH.hpAt(null, 0) === null, "hpAt 沒有劇本時回傳 null");
 }
+
+console.log("=== 16. 第三階段 3B：能力、道具、空箱、歸零、舊檔、重整、回滾 ===");
+{
+  const seedFor = (lo, hi) => { for (let s = 1; s < 200000; s++) { const u = MH.mix(s, 0); if (u >= lo && u < hi) return s; } throw new Error("seedI"); };
+  const triggerOffer = (lo, hi) => {
+    const sv = fresh3(100, 0), r = R(sv); r.seedI = seedFor(lo, hi); r.nI = 0; r.since = H.walk.guarantee - 1;
+    const n = r.n, nP = r.nP; MH.step(sv, H, { setting: 3 });
+    ok(r.n === n + 3 && r.nP === nP, "旅途發展仍只消耗既有結果流 draw×3；道具不碰 draw／drawP");
+    return sv;
+  };
+
+  // 能力點：擊倒先落存檔、下一隻生成前停點、確認不可退、遞減且永遠低於硬頂。
+  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, rounds: 1 } }); const n0 = r.n, p0 = r.nP; MH.spawn(sv, H); MH.strike(sv, H, 0);
+    ok(r.attr.free === 1 && r.attr.earned === 1 && r.anim.attrEarned === 1 && r.n === n0 + 1 && r.nP === p0 + 1, "下位擊倒 +1 可分配點；勝負／呈現抽選次數不變");
+    const rid = r.anim.rid; MH.finishAnim(sv, H, rid); ok(r.awaiting === "spawn" && !r.mon && r.attr.free === 1, "演出後停在安全點，重新整理前不先生成下一隻");
+    const snap = J(sv); MH.fix(snap, H); ok(R(snap).awaiting === "spawn" && R(snap).attr.free === 1 && R(snap).n === r.n, "安全點重新整理：點數與抽選索引不變");
+    ok(!MH.allocate(sv, H, { hunt: 2 }).ok && MH.allocate(sv, H, { hunt: 1 }).ok && r.attr.hunt === 1 && r.attr.free === 0 && !MH.allocate(sv, H, { hunt: -1 }).ok, "不能超支；確認投入後不可退回／重配");
+    const p1 = MH.chance(r, H, "hunt"); r.attr.hunt = 1000000; const pHuge = MH.chance(r, H, "hunt");
+    ok(p1 > H.lower.win && pHuge < H.attributes.hunt.cap && pHuge > p1, "無單項上限採遞減效果，極高點數仍低於 97% 硬頂");
+    r.attr.hunt = 1; const n1 = r.n; MH.continueRun(sv, H); ok(r.mon && r.n === n1 + 1 && !r.awaiting, "繼續後才生成下一隻，只用原本一次勝負抽選"); }
+
+  // 巨龍 +2、狹間每第 3 隻 +1。
+  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "dragon", force: { win: true, entry: "heaven", rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); ok(r.attr.free === 2, "駭骨巨龍擊倒 +2 點"); MH.finishAnim(sv, H, r.anim.rid); ok(r.awaiting === "judge" && r.pendingEntry === "heaven", "巨龍點數在判定演出前提供安全停點");
+    MH.allocate(sv, H, { realm: 2 }); MH.continueRun(sv, H); ok(r.anim.kind === "judge" && r.attr.realm === 2, "投入後再進天堂／地獄判定"); }
+  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 2, force: { cont: true, rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); ok(r.realm.n === 3 && r.attr.free === 1, "狹間每輪第 3 隻取得 1 點"); }
+
+  // 5／28／42／25 四路線與六道具；選擇、重整、resolution 都不可重複。
+  { const sv = triggerOffer(0, .05), r = R(sv), o = r.itemOffer; ok(o.route === "direct" && o.stage === "show" && MH.ITEM_IDS.includes(o.chosen) && r.items[o.chosen] === 1, "直接取得 5%：先存一件六種道具，再顯示"); const ni = r.nI; const j = J(sv); MH.fix(j, H); ok(R(j).nI === ni && R(j).itemOffer.chosen === o.chosen, "直接取得重整不重抽"); ok(MH.dismissItem(sv, H, o.rid).ok && !MH.dismissItem(sv, H, o.rid).ok, "直接取得 resolution 防重複"); }
+  { const sv = triggerOffer(.05, .33), r = R(sv), o = r.itemOffer; ok(o.route === "choice" && o.candidates.length === 2 && o.candidates[0] !== o.candidates[1], "二選一取得 28%：兩件不同正面道具"); const ni = r.nI, rid = o.rid; const j = J(sv); MH.fix(j, H); ok(R(j).nI === ni && J(R(j).itemOffer).candidates.join() === o.candidates.join(), "二選一選擇前重整：候選不變、不重抽"); ok(MH.pickItem(sv, H, "right", rid).ok && itemMapForTest(r) === o.candidates[1] && !MH.pickItem(sv, H, "left", rid).ok, "只取得所選道具，重複 resolution 被拒絕"); }
+  { const sv = triggerOffer(.33, .75), r = R(sv), o = r.itemOffer, rid = o.rid; ok(o.route === "empty" && o.candidates.length === 0 && o.chosen === null, "二選一空箱 42%：不生成任一箱內容"); ok(MH.pickItem(sv, H, "left", rid).ok && o.chosen === "left" && !itemMapForTest(r), "空箱只記所選左箱，不生成未選箱內容"); const j = J(sv); MH.fix(j, H); ok(R(j).itemOffer.chosen === "left" && R(j).itemOffer.stage === "show", "空箱選擇後重整：只重播所選箱狀態"); ok(!MH.pickItem(sv, H, "right", rid).ok, "空箱選定後不能換箱"); }
+  { const sv = triggerOffer(.75, 1); ok(R(sv).itemOffer === null && !itemMapForTest(R(sv)), "無事件 25%：直接進發展，不產生 offer 或道具"); }
+
+  // 結算摘要後清空；頂層 save.v 永遠是 1。
+  { const sv = fresh3(10, 7), r = R(sv); r.attr = { free: 2, hunt: 1, dragon: 0, realm: 3, earned: 6 }; r.items.whetstone = 1; r.itemOffer = { rid: 1, route: "empty", candidates: [], chosen: "right", stage: "show" }; MH.settle(sv, H, "empty");
+    ok(sv.v === 1 && r.last.attrEarned === 6 && r.last.itemId === "whetstone" && r.attr.earned === 0 && !itemMapForTest(r) && r.itemOffer === null, "一趟結束：last 留摘要，能力／道具／offer 全歸零，save.v=1"); }
+
+  // 第二階段舊存檔補欄位但沿用舊門檻／舊報酬，seedI 只由 seed 混出。
+  { const old = { v: 1, coins: 0, huntMeta: { stamina: 20 }, huntRuns: { m7: { phase: "hunt", seed: 123, seedP: 456, n: 0, nP: 0, since: 0, kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null } } }; MH.fix(old, H); const r = R(old), si = r.seedI;
+    ok(r.rv === 2 && Number.isInteger(si) && r.attr.free === 0 && r.itemOffer === null && old.v === 1, "舊存檔補第三階段欄位，頂層版本不變");
+    const old2 = J(old); delete R(old2).seedI; MH.fix(old2, H); ok(R(old2).seedI === si && MH.chance(r, H, "hunt") === .92 && MH.goldOf(r, H, "hunt") === 11, "舊行程 seedI 補值固定，勝率與報酬重放維持第二階段"); }
+
+  // huntCommit 與 UI 的所有第三階段變更都走原子提交；寫入失敗會 restore snapshot。
+  { const gameSrc = fs.readFileSync(path.join(ROOT, "js/game.js"), "utf8"), uiSrc = fs.readFileSync(path.join(ROOT, "js/hunt-ui.js"), "utf8");
+    ok(/function huntCommit\(fn\)[\s\S]*const snap = clone\(save\)[\s\S]*store\.set\(SAVE_KEY, save\)[\s\S]*save = snap/.test(gameSrc), "huntCommit：寫入失敗會回滾整包存檔快照");
+    ok(/doItem\([\s\S]*A\.commit|function act\(fn\)[\s\S]*A\.commit\(fn\)/.test(uiSrc) && /MH\.allocate/.test(uiSrc), "道具 resolution 與能力確認都經 huntCommit 原子提交"); }
+}
+
+function itemMapForTest(r) { return MH.ITEM_IDS.find(id => r.items && r.items[id]) || null; }
 
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);

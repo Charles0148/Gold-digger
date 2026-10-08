@@ -1084,7 +1084,7 @@
         { dev: 0.0950, cave: 0.423, map: 0.868 },
         { dev: 0.1030, cave: 0.447, map: 0.888 }
       ],
-      lower: { count: 3, win: 0.92, gold: 11 },   // 下位狩獵：指定隻數、每隻擊倒率、每隻金幣（凱旋才入帳）
+      lower: { count: 3, win: 0.895, gold: 10 },   // 下位狩獵：第三階段重新校準；每隻金幣凱旋時才入帳
       present: [0.5, 0.35, 0.15],                 // 普通怪呈現：單鈕／二選一／三選一（只改演出，不影響勝負）
       /* 回合戰鬥（2026-10-08，規格 新礦坑_冒險狩獵_回合戰鬥規格；擁有者決定 44、45）：怪物出現那一刻依預抽的勝負排出「來回」劇本，只影響演出，不影響勝負與金幣（120% 不用重算）。內部資料，玩家畫面不顯示任何數字。
          rounds＝每隻怪的輪數範圍（厚重）；pMiss／mMiss＝玩家打空／怪物被閃開的機率；mDmg＝怪物單擊傷害（血條滿格 hpMax＝100）；pDmg＝玩家傷害數字（顯示用）；mult＝招式對傷害數字的倍率（突刺、橫掃、蓄力，純演出）；
@@ -1098,13 +1098,28 @@
         loseMinHits: { lower: 1, dragon: 3 }
       },
       /* 第二階段（2026-10-08）：駭骨巨龍與轉生狹間。tools/sim.js 與 js/mine-hunt.js 都讀這裡（原 later 已刪）。內部資料，玩家畫面不得出現任何數字 */
-      dragon: { win: 0.80, gold: 90, warnStamina: 25 },   // 巨龍：勝率、金幣；體力低於 warnStamina 時登場後小精靈提醒一句（不顯示數字）
+      dragon: { win: 0.755, gold: 83, warnStamina: 25 },   // 巨龍：第三階段重新校準；體力低於 warnStamina 時只給白話提醒
       realm: {
         entryHeaven: 0.90,   // 巨龍勝之後第一次進狹間：天堂 90%／地獄 10%
         ember: 0.54,         // 撐滿後「輪迴的餘燼」點燃成功率
-        heaven: { cont: 0.854, cap: 20, gold: 34, nextHeaven: 0.9 },   // cont＝每隻擊倒後繼續率；cap＝上限隻數；nextHeaven＝撐滿且餘燼成功後下一輪是天堂的機率
-        hell: { cont: 0.92, cap: 10, gold: 68, nextHeaven: 0.1 }
+        heaven: { cont: 0.83, cap: 20, gold: 44, nextHeaven: 0.9 },   // cont＝每隻擊倒後繼續率；cap＝上限隻數；nextHeaven＝撐滿且餘燼成功後下一輪是天堂的機率
+        hell: { cont: 0.895, cap: 10, gold: 65, nextHeaven: 0.1 }
       },
+      /* 第三階段：能力點採遞減曲線 P=cap-(cap-(base+itemBonus))*(1-decay)^n；有限點數永遠低於硬頂。 */
+      attributes: {
+        hunt: { cap: 0.97, decay: 0.065 }, dragon: { cap: 0.92, decay: 0.065 }, realm: { cap: 0.99, decay: 0.025 }
+      },
+      /* 每趟一次的旅途道具機會。名稱是 3C 前暫名；玩家畫面只顯示白話效果，不顯示內部數字。 */
+      itemEvent: { direct: 0.05, choice: 0.28, empty: 0.42, none: 0.25 },
+      items: [
+        { id: "whetstone", quality: "common", name: "研鋒石（暫名）", text: "一般怪物更容易露出破綻", hunt: 0.010, dragon: 0, realm: 0 },
+        { id: "scale-wedge", quality: "common", name: "破鱗楔（暫名）", text: "對駭骨巨龍更有把握", hunt: 0, dragon: 0.020, realm: 0 },
+        { id: "guide-bell", quality: "common", name: "引路鈴（暫名）", text: "在轉生狹間更容易找到下一段路", hunt: 0, dragon: 0, realm: 0.006 },
+        { id: "twin-hunt", quality: "good", name: "雙獵護符（暫名）", text: "同時照顧旅途與巨龍", hunt: 0.006, dragon: 0.012, realm: 0 },
+        { id: "twin-realm", quality: "good", name: "雙界羅盤（暫名）", text: "對天堂與地獄都有效", hunt: 0, dragon: 0, realm: 0.010 },
+        { id: "star-ember", quality: "rare", name: "星火徽記（暫名）", text: "讓整趟冒險都更穩", hunt: 0.010, dragon: 0.020, realm: 0.006 }
+      ],
+      itemQuality: { common: 0.70, good: 0.25, rare: 0.05 },
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
       fx: { totalMs: 5000, reducedScale: 0.75, downMs: 1500,
              dragonIntroMs: 3000, dragonScaleMs: 2500, dragonDownMs: 3000, judgeMs: { heaven: 6000, hell: 8000, again: 4000 }, emberMs: 8000,

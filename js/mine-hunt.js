@@ -32,6 +32,8 @@
   const isObj = o => o && typeof o === "object" && !Array.isArray(o);
   const PHASES = ["walk", "dev", "country", "hunt", "dragon", "realm", "ember", "done"];
   const KINDS = ["heaven", "hell"];
+  const ATTRS = ["hunt", "dragon", "realm"];
+  const ITEM_IDS = ["whetstone", "scale-wedge", "guide-bell", "twin-hunt", "twin-realm", "star-ember"];
   const GOLD_MAX = 1e9;
 
   /* ---- 種子抽選：第 n 次抽 ＝ 雜湊(seed, n)，回傳 [0,1)。只防重整／讀檔重抽，不是伺服器級 ---- */
@@ -46,14 +48,51 @@
   }
   const draw = run => mix(run.seed, run.n++);        // 勝負／入口
   const drawP = run => mix(run.seedP, run.nP++);     // 呈現類型
+  const drawI = run => mix(run.seedI, run.nI++);     // 第三階段道具專用；絕不碰勝負流
   const newSeed = rng => Math.floor((rng || Math.random)() * 4294967296) >>> 0;
 
   function newMeta() { return { v: 1, stamina: 0, visits: 0, claimed: {}, seenLight: false, gifted: false }; }
   function newRun(rng) {
     return { phase: "walk", seed: newSeed(rng), n: 0, seedP: newSeed(rng), nP: 0, since: 0, dev: null, country: null,
-      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null, seedB: newSeed(rng), nB: 0, hp: 100 };
+      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null, seedB: newSeed(rng), nB: 0, hp: 100,
+      rv: 3, seedI: newSeed(rng), nI: 0, attr: { free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 }, items: {}, itemOffer: null, awaiting: null, pendingEntry: null };
   }
   const mineId = H => (H.mine || {}).id || "m7";
+
+  const attr0 = () => ({ free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 });
+  const itemMap = r => { const all = (r && r.items) || {}; for (const id of ITEM_IDS) if (all[id]) return id; return null; };
+  function fixStage3(r, H) {
+    r.rv = r.rv === 3 ? 3 : 2;   // 缺版號＝第二階段舊行程；走完前沿用舊門檻，固定種子重放不變
+    r.seedI = Number.isFinite(r.seedI) ? r.seedI >>> 0 : (mix(r.seed, 0x1A73C9E5) * 4294967296) >>> 0;
+    r.nI = int(r.nI === undefined ? 0 : r.nI, 0, 1e9);
+    const a = isObj(r.attr) ? r.attr : attr0();
+    for (const k of ["free", "hunt", "dragon", "realm", "earned"]) a[k] = int(a[k], 0, Number.MAX_SAFE_INTEGER);
+    r.attr = a;
+    const src = isObj(r.items) ? r.items : {}, got = {};
+    let kept = false;
+    for (const id of ITEM_IDS) { got[id] = !kept && src[id] === 1 ? 1 : 0; if (got[id]) kept = true; }
+    r.items = got;
+    const waits = ["spawn", "full", "judge", "rspawn"];
+    r.awaiting = waits.includes(r.awaiting) && (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim ? r.awaiting : null;
+    r.pendingEntry = KINDS.includes(r.pendingEntry) ? r.pendingEntry : null;
+    if (r.awaiting !== "judge") r.pendingEntry = null;
+    const o = r.itemOffer;
+    if (o !== null && o !== undefined) {
+      const ids = H.items || [], known = x => ids.some(y => y.id === x), choice = o && o.route === "choice" && Array.isArray(o.candidates) && o.candidates.length === 2 && o.candidates[0] !== o.candidates[1] && o.candidates.every(known);
+      const empty = o && o.route === "empty" && Array.isArray(o.candidates) && o.candidates.length === 0;
+      const direct = o && o.route === "direct" && Array.isArray(o.candidates) && o.candidates.length === 1 && known(o.candidates[0]);
+      const stage = o && (o.stage === "offer" || o.stage === "show");
+      const chosen = o && (o.chosen === null || o.chosen === "left" || o.chosen === "right" || known(o.chosen));
+      if (!(isObj(o) && Number.isInteger(o.rid) && stage && chosen && (choice || empty || direct))) r.itemOffer = null;
+      else {
+        o.rid = int(o.rid, 1, 1e9);
+        if ((direct && (o.stage !== "show" || o.chosen !== o.candidates[0] || itemMap(r) !== o.chosen)) ||
+            (choice && o.stage === "show" && (!known(o.chosen) || !o.candidates.includes(o.chosen) || itemMap(r) !== o.chosen)) ||
+            (empty && o.stage === "show" && o.chosen !== "left" && o.chosen !== "right") ||
+            ((choice || empty) && o.stage === "offer" && o.chosen !== null)) r.itemOffer = null;
+      }
+    } else r.itemOffer = null;
+  }
 
   /* ---- fixHuntSave：本機讀檔、adoptSave、Game.setSave、newSave 四個入口共用。冪等。
      缺欄位補預設；數值夾在合理範圍；不認得的本趟狀態 → 先把能辨識的本輪累積金幣入帳，落回旅途（規格 2.5）。
@@ -73,12 +112,15 @@
     if (!isObj(sv.huntRuns)) { sv.huntRuns = {}; changed = true; }
     const id = mineId(H);
     Object.keys(sv.huntRuns).forEach(k => { if (k !== id) { delete sv.huntRuns[k]; changed = true; } });   // 不認得的礦坑本趟紀錄：丟掉
-    if (sv.huntRuns[id] !== undefined && !validRun(sv.huntRuns[id], H)) {
+    if (sv.huntRuns[id] !== undefined) {
+      const rb = JSON.stringify(sv.huntRuns[id]);
+      if (!validRun(sv.huntRuns[id], H)) {
       const bad = sv.huntRuns[id];
       const g = isObj(bad) ? int(bad.gold, 0, GOLD_MAX) : 0;
       sv.coins = (Number(sv.coins) || 0) + g;
       sv.huntRuns[id] = newRun(rng);
       changed = true;
+      } else if (JSON.stringify(sv.huntRuns[id]) !== rb) changed = true;
     }
     return changed;
   }
@@ -94,6 +136,7 @@
     r.n = int(r.n, 0, 1e9); r.nP = int(r.nP, 0, 1e9);
     r.since = int(r.since, 0, 1e6); r.kills = int(r.kills, 0, 1e6); r.rid = int(r.rid, 0, 1e9);
     r.gold = int(r.gold, 0, GOLD_MAX);
+    fixStage3(r, H);
     const cnt = (H.lower || {}).count || 3;
     const pick = p => p === null || (Number.isInteger(p) && p >= 0 && p <= 2);
     const RL = H.realm || {};
@@ -156,7 +199,17 @@
         if (!(k === "ember" && r.ember.pressed && (af === "judge" || af === "emberfail"))) return false;
       } else return false;
     } else if (r.phase === "ember") r.ember.pressed = false;   // 按了點燃卻沒有演出待播：回到可再按
-    if (r.phase === "done") { if (!isObj(r.last)) return false; r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6); if (!["full", "down", "empty", "realm", "ember"].includes(r.last.why)) return false; r.last.dragon = r.last.dragon === true; if (r.last.realmKills !== undefined) r.last.realmKills = int(r.last.realmKills, 0, 1e6); if (r.last.rounds !== undefined) r.last.rounds = int(r.last.rounds, 0, 1e6); }
+    if (r.phase === "done") {
+      if (!isObj(r.last)) return false;
+      r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6);
+      if (!["full", "down", "empty", "realm", "ember"].includes(r.last.why)) return false;
+      r.last.dragon = r.last.dragon === true;
+      if (r.last.realmKills !== undefined) r.last.realmKills = int(r.last.realmKills, 0, 1e6);
+      if (r.last.rounds !== undefined) r.last.rounds = int(r.last.rounds, 0, 1e6);
+      r.last.attrEarned = int(r.last.attrEarned, 0, Number.MAX_SAFE_INTEGER);
+      if (!ITEM_IDS.includes(r.last.itemId)) r.last.itemId = null;
+      r.attr = attr0(); r.items = Object.fromEntries(ITEM_IDS.map(id => [id, 0])); r.itemOffer = null; r.awaiting = null; r.pendingEntry = null;
+    }
     if (r.force !== undefined && !isObj(r.force)) delete r.force;
     return true;
   }
@@ -174,6 +227,7 @@
   /* 下一個要付的體力（0＝現在不需要付）。停住＝體力 < need。 */
   function need(sv, H) {
     const r = peek(sv, H); if (!r) return 0;
+    if (r.awaiting) return 0;
     const S = H.stamina;
     if (r.phase === "walk") return S.perStep;
     if (r.phase === "dev") return S.countryCost;
@@ -206,6 +260,7 @@
     const uKind = draw(r), uOk = draw(r);
     const kind = uKind < H.walk.caveShare ? "cave" : "map";
     r.dev = { kind }; r.country = { ok: uOk < (kind === "cave" ? S.cave : S.map), pick: null };
+    makeItemOffer(r, H);   // 結果流三抽完成後，才碰獨立道具流；先存 offer 再由畫面揭曉
     r.phase = "dev"; r.since = 0;
     return { ok: true, ev: "dev", kind };
   }
@@ -214,6 +269,7 @@
   function enterCountry(sv, H) {
     const r = peek(sv, H), M = sv.huntMeta;
     if (!r || r.phase !== "dev") return { ok: false, reason: "state" };
+    if (r.itemOffer) return { ok: false, reason: "item" };
     if (M.stamina < H.stamina.countryCost) return { ok: false, reason: "hungry", need: H.stamina.countryCost - M.stamina };
     M.stamina -= H.stamina.countryCost;
     r.phase = "country";
@@ -293,6 +349,91 @@
   }
   const presOf = (H, uP) => { const P = H.present; return uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2; };
 
+  /* ---- 第三階段：能力與旅途道具。舊行程 rv=2 沿用第二階段門檻，確保存檔重放結果不變。 ---- */
+  function itemDef(H, id) { return (H.items || []).find(x => x.id === id) || null; }
+  function chance(r, H, kind) {
+    if (!r || r.rv !== 3) {
+      if (kind === "hunt") return 0.92;
+      if (kind === "dragon") return 0.80;
+      return kind === "heaven" ? 0.854 : 0.92;
+    }
+    const key = kind === "heaven" || kind === "hell" ? "realm" : kind;
+    const base = key === "hunt" ? H.lower.win : key === "dragon" ? H.dragon.win : H.realm[kind].cont;
+    const d = itemDef(H, itemMap(r)), cfg = H.attributes[key], bonus = d ? Number(d[key]) || 0 : 0, n = r.attr[key] || 0;
+    const start = Math.min(cfg.cap - Number.EPSILON, base + bonus);
+    return Math.min(cfg.cap - Number.EPSILON, cfg.cap - (cfg.cap - start) * Math.pow(1 - cfg.decay, n));
+  }
+  function goldOf(r, H, kind) {
+    if (r && r.rv !== 3) return kind === "hunt" ? 11 : kind === "dragon" ? 90 : kind === "heaven" ? 34 : 68;
+    return kind === "hunt" ? H.lower.gold : kind === "dragon" ? H.dragon.gold : H.realm[kind].gold;
+  }
+  function drawItem(r, H) {
+    const a = H.items || []; if (a.length < 6) return null;
+    const Q = H.itemQuality || {}, common = Number(Q.common) || 0.70, good = Number(Q.good) || 0.25, remain = Math.max(Number.EPSILON, 1 - common);
+    const q = drawI(r) < common ? "common" : drawI(r) < good / remain ? "good" : "rare", pool = a.filter(x => x.quality === q);
+    return pool[Math.min(pool.length - 1, Math.floor(drawI(r) * pool.length))].id;
+  }
+  function addItem(r, id) {
+    if (!ITEM_IDS.includes(id) || itemMap(r)) return false;
+    r.items[id] = 1; return true;
+  }
+  function makeItemOffer(r, H) {
+    if (r.rv !== 3 || r.itemOffer || itemMap(r)) return null;
+    const u = drawI(r), E = H.itemEvent || {}, a = Number(E.direct) || 0, b = a + (Number(E.choice) || 0), c = b + (Number(E.empty) || 0);
+    if (u < a) {
+      const id = drawItem(r, H); if (!id || !addItem(r, id)) return null;
+      return r.itemOffer = { rid: Math.max(1, r.nI), route: "direct", candidates: [id], chosen: id, stage: "show" };
+    }
+    if (u < b) {
+      const x = drawItem(r, H); let y = drawItem(r, H), guard = 0;
+      if (!x || !y) return null;
+      while (x === y && guard++ < 12) y = drawItem(r, H);
+      if (x === y) y = ITEM_IDS[(ITEM_IDS.indexOf(y) + 1) % ITEM_IDS.length];
+      return r.itemOffer = { rid: Math.max(1, r.nI), route: "choice", candidates: [x, y], chosen: null, stage: "offer" };
+    }
+    if (u < c) return r.itemOffer = { rid: Math.max(1, r.nI), route: "empty", candidates: [], chosen: null, stage: "offer" };
+    return null;
+  }
+  function pickItem(sv, H, side, rid) {
+    const r = peek(sv, H), o = r && r.itemOffer;
+    if (!o || o.rid !== rid || o.stage !== "offer" || (side !== "left" && side !== "right")) return { ok: false, reason: "state" };
+    o.chosen = side;
+    if (o.route === "choice") {
+      const id = o.candidates[side === "left" ? 0 : 1];
+      if (!addItem(r, id)) return { ok: false, reason: "item" };
+      o.chosen = id;
+    } else if (o.route !== "empty") return { ok: false, reason: "state" };
+    o.stage = "show";
+    return { ok: true, route: o.route, itemId: o.route === "choice" ? o.chosen : null };
+  }
+  function dismissItem(sv, H, rid) {
+    const r = peek(sv, H), o = r && r.itemOffer;
+    if (!o || o.rid !== rid || o.stage !== "show") return { ok: false, reason: "state" };
+    r.itemOffer = null; return { ok: true };
+  }
+  function earnAttr(r, n) {
+    if (r.rv !== 3 || n <= 0) return 0;
+    r.attr.free = int(r.attr.free + n, 0, Number.MAX_SAFE_INTEGER);
+    r.attr.earned = int(r.attr.earned + n, 0, Number.MAX_SAFE_INTEGER);
+    return n;
+  }
+  function attrSafe(r) { return !!r && !r.anim && !r.mon && (["walk", "dev", "country", "ember"].includes(r.phase) || !!r.awaiting); }
+  function attrActive(r, key) {
+    if (key === "hunt") return r.phase === "walk" || r.phase === "dev" || r.phase === "country" || r.phase === "hunt";
+    if (key === "dragon") return r.phase === "walk" || r.phase === "dev" || r.phase === "country" || r.phase === "hunt" || r.phase === "dragon";
+    return r.phase !== "done";
+  }
+  function allocate(sv, H, draft) {
+    const r = peek(sv, H);
+    if (!r || r.rv !== 3 || !attrSafe(r) || !isObj(draft)) return { ok: false, reason: "state" };
+    const d = {}; let total = 0;
+    for (const k of ATTRS) { d[k] = int(draft[k], 0, Number.MAX_SAFE_INTEGER); if (d[k] && !attrActive(r, k)) return { ok: false, reason: "inactive" }; total += d[k]; }
+    if (!Number.isSafeInteger(total) || total <= 0 || total > r.attr.free) return { ok: false, reason: "points" };
+    for (const k of ATTRS) r.attr[k] = int(r.attr[k] + d[k], 0, Number.MAX_SAFE_INTEGER);
+    r.attr.free -= total;
+    return { ok: true, spent: total };
+  }
+
   /* 排這隻怪的回合劇本：獨立種子流 seedB／nB（每隻怪 +1），勝負確定之後才排，所以強制勝負（開發者）也會得到對應劇本 */
   function addScript(r, H, forceR) {
     const hp0 = r.phase === "realm" ? H.battle.hpMax : int(r.hp, 1, H.battle.hpMax);   // 下位到巨龍連續累積；狹間每隻回滿
@@ -302,11 +443,11 @@
   /* ---- 遇到一隻怪＝付 1 體力＋預抽。下位／巨龍／狹間三種（抽選次數見檔頭，寫死）---- */
   function spawn(sv, H) {
     const r = peek(sv, H), M = sv.huntMeta;
-    if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || r.mon || r.anim) return { ok: false, reason: "state" };
+    if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || r.mon || r.anim || r.awaiting) return { ok: false, reason: "state" };
     if (M.stamina < H.stamina.perStep) return { ok: false, reason: "hungry", need: H.stamina.perStep - M.stamina };
     M.stamina -= H.stamina.perStep;
     if (r.phase === "dragon") {   // 勝負、入口天堂各 1 抽；呈現不抽（固定三選一，套路＝玩家選的）
-      let win = draw(r) < H.dragon.win, entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
+      let win = draw(r) < chance(r, H, "dragon"), entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
       const f = takeForce(r, ["win", "entry", "rounds"]);
       if (typeof f.win === "boolean") win = f.win;
       if (KINDS.includes(f.entry)) entry = f.entry;
@@ -315,7 +456,7 @@
       return { ok: true, ev: "mon", pres: 2 };
     }
     let win = true, cont = false;
-    if (r.phase === "hunt") win = draw(r) < H.lower.win; else cont = draw(r) < H.realm[r.realm.type].cont;
+    if (r.phase === "hunt") win = draw(r) < chance(r, H, "hunt"); else cont = draw(r) < chance(r, H, r.realm.type);
     const uP = drawP(r), P = H.present;
     let pres = presOf(H, uP);
     let combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));   // 單鈕怪的套路：用「單鈕那一段」的 uP 三等分（pres 0 時 uP<P[0]），不多抽一次，所以不改變抽選次數
@@ -339,15 +480,18 @@
     const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 最後一輪的招式決定 5 秒擊殺的套路：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
     if (r.mon.win) {
       r.kills++;
+      let gained = 0;
       if (sc && r.phase === "hunt") r.hp = Math.max(1, hpAt(r.mon, sc.R));   // 血量帶到下一隻（下位 → 巨龍）
-      if (r.phase === "hunt") { r.gold = int(r.gold + H.lower.gold, 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
-      else if (r.phase === "dragon") { r.gold = int(r.gold + H.dragon.gold, 0, GOLD_MAX); r.after = "judge"; }
+      if (r.phase === "hunt") { gained = earnAttr(r, 1); r.gold = int(r.gold + goldOf(r, H, "hunt"), 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
+      else if (r.phase === "dragon") { gained = earnAttr(r, 2); r.gold = int(r.gold + goldOf(r, H, "dragon"), 0, GOLD_MAX); r.after = "judge"; }
       else {
         const RT = H.realm[r.realm.type];
-        r.realm.n++; r.realm.total++; r.gold = int(r.gold + RT.gold, 0, GOLD_MAX);
+        r.realm.n++; r.realm.total++; r.gold = int(r.gold + goldOf(r, H, r.realm.type), 0, GOLD_MAX);
+        if (r.realm.n % 3 === 0) gained = earnAttr(r, 1);
         r.after = r.realm.n >= RT.cap ? "ember" : r.mon.cont ? "rspawn" : "rend";
       }
       r.anim = { kind: "kill", pick: idx, rid: r.rid, combo: combo };
+      if (gained) r.anim.attrEarned = gained;
     } else {
       r.anim = { kind: "down", pick: idx, rid: r.rid, combo: combo };
       r.after = "down";
@@ -386,11 +530,12 @@
     if (!r || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
     if (r.phase === "done" || !PHASES.includes(r.phase)) return { ok: false, reason: "state" };
     if (r.after === "round" && r.anim.kind === "round" && r.mon) { r.anim = null; r.after = null; r.mon.t++; return { ok: true, ev: "round" }; }   // 這一輪播完 → 回到等待選招
-    const after = r.after, entry = r.mon && r.mon.entry;
+    const after = r.after, entry = r.mon && r.mon.entry, gained = int(r.anim.attrEarned, 0, 2);
     r.anim = null; r.mon = null; r.after = null;
-    if (after === "spawn" || after === "rspawn") return spawn(sv, H);
-    if (after === "full") { r.phase = "dragon"; return spawn(sv, H); }   // 下位打滿 → 巨龍（第一階段存檔播第 3 隻演出中也走這裡）
+    if (after === "spawn" || after === "rspawn") { if (gained) { r.awaiting = after; return { ok: true, ev: "attr" }; } return spawn(sv, H); }
+    if (after === "full") { r.phase = "dragon"; if (gained) { r.awaiting = "full"; return { ok: true, ev: "attr" }; } return spawn(sv, H); }   // 舊行程沒有能力點，仍照原流程直接接巨龍
     if (after === "judge") {
+      if (r.phase === "dragon" && gained) { r.awaiting = "judge"; r.pendingEntry = entry; return { ok: true, ev: "attr" }; }
       if (r.phase === "dragon") startRealm(r, entry, true);
       else startRealm(r, r.ember.next, false);
       return { ok: true, ev: "judge" };
@@ -402,16 +547,26 @@
     return { ok: true, ev: "done" };
   }
 
+  /* 能力點提示後繼續；玩家可先投入，也可保留點數。自動模式直接走這裡，不被強制停下。 */
+  function continueRun(sv, H) {
+    const r = peek(sv, H), w = r && r.awaiting;
+    if (!r || !w || r.mon || r.anim) return { ok: false, reason: "state" };
+    r.awaiting = null;
+    if (w === "judge") { const entry = r.pendingEntry; r.pendingEntry = null; if (!KINDS.includes(entry)) return { ok: false, reason: "state" }; startRealm(r, entry, true); return { ok: true, ev: "judge" }; }
+    return spawn(sv, H);
+  }
+
   /* ---- 凱旋：本輪金幣一次入帳（原子：coins 增加、金幣歸零、進 done 同一次完成）---- */
   function settle(sv, H, why) {
     const r = peek(sv, H);
     if (!r || r.phase === "done") return { ok: false, reason: "state" };
     const g = int(r.gold, 0, GOLD_MAX);
     sv.coins = (Number(sv.coins) || 0) + g;
-    r.last = { gold: g, kills: r.kills, why };
+    r.last = { gold: g, kills: r.kills, why, attrEarned: r.attr ? r.attr.earned : 0, itemId: itemMap(r) };
     if (why === "down" && r.phase === "dragon") r.last.dragon = true;   // 巨龍打輸：結算用專屬句子
     if (r.realm) { r.last.realmKills = r.realm.total; r.last.rounds = r.realm.round; }
     r.gold = 0; r.mon = null; r.anim = null; r.after = null; r.dev = null; r.country = null; r.realm = null; r.ember = null;
+    r.attr = attr0(); r.items = Object.fromEntries(ITEM_IDS.map(id => [id, 0])); r.itemOffer = null; r.awaiting = null; r.pendingEntry = null;
     r.phase = "done";
     return { ok: true, gold: g, why };
   }
@@ -490,6 +645,7 @@
   function devSet(sv, H, o, rng) {
     const r = run(sv, H, rng);
     o = o || {};
+    r.awaiting = null; r.pendingEntry = null; r.itemOffer = null;
     if (o.phase === "walk") { Object.assign(r, { phase: "walk", dev: null, country: null, mon: null, anim: null, after: null }); }
     else if (o.phase === "dev") { Object.assign(r, { phase: "dev", dev: { kind: o.kind === "map" ? "map" : "cave" }, country: { ok: o.ok !== false, pick: null }, mon: null, anim: null, after: null, since: 0 }); }
     else if (o.phase === "country") { Object.assign(r, { phase: "country", dev: { kind: o.kind === "map" ? "map" : "cave" }, country: { ok: o.ok !== false, pick: null }, mon: null, anim: null, after: null }); }
@@ -505,7 +661,8 @@
     return r;
   }
 
-  const api = { PHASES, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
+  const api = { PHASES, ATTRS, ITEM_IDS, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
+    chance, goldOf, itemDef, makeItemOffer, pickItem, dismissItem, attrSafe, attrActive, allocate, continueRun,
     spawn, strike, ignite, finishAnim, makeScript, scOk, hpAt, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
   root.MineHunt = api;
   if (typeof module !== "undefined") module.exports = api;

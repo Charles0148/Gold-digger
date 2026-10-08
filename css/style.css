@@ -174,6 +174,11 @@ button { font-family: inherit; font-size: inherit; color: inherit; }
 #controls { flex: none; display: flex; gap: 8px; align-items: stretch; }
 .tool-info { flex: 1; min-width: 0; padding: 5px 10px; min-height: 48px; display: grid; grid-template-columns: auto 1fr auto; gap: 8px; align-items: center; font-size: .875em; }
 #controls > .px-btn { min-height: 48px; min-width: 72px; }
+#huntData .px-btn { margin-left: auto; min-height: 28px; padding: 3px 7px; font-size: .78em; }
+.hunt-attr-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; padding: 9px 0; border-bottom: 1px solid #4b5265; text-align: left; }
+.hunt-attr-step { display: grid; grid-template-columns: 38px 32px 38px; align-items: center; gap: 4px; text-align: center; }
+.hunt-attr-step .px-btn { min-width: 38px; min-height: 38px; padding: 2px; }
+.hunt-bag { margin-top: 12px; padding: 9px; border: 1px solid #6a748c; background: #171b25; text-align: left; }
 .ti-name { white-space: nowrap; }
 .bar { height: 10px; background: #000; border: 2px solid #000; }
 .bar-fill { height: 100%; background: var(--green); width: 0; }
