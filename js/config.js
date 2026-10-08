@@ -1090,7 +1090,7 @@
       later: { dragon: { win: 0.80, gold: 90 }, entryHeaven: 0.90, ember: 0.54,
                heaven: { cont: 0.854, cap: 20, gold: 34, nextHeaven: 0.9 }, hell: { cont: 0.92, cap: 10, gold: 68, nextHeaven: 0.1 } },
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
-      fx: { totalMs: 2400, reducedScale: 0.85, downMs: 1500 },   // 斬擊「丙」＋反黑（js/hunt-fx.js）；減少特效時整段縮短為 85%
+      fx: { totalMs: 5000, reducedScale: 0.75, downMs: 1500 },   // 「五秒擊殺」（js/hunt-fx.js）：連斬 5 刀 0～2200、反黑蓄力 2200～2900、斬開 2900～3850、勝利 3900～5000；減少特效時整段縮短為 75%。套路：突刺→C、橫掃→A、蓄力→B
       /* 玩家畫面文字（不寫機率、不寫「選對／猜中」、不要血；審查員 2026-10-08） */
       texts: {
         mineName: "轉生之間",
@@ -1117,6 +1117,7 @@
         monHit: ["突刺貫穿了{name}！", "橫掃的劍光掠過{name}！", "蓄好的一擊重重落下！"],
         killLine: "斬！{name}被打倒了。金幣 +{g}（凱旋時帶走）",
         win: "勝利",
+        combo: "連斬",
         down: "倒下了……",
         downLine: "{name}的一撞讓你站不穩，你倒了下去。同伴把你拖回旅途。",
         doneFull: "凱旋！這一趟打倒了 {k} 隻，帶回金幣 {g}。",

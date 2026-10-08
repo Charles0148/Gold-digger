@@ -245,5 +245,34 @@ console.log("=== 12. 怪物（暗影眼光 6 種變體）===");
   ok(!/史萊姆/.test(txt) && /\{name\}/.test(txt), "文字不再寫死史萊姆，改用 {name}");
 }
 
+console.log("=== 13. 斬擊套路（突刺→C、橫掃→A、蓄力→B；單鈕怪隨機，預抽並存檔）===");
+{
+  // 選項怪：套路由玩家選的招式決定
+  for (const pick of [0, 1, 2]) {
+    const sv = fresh(50); toHunt(sv, true, 2); const r = MH.strike(sv, H, pick);
+    ok(r.ok && R(sv).anim.combo === pick && R(sv).anim.pick === pick, `三選一選第 ${pick} 招 → 套路 ${pick}`);
+  }
+  const two = fresh(50); toHunt(two, true, 1); MH.strike(two, H, 1); ok(R(two).anim.combo === 1, "二選一選橫掃 → 套路 1（A）");
+  // 單鈕怪：預抽時就有套路，存檔後不變
+  const one = fresh(50); toHunt(one, true, 0);
+  const cb = R(one).mon.combo; ok([0, 1, 2].includes(cb), "單鈕怪預抽時就決定套路");
+  const reloaded = J(one); MH.fix(reloaded, H);
+  ok(R(reloaded).mon.combo === cb, "重新整理（存檔重讀）套路不變");
+  MH.strike(one, H, 0); ok(R(one).anim.combo === cb, "出招後演出的套路 ＝ 預抽的套路");
+  const reload2 = J(one); MH.fix(reload2, H); ok(R(reload2).anim.combo === cb, "演出播到一半重新整理：補播同一套路");
+  // 單鈕怪的套路三種都會出現、大致平均，且不多抽（每隻怪仍是勝負 1 抽＋呈現 1 抽）
+  const cnt = [0, 0, 0]; let n1 = 0, drawsOk = true;
+  for (let i = 0; i < 6000; i++) {
+    const sv = fresh(50); R(sv).seed = i * 7 + 1; R(sv).seedP = i * 13 + 5; MH.devSet(sv, H, { phase: "hunt", kills: 0 });
+    const n0 = R(sv).n, p0 = R(sv).nP; MH.spawn(sv, H);
+    if (R(sv).n !== n0 + 1 || R(sv).nP !== p0 + 1) drawsOk = false;
+    if (R(sv).mon.pres === 0) { n1++; cnt[R(sv).mon.combo]++; }
+  }
+  ok(drawsOk, "套路不多抽（勝負 +1、呈現 +1）");
+  ok(n1 > 2500 && cnt.every(c => Math.abs(c / n1 - 1 / 3) < 0.04), `單鈕怪三種套路各約三分之一（${cnt.map(c => (c / n1 * 100).toFixed(0) + "%").join("/")}）`);
+  const old = { v: 1, coins: 0, huntRuns: { m7: { phase: "hunt", seed: 5, seedP: 6, n: 0, nP: 0, since: 0, kills: 1, gold: 11, mon: { win: true, pres: 0 }, anim: { kind: "kill", pick: 2, rid: 1 }, after: "spawn", rid: 1, last: null } } };
+  MH.fix(old, H); ok(R(old).anim.combo === 2 && R(old).mon.combo === 0, "舊存檔（沒有套路欄位）演出待播：套路補成選項");
+}
+
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);

@@ -1,23 +1,20 @@
 /* =========================================================
-   冒險狩獵礦坑：斬擊演出「丙」＋「反黑」＋金色「勝利」，以及「倒下」演出
+   冒險狩獵礦坑：「五秒擊殺」演出（連斬 5 刀 → 反黑蓄力 → 整個畫面斬開碎裂 → 金色勝利），以及「倒下」演出
    - 瀏覽器：window.HuntFx。只做畫面，不碰存檔；演出播完呼叫 onDone，呼叫端才往下一步走
-   - 來源：Claude outputs/斬擊碎裂候選稿_2026-10-08/ 的丙版（擁有者 2026-10-08 定案：丙＋反黑，每隻怪都播、不能跳過）。毫秒數見該資料夾說明.md
-   - 流程（總長 2400 毫秒）：
-       0～400     蓄力：整個畫面偏金、逐格變亮，金色光點往中線聚集
-       400～532   反黑：全螢幕黑閃 66ms，之後整個畫面維持暗到幾乎全黑（88%）到碎裂
-       440～500   一條略斜（7 度）、從最上貫穿到最下的亮線（紅黃藍錯開）
-       500～830   整個畫面沿切線分成左右兩大塊，往反方向錯開約 32 像素並停住 330ms；停住期間畫面反黑，只留切線與縫裡的光
-       830～1450  兩塊各自碎成 22 片玻璃飛散，色調還原；怪物崩成碎塊；光柱轉正、白金色
-       1300～     金色立體「勝利」從遠處衝向鏡頭定格，之後一道光掃過；2150～2400 階梯淡出；結束後畫面完整復原
+   - 來源：Claude outputs/五秒擊殺候選稿_2026-10-08/（擁有者 2026-10-08 定案；毫秒數與每一刀細節見該資料夾說明.md）。斬開那段沿用「丙＋反黑」
+   - 每隻怪都播、不能跳過。總長 5000 毫秒：
+       0～2200     連斬 5 刀（套路依招式：突刺→C「連刺上挑」、橫掃→A「快速五連斬」、蓄力→B「三刀大迴旋」；單鈕怪的套路預抽時就決定並存檔）
+       2200～2900  反黑蓄力：全畫面瞬間反黑（94%），只留怪物發光的眼睛和一道聚集的光
+       2900～3850  整個畫面沿略斜切線分成左右兩大塊，錯開約 32 像素停住 330ms；3230 各自碎成 22 片玻璃，怪物崩成碎塊
+       3900～5000  金色立體「勝利」衝向鏡頭定格、光掃過、階梯淡出；結束後畫面完整復原
+   - 連斬階段：每刀命中停頓 45～120ms（動畫時間凍結）、怪物擊退／傾斜、受擊色只在怪物身上（白剪影 66ms，最後一刀金色 100ms）、
+     刀痕與火花畫在半解析度小畫布上、右上角「連斬 ×N」字樣（每刀 +1 彈一下）、每刀一個傷害數字（純演出用的數字，與勝負、金幣無關）
    - 「整個畫面」＝ #hud、目前的畫面（資訊列、場景、敘述框、選項、按鈕）、#nav，全部跟著切開、碎裂
-   - 效能（寫在這裡給之後的人）：候選稿每一片碎片都是「整個畫面的完整副本」（約 1500 個節點）。正式畫面節點多得多，照搬會到數千個。
-     做法＝「凍結快照＋逐片裁切」：播放前量一次真實畫面，把每個有版面的元素凍成「絕對定位＋量到的位置與大小」的範本（只複製一次、不放進畫面）；
-     兩大塊與 22 片碎片各自從範本長出副本時，只保留「和那一塊範圍有重疊」的元素（整棵子樹丟掉不相交的）。
-     所以每片碎片只有自己範圍內的十幾個節點，總量約兩大塊＋22 片小碎片，不是 24 份整屏。圖像用 <img>（內嵌 SVG），不是一堆方塊。
-     碎片只用位移＋旋轉＋透明度（不重排），位置每 33ms 更新一次；亮線、碎屑、怪物碎塊畫在一張半解析度（1 點＝2 像素）的小畫布上。
-   - 閃光規則（審查員）：任何 1 秒內亮度／顏色突變不超過 3 次。反黑的「進入」與「恢復」各算 1 次（中間隔 330ms），整段只有這 2 次；
-     兩次演出之間至少 2.4 秒；勝利字、光柱、亮線都不閃爍。
-   - 減少特效：不閃（反黑改成約 0.1 秒漸暗到 44%）、不晃動、不旋轉、碎片減到 8 片（4 條放射裂紋）、兩塊只錯開 55%、亮線不做色差、整段縮短為 85%
+   - 效能：量一次真實畫面，凍成「絕對定位範本」（不放進畫面）；兩大塊與 22 片碎片各自從範本長出副本，只保留和那一塊範圍重疊的元素
+     → 每片碎片只有自己範圍內的十幾個節點，總量約 500（減少特效約 330），不是 24 份整屏（數千個）。碎片只用位移＋旋轉＋透明度，位置每 33ms 更新一次
+   - 閃光規則（審查員）：全螢幕亮度突變只有「反黑進入」（2200）與「反黑恢復」（3230）兩次，間隔 1030ms；沒有全螢幕閃白。
+     受擊閃光只在怪物身上；光柱、亮線、勝利字都不閃；兩隻怪的演出之間至少 5 秒
+   - 減少特效：不閃（受擊只變亮、反黑改 3 格漸暗到 47%）、不晃、不彈、不旋轉、碎片 8 片、兩塊只錯開 55%、火花星芒減半、勝利只淡入，整段縮為 75%
    ========================================================= */
 (function (root) {
   "use strict";
@@ -29,13 +26,54 @@
   const step6 = v => Math.round(clamp01(v) * 6) / 6;
   const f2 = v => String(+v.toFixed(2));
   const OV = 0.75;   // 兩半互相重疊的像素，避免縫隙
-  const TILT = 7;   // 切線傾斜角（度）：上端偏右
-  /* 丙的時間表（演出時間 ms） */
-  const P = { total: 2400, chargeEnd: 400, flashAt: 400, lineAt: 440, splitAt: 500, burstAt: 830, flyMs: 620, winAt: 1300, fadeAt: 2150, fadeEnd: 2400, K: 6, radii: [0, 70, 170, 330, 1000], G: 900 };
-  const RADII_RED = [0, 130, 1000];
-  const TONE_OP = 0.88;   // 反黑：黑色蓋上去的濃度
+  const TILT = 7;    // 切線傾斜角（度）：上端偏右
+  const T = { blackAt: 2200, gatherAt: 2300, lineAt: 2840, splitAt: 2900, burstAt: 3230, flyMs: 620, winAt: 3900, fadeAt: 4750, fadeEnd: 5000, total: 5000 };
+  const RADII = [0, 70, 170, 330, 1000], RADII_RED = [0, 130, 1000], G = 900;
   const WIN_SCALE = [.12, .22, .38, .6, .95, 1.5, 1.7, 1.35, 1.12, 1.0];   // 每格 33ms：從遠處衝向鏡頭，過頭一點再定格
   const GOLDS = ["#ffffff", "#ffe0a0", "#ffcc33", "#ff9a1f"];
+  const BLACK = .94;   // 反黑的濃度
+
+  /* ---- 三種連斬套路。r＝命中的時間（ms，含停頓），h＝命中停頓。每套路 5 次命中。索引對應招式：0 突刺→C、1 橫掃→A、2 蓄力→B ---- */
+  const COMBOS = [
+    { id: "C", name: "連刺上挑", hits: [
+      { r: 300, h: 45, kind: "stab", a: 0, len: 330, th: 4, col: "#ffffff", off: [-12, -10], kb: [8, 0], tilt: 1, spk: 8, sh: 2, dmg: 14 },
+      { r: 500, h: 45, kind: "stab", a: 180, len: 330, th: 4, col: "#7fe3ff", off: [12, 12], kb: [-8, 0], tilt: -1, spk: 8, sh: 2, dmg: 16 },
+      { r: 680, h: 50, kind: "stab", a: 12, len: 330, th: 5, col: "#ffcc33", off: [-6, -18], kb: [8, 3], tilt: 1, spk: 9, sh: 3, dmg: 18 },
+      { r: 840, h: 55, kind: "stab", a: 168, len: 330, th: 5, col: "#ff9a1f", off: [6, 10], kb: [-8, 3], tilt: -1, spk: 9, sh: 3, dmg: 21 },
+      { r: 1500, h: 120, kind: "launch", th: 13, col: "#ffcc33", off: [0, 0], kb: [12, 0], tilt: 5, spk: 28, sh: 9, dmg: 92, heavy: true, pre: "gather", air: { h: 76, d: 560 } }] },
+    { id: "A", name: "快速五連斬", hits: [
+      { r: 300, h: 50, kind: "line", a: 35, len: 270, th: 7, col: "#ffcc33", off: [0, -4], kb: [10, 6], tilt: 2, spk: 10, sh: 3, dmg: 24 },
+      { r: 700, h: 55, kind: "line", a: 145, len: 270, th: 7, col: "#7fe3ff", off: [0, 0], kb: [-10, 6], tilt: -2, spk: 10, sh: 3, dmg: 27 },
+      { r: 1040, h: 60, kind: "line", a: -2, len: 320, th: 9, col: "#ffffff", off: [0, 8], kb: [18, 0], tilt: 3, spk: 12, sh: 4, dmg: 31 },
+      { r: 1320, h: 65, kind: "line", a: -62, len: 250, th: 8, col: "#ff9a1f", off: [-10, 10], kb: [8, -16], tilt: -3, spk: 12, sh: 4, dmg: 36 },
+      { r: 1880, h: 110, kind: "line2", a: 28, a2: 152, len: 440, th: 12, col: "#ffcc33", off: [0, 0], kb: [28, 12], tilt: 6, spk: 26, sh: 9, dmg: 88, heavy: true, pre: "glint" }] },
+    { id: "B", name: "三刀大迴旋", hits: [
+      { r: 320, h: 55, kind: "line", a: 20, len: 280, th: 7, col: "#ffcc33", off: [0, -8], kb: [10, 3], tilt: 2, spk: 10, sh: 3, dmg: 22 },
+      { r: 720, h: 60, kind: "line", a: 160, len: 280, th: 7, col: "#7fe3ff", off: [0, 4], kb: [-10, 3], tilt: -2, spk: 10, sh: 3, dmg: 25 },
+      { r: 1100, h: 65, kind: "line", a: 0, len: 340, th: 10, col: "#ffffff", off: [0, 12], kb: [18, 0], tilt: 3, spk: 14, sh: 4, dmg: 30 },
+      { r: 1840, h: 0, kind: "spin", th: 11, col: "#ffcc33", off: [0, 0], kb: [0, -14], tilt: 4, spk: 20, sh: 5, dmg: 41, pre: "ring", lift: 22 },
+      { r: 1990, h: 120, kind: "none", col: "#ffcc33", off: [0, 0], kb: [0, -12], tilt: 6, spk: 28, sh: 9, dmg: 96, heavy: true }] }
+  ];
+  COMBOS.forEach(c => { let acc = 0; c.hits.forEach((h, i) => { h.e = h.r - acc; h.i = i; acc += h.h; }); c.last = c.hits[c.hits.length - 1]; c.endRaw = c.last.r + c.last.h; });
+  /* 把「含停頓的時間」換成「動畫時間」：命中停頓期間動畫時間不前進（火花、刀痕、擊退全部凍結） */
+  function teOf(combo, t) {
+    let acc = 0;
+    for (const h of combo.hits) { if (t < h.r) break; if (t < h.r + h.h) return h.r - acc; acc += h.h; }
+    return t - acc;
+  }
+  /* 怪物的姿勢（被擊退、打飛、踉蹌） */
+  function pose(combo, te, t) {
+    let dx = 0, dy = 0, rot = 0;
+    combo.hits.forEach(h => {
+      const u = te - h.e;
+      if (u >= 0) { const s = eOut(clamp01(u / 70)) * (1 - .5 * clamp01((u - 70) / 300)); dx += h.kb[0] * s; dy += h.kb[1] * s; rot += h.tilt * s;
+        if (h.air) dy -= h.air.h * Math.sin(Math.PI * clamp01(u / h.air.d)); }
+      if (h.lift) { const l = eOut(seg(te, h.e - 480, h.e)) * (1 - seg(te, h.e + 80, h.e + 420)); dy -= h.lift * l; }
+    });
+    const st = t - combo.endRaw;   // 最後一刀之後：踉蹌，往下沉、左右晃、歪一點，約 0.5 秒後站定
+    if (st > 0) { const amp = 9 * (1 - seg(st, 0, 500)); dx += Math.round(amp * Math.sin(Math.floor(st / 33) * 0.6)); dy += 12 * eOut(seg(st, 0, 260)); rot += 6 * eOut(seg(st, 0, 260)); }
+    return [Math.round(dx), Math.round(dy), Math.round(rot * 2) / 2];
+  }
 
   let S = null;       // 目前正在播的演出
   let layer = null;   // #huntFx
@@ -45,7 +83,7 @@
     layer = document.createElement("div");
     layer.id = "huntFx"; layer.setAttribute("aria-hidden", "true");
     layer.innerHTML = '<div class="hfx-world"><div class="hfx-back"><div class="pil"></div></div><div class="hfx-cut"></div><div class="hfx-tone"></div></div>' +
-      '<canvas class="hfx-cv"></canvas><div class="hfx-tint"></div><div class="hfx-pretone"></div><div class="hfx-dim"></div><div class="hfx-flash"></div><div class="hfx-vic"></div><div class="hfx-label"></div>';
+      '<div class="hfx-pretone"></div><canvas class="hfx-cv"></canvas><div class="hfx-hits"></div><div class="hfx-vic"></div><div class="hfx-dim"></div><div class="hfx-label"></div>';
     app.appendChild(layer);
     return layer;
   }
@@ -86,6 +124,7 @@
     if (!rec.deep) for (const k of rec.kids) if (test(k)) el.appendChild(build(k, test));
     return el;
   }
+  function findRec(rec, pred) { if (pred(rec)) return rec; for (const k of rec.kids) { const f = findRec(k, pred); if (f) return f; } return null; }
 
   /* ---------- 幾何：玻璃碎片（由中心放射的裂紋＋兩三圈環形裂紋，頂點抖動，吸附到偶數像素） ---------- */
   function clipPlane(poly, p, n) {   // 保留 dot(q-p,n) >= 0
@@ -98,8 +137,8 @@
     return out;
   }
   function makeShards(W, H, c, K, radii, seed, pin) {   // pin：指定第 0 條與對面那條裂紋的角度（讓切線正好是兩條裂紋，碎片不會跨過切線）
-    const R = radii.length - 1, rot = pin !== undefined ? pin : rnd(seed) * 6.28, ang = [];
-    for (let k = 0; k < K; k++) ang.push(rot + (k + ((pin !== undefined && (k === 0 || k === K / 2)) ? 0 : (rnd(seed + k + 1) - .5) * .55)) / K * Math.PI * 2);
+    const R = radii.length - 1, rot = pin, ang = [];
+    for (let k = 0; k < K; k++) ang.push(rot + (k + ((k === 0 || k === K / 2) ? 0 : (rnd(seed + k + 1) - .5) * .55)) / K * Math.PI * 2);
     const V = [null];
     for (let j = 1; j <= R; j++) { V[j] = []; for (let k = 0; k < K; k++) { const r = radii[j] * (1 + (rnd(seed + j * 31 + k) - .5) * (j === R ? .1 : .4)); V[j][k] = [c[0] + Math.cos(ang[k]) * r, c[1] + Math.sin(ang[k]) * r]; } }
     const raw = [];
@@ -123,18 +162,77 @@
 
   const setS = (el, k, v) => { const key = "_" + k; if (el[key] !== v) { el[key] = v; el.style[k] = v; } };
 
+  /* ---------- 刀痕、星芒 ---------- */
+  function drawPath(g2, P, plen, u0, head, th, fade, col1, col2) {   // 沿路徑畫一條「頭先到、尾先消」的像素刀光
+    const n = Math.max(6, Math.ceil(plen / 2 * (head - u0) * 1.3)), pass = (scale, col) => {
+      g2.fillStyle = col;
+      for (let k = 0; k <= n; k++) {
+        const u = u0 + (head - u0) * k / n, w = th * (1 - .55 * fade) * (.25 + .75 * Math.pow(Math.sin(Math.PI * Math.min(.999, Math.max(.001, u))), .6)) * scale, p = P(u), wi = Math.max(1, Math.round(w));
+        g2.fillRect(Math.round(p[0] / 2 - wi / 2), Math.round(p[1] / 2 - wi / 2), wi, wi);
+      }
+    };
+    pass(1, col1); pass(.45, col2);
+  }
+  function slashes(ctx, h) {   // 這一刀要畫的刀痕清單
+    const c0 = [ctx.cm[0] + h.off[0], ctx.cm[1] + h.off[1]], out = [];
+    const lineP = (a, len, c) => { const d = [Math.cos(rad(a)), Math.sin(rad(a))]; return u => [c[0] + d[0] * len * (u - .5), c[1] + d[1] * len * (u - .5)]; };
+    if (h.kind === "line") out.push({ P: lineP(h.a, h.len, c0), len: h.len, t0: h.e - 30, dur: 60, fade: 150, th: h.th });
+    else if (h.kind === "line2") { out.push({ P: lineP(h.a, h.len, c0), len: h.len, t0: h.e - 30, dur: 60, fade: 190, th: h.th }); out.push({ P: lineP(h.a2, h.len, c0), len: h.len, t0: h.e + 10, dur: 60, fade: 190, th: h.th }); }
+    else if (h.kind === "stab") { const d = [Math.cos(rad(h.a)), Math.sin(rad(h.a))]; out.push({ P: u => [c0[0] - d[0] * h.len * (1 - u), c0[1] - d[1] * h.len * (1 - u)], len: h.len, t0: h.e - 26, dur: 36, fade: 130, th: h.th }); }
+    else if (h.kind === "spin") out.push({ P: u => { const a = rad(-90 + 360 * u); return [c0[0] + 128 * Math.cos(a), c0[1] + 82 * Math.sin(a)]; }, len: 560, t0: h.e, dur: 150, fade: 160, th: h.th, lin: true });
+    else if (h.kind === "launch") {
+      const A = [c0[0] - 150, c0[1] + 95], C = [c0[0] - 30, c0[1] + 105], B = [c0[0] + 130, c0[1] - 120];
+      out.push({ P: u => [(1 - u) * (1 - u) * A[0] + 2 * u * (1 - u) * C[0] + u * u * B[0], (1 - u) * (1 - u) * A[1] + 2 * u * (1 - u) * C[1] + u * u * B[1]], len: 330, t0: h.e - 40, dur: 70, fade: 230, th: h.th });
+    }
+    return out;
+  }
+  function drawBurst(g2, cx, cy, size, spikes) {
+    for (let k = 0; k < spikes; k++) {
+      const a = k * Math.PI * 2 / spikes + .39, cardinal = (spikes === 4) || k % 2 === 0; g2.fillStyle = k % 2 ? "#ffe0a0" : "#ffffff";
+      const m = cardinal ? size : size * .62;
+      for (let r = 2; r <= m; r++) { const x = Math.round(cx + Math.cos(a) * r), y = Math.round(cy + Math.sin(a) * r); g2.fillRect(x, y, cardinal && r < m * .6 ? 2 : 1, cardinal && r < m * .6 ? 2 : 1); }
+    }
+  }
+
   /* ---------- 建立斬擊場景（播放前一次做完） ---------- */
   function buildKill(ctx, opts, L) {
-    const W = ctx.W, H = ctx.H, reduced = ctx.reduced, ic = ctx.ic;
+    const W = ctx.W, H = ctx.H, reduced = ctx.reduced, ic = ctx.ic, combo = ctx.combo;
     const th = rad(TILT), nn = [Math.cos(th), Math.sin(th)];
     const tpl = snapshot(opts.app, ctx.rect);
+    const monEl = opts.monEl, img = monEl && monEl.querySelector("img"), m = img ? img.getBoundingClientRect() : null, MC = root.HuntMon && root.HuntMon.cells(opts.variant || 0);
+    ctx.finalPose = pose(combo, 1e9, 1e9);
+    if (m && MC) {
+      const sx = m.left - ctx.rect.left, sy = m.top - ctx.rect.top, cp = m.width / MC.w;
+      ctx.cm = [sx + m.width / 2, sy + m.height / 2]; ctx.cp = Math.max(2, Math.round(cp)); ctx.eyes = MC.eyes.map(e => [sx + (e[0] + .5) * cp, sy + (e[1] + .5) * cp]); ctx.eyeCol = MC.eye;
+      // 斬開時兩半、碎片裡看到的是「打倒之後」的怪物最後的姿勢
+      const mr = findRec(tpl, r => r.tpl.className && String(r.tpl.className).indexOf("hunt-mon") >= 0);
+      if (mr) { const p = ctx.finalPose; mr.tpl.style.transform = "translate3d(" + p[0] + "px," + p[1] + "px,0) rotate(" + p[2] + "deg)"; }
+      // 怪物崩成的碎塊（取怪物自己的像素，每 2×2 格併成一塊；位置套用最後的姿勢）
+      const fp = ctx.finalPose, fr = rad(fp[2]), cs = Math.cos(fr), sn = Math.sin(fr), kk = cp / 7;
+      ctx.chips = [];
+      for (let by = 0; by < MC.h; by += 2) for (let bx = 0; bx < MC.w; bx += 2) {
+        let col = null; for (let y = by; y < by + 2 && !col; y++) for (let x = bx; x < bx + 2; x++) if (MC.cell[y] && MC.cell[y][x]) { col = MC.cell[y][x]; break; }
+        if (!col) continue;
+        const i = ctx.chips.length;
+        if (reduced && i % 2) { ctx.chips.push(null); continue; }
+        const px = sx + (bx + 1) * cp - ctx.cm[0], py = sy + (by + 1) * cp - ctx.cm[1];
+        const x0 = ctx.cm[0] + cs * px - sn * py + fp[0], y0 = ctx.cm[1] + sn * px + cs * py + fp[1];
+        ctx.chips.push({ x: x0, y: y0, vx: ((x0 - ctx.cm[0]) * 2.2 + (rnd(i) - .5) * 120) * kk, vy: (-(120 + rnd(i + .4) * 300) + (y0 - ctx.cm[1]) * .6) * kk, col: col === "#07070b" ? "#7771b8" : col, life: .8 + rnd(i + .8) * .5 });
+      }
+      ctx.chips = ctx.chips.filter(Boolean);
+    } else { ctx.cm = [W / 2, H * .4]; ctx.eyes = []; ctx.chips = []; ctx.cp = 4; ctx.eyeCol = "#ffe36b"; }
+    // 連斬字樣與傷害數字
+    const sc = (opts.sceneEl || opts.app).getBoundingClientRect(), hits = q(L, "hfx-hits");
+    hits.innerHTML = '<div class="hfx-cmb" style="right:' + Math.round(ctx.rect.right - sc.right + 12) + 'px;top:' + Math.round(sc.top - ctx.rect.top + 8) + 'px"><span class="cl">' + (opts.comboText || "連斬") + '</span><span class="cn">×1</span></div>' +
+      combo.hits.map((h, i) => '<div class="hfx-dm' + (h.heavy ? " big" : "") + '" style="left:' + Math.round(ctx.cm[0] + h.off[0] + (rnd(i * 3.7) - .5) * 70) + "px;top:" + Math.round(ctx.cm[1] + h.off[1] - 30) + 'px">' + h.dmg + "</div>").join("");
+    ctx.cmb = hits.querySelector(".hfx-cmb"); ctx.cn = ctx.cmb.querySelector(".cn"); ctx.dms = [...hits.querySelectorAll(".hfx-dm")];
     // 勝利字樣：本體＋兩層殘影（衝向鏡頭時的速度線）
     const g = ch => '<span class="hv-g"><span class="hv-t">' + ch + '</span><span class="hv-t hv-sh">' + ch + "</span></span>";
     const vic = q(L, "hfx-vic");
-    vic.innerHTML = ["m", "t1", "t2"].map(k => '<div class="hv-l ' + k + '" style="top:' + ctx.wy + 'px">' + g("勝") + g("利") + "</div>").join("");
+    vic.innerHTML = ["m", "t1", "t2"].map(k => '<div class="hv-l ' + k + '" style="top:' + ctx.wy + 'px">' + g(opts.win ? opts.win[0] : "勝") + g(opts.win ? opts.win[1] : "利") + "</div>").join("");
     ctx.vl = [...vic.querySelectorAll(".hv-l")]; ctx.sh = [...ctx.vl[0].querySelectorAll(".hv-sh")];
     // 兩大塊：整個畫面沿切線分成左右兩半（各自的副本，只留和那一半有重疊的元素）
-    const cut = q(L, "hfx-cut"), K = reduced ? 4 : P.K, radii = reduced ? RADII_RED : P.radii;
+    const cut = q(L, "hfx-cut"), K = reduced ? 4 : 6, radii = reduced ? RADII_RED : RADII;
     cut.innerHTML = "";
     ctx.hf = [0, 1].map(() => { const h = document.createElement("div"); h.className = "hfx-hf"; h.style.transformOrigin = (W / 2) + "px " + (H / 2) + "px"; cut.appendChild(h); return h; });
     const rectP = [[0, 0], [W, 0], [W, H], [0, H]]; ctx.tones = [];
@@ -149,7 +247,7 @@
     });
     // 22 片玻璃（碎裂瞬間才顯示）：每片只複製和自己範圍有重疊的元素
     const polys = makeShards(W, H, ic, K, radii, 11, Math.atan2(-Math.cos(th), Math.sin(th)));
-    ctx.shards = []; let nodes = 0;
+    ctx.shards = [];
     polys.forEach((s, i) => {
       const Pp = s.p, xs = Pp.map(p => p[0]), ys = Pp.map(p => p[1]);
       const gx = xs.reduce((a, b) => a + b, 0) / Pp.length, gy = ys.reduce((a, b) => a + b, 0) / Pp.length;
@@ -171,23 +269,7 @@
       const sp = ([520, 470, 430, 600][s.ring] || 480) * (.8 + rnd(i * 3.3) * .45);
       ctx.shards.push({ el, vx: dx * sp, vy: dy * sp - 140, w: (rnd(i * 7.7) - .5) * 2 * 520, tf: "", op: "", on: false });
     });
-    ctx.stats = { shards: ctx.shards.length, nodes: cut.querySelectorAll("*").length + vic.querySelectorAll("*").length + 4 };
-    // 怪物崩成的碎塊（取怪物自己的像素，每 2×2 格併成一塊）
-    const m = opts.monEl ? opts.monEl.getBoundingClientRect() : null, MC = root.HuntMon && root.HuntMon.cells(opts.variant || 0);
-    ctx.chips = [];
-    if (m && MC) {
-      const sx = m.left - ctx.rect.left, sy = m.top - ctx.rect.top, cp = m.width / MC.w, kk = cp / 7;
-      ctx.cm = [sx + m.width / 2, sy + m.height / 2]; ctx.cp = Math.max(2, Math.round(cp));
-      for (let by = 0; by < MC.h; by += 2) for (let bx = 0; bx < MC.w; bx += 2) {
-        let col = null; for (let y = by; y < by + 2 && !col; y++) for (let x = bx; x < bx + 2; x++) if (MC.cell[y] && MC.cell[y][x]) { col = MC.cell[y][x]; break; }
-        if (!col) continue;
-        const i = ctx.chips.length + (reduced ? 1 : 0);
-        if (reduced && ctx.chips.length % 2) { ctx.chips.push(null); continue; }
-        const x0 = sx + (bx + 1) * cp, y0 = sy + (by + 1) * cp;
-        ctx.chips.push({ x: x0, y: y0, vx: ((x0 - ctx.cm[0]) * 2.2 + (rnd(i) - .5) * 120) * kk, vy: (-(120 + rnd(i + .4) * 300) + (y0 - ctx.cm[1]) * .6) * kk, col: col === "#07070b" ? "#7771b8" : col, life: .8 + rnd(i + .8) * .5 });
-      }
-      ctx.chips = ctx.chips.filter(Boolean);
-    } else ctx.cm = [W / 2, H * .4];
+    ctx.stats = { shards: ctx.shards.length, nodes: cut.querySelectorAll("*").length + vic.querySelectorAll("*").length + hits.querySelectorAll("*").length + 6, combo: combo.id };
     // 後層的碎屑（緩緩上飄的小光點）
     ctx.deb = []; const nd = reduced ? 12 : 30;
     for (let i = 0; i < nd; i++) ctx.deb.push({ x: W / 2 + (rnd(i * 2.1) - .5) * 150, y: rnd(i * 3.7) * H, v: 30 + rnd(i * 5.1) * 70, s: 1 + Math.floor(rnd(i * 6.3) * 2), c: GOLDS[Math.floor(rnd(i * 9.1) * 4)], ph: rnd(i * 4.4) });
@@ -195,74 +277,132 @@
 
   /* ---------- 每一格的畫面（t＝演出時間 ms，已除掉減少特效的時間縮放） ---------- */
   function render(t) {
-    const ctx = S.ctx, W = ctx.W, H = ctx.H, ic = ctx.ic, reduced = ctx.reduced, g2 = ctx.g2, L = ctx.L;
+    const ctx = S.ctx, combo = ctx.combo, W = ctx.W, H = ctx.H, ic = ctx.ic, reduced = ctx.reduced, g2 = ctx.g2, L = ctx.L, te = teOf(combo, t);
     g2.clearRect(0, 0, ctx.cv.width, ctx.cv.height);
-    const world = q(L, "hfx-world"), pil = q(L, "pil"), split = t >= P.splitAt, burst = t >= P.burstAt;
-    /* 蓄力：整個畫面偏金、逐格變亮；金色光點往中線聚集 */
-    let tint = 0;
-    if (t < P.flashAt) tint = Math.round((reduced ? .2 : .42) * Math.pow(seg(t, 0, P.chargeEnd), 1.6) / .05) * .05;
-    else if (reduced) { const r = t - P.flashAt; tint = r < 200 ? Math.round(.35 * (1 - r / 200) / .05) * .05 : 0; }
-    setS(q(L, "hfx-tint"), "opacity", f2(tint * .7));
-    if (t < P.flashAt) {
-      const nm = reduced ? 10 : 26;
-      for (let i = 0; i < nm; i++) {
-        const p = ((t / P.chargeEnd) * 1.3 + rnd(i * 1.9)) % 1, a = rnd(i * 2.7) * 6.28, R0 = 160 + rnd(i * 3.1) * 240, k = p * p;
-        const x = ic[0] + Math.cos(a) * R0 * (1 - k), y = ic[1] + Math.sin(a) * R0 * (1 - k) * 1.3;
-        g2.fillStyle = i % 3 ? "#ffcc33" : "#ffffff"; g2.fillRect(Math.round(x / 2), Math.round(y / 2), p > .8 ? 1 : 2, p > .8 ? 1 : 2);
+    const world = q(L, "hfx-world"), pil = q(L, "pil"), split = t >= T.splitAt, burst = t >= T.burstAt, inCombo = t < T.blackAt;
+    /* ===== 一、連斬（0～2200）：刀痕、命中停頓、擊退、受擊色（只在怪物身上）、火花、連斬字樣 ===== */
+    const pz = pose(combo, te, t), mon = ctx.mon;
+    if (mon) {
+      setS(mon, "transform", "translate3d(" + pz[0] + "px," + pz[1] + "px,0) rotate(" + pz[2] + "deg)");
+      let fc = "";
+      combo.hits.forEach(h => { const u = te - h.e; if (inCombo && u >= 0 && u < (h.heavy ? 100 : 66)) fc = reduced ? "mh" : (h.heavy ? "mg" : "mw"); });
+      if (mon._fc !== fc) { mon._fc = fc; mon.classList.remove("mw", "mg", "mh"); if (fc) mon.classList.add(fc); }
+    }
+    if (inCombo) {
+      combo.hits.forEach(h => {
+        const u = te - h.e;
+        if (h.pre && u < 0 && u > -520) {   // 蓄勢（最後一刀前的準備動作）
+          const p = seg(u, -(h.pre === "ring" ? 480 : h.pre === "gather" ? 520 : 160), 0);
+          if (h.pre === "glint") { const sc = slashes(ctx, h)[0].P(0); drawBurst(g2, sc[0] / 2, sc[1] / 2, 2 + 6 * p, 4); }
+          else for (let i = 0; i < (reduced ? 10 : 22); i++) {
+            const a = rnd(i * 3.1) * 6.28, k = ((p * 1.2 + rnd(i * 1.7)) % 1), R = 1 - k * k;
+            const ox = h.pre === "ring" ? ctx.cm[0] : ctx.cm[0] - 110, oy = h.pre === "ring" ? ctx.cm[1] : ctx.cm[1] + 72, rx = h.pre === "ring" ? 150 : 90, ry = h.pre === "ring" ? 98 : 60;
+            g2.fillStyle = i % 3 ? "#ffcc33" : "#ffffff"; g2.fillRect(Math.round((ox + Math.cos(a) * rx * R) / 2), Math.round((oy + Math.sin(a) * ry * R) / 2), 2, 2);
+          }
+        }
+        if (u < -60) return;
+        slashes(ctx, h).forEach(s => {   // 刀痕
+          const ts = te - s.t0; if (ts < 0 || ts > s.dur + s.fade) return;
+          const head = s.lin ? clamp01(ts / s.dur) : eOut(clamp01(ts / s.dur)), fade = seg(ts, s.dur, s.dur + s.fade), u0 = fade * fade * head;
+          drawPath(g2, s.P, s.len, u0, head, s.th, fade, reduced ? "#ffcf70" : h.col, reduced ? "#fff3c9" : "#ffffff");
+        });
+        if (u < 0) return;
+        const hx = ctx.cm[0] + h.off[0], hy = ctx.cm[1] + h.off[1], age = u;   // 命中的星芒、火花、碎片
+        if (age < 170) { const len = (h.heavy ? 22 : 12) * (age < 50 ? age / 50 : 1 - (age - 50) / 120); if (len > 2) drawBurst(g2, hx / 2, hy / 2, len, reduced ? 4 : 8); }
+        const a0 = rad(h.a === undefined ? -90 : h.a + 90), n = Math.round(h.spk * (reduced ? .5 : 1)), uu = u / 1000;
+        for (let k = 0; k < n; k++) {
+          const side = rnd(h.i * 91 + k) < .5 ? 1 : -1, ang = (h.kind === "stab" || h.kind === "spin" || h.kind === "none" || h.kind === "launch" || h.kind === "line2") ? rnd(h.i * 77 + k) * 6.28 : a0 + (side < 0 ? Math.PI : 0) + (rnd(h.i * 53 + k) - .5) * 1.4;
+          const sp = 140 + rnd(h.i * 31 + k) * 260, life = .25 + rnd(h.i * 17 + k) * .25; if (uu > life) continue;
+          g2.fillStyle = k % 3 === 0 ? "#ffffff" : k % 3 === 1 ? h.col : "#ffe0a0";
+          g2.fillRect(Math.round((hx + Math.cos(ang) * sp * uu) / 2), Math.round((hy + Math.sin(ang) * sp * uu + 700 * uu * uu * .5) / 2), 1 + (k % 2), 1 + (k % 2));
+        }
+        const nc = Math.round(h.sh * (reduced ? .5 : 1));
+        for (let k = 0; k < nc; k++) {
+          const ang = rnd(h.i * 41 + k) * 6.28, sp = 90 + rnd(h.i * 23 + k) * 220, life = .35 + rnd(h.i * 13 + k) * .3; if (uu > life) continue;
+          g2.fillStyle = k % 2 ? "#7771b8" : ctx.eyeCol; g2.fillRect(Math.round((hx + Math.cos(ang) * sp * uu) / 2), Math.round((hy + Math.sin(ang) * sp * uu - 60 * uu + 900 * uu * uu * .5) / 2), 2, 2);
+        }
+      });
+    }
+    let cnt = 0, cu = 1e9; combo.hits.forEach(h => { if (te >= h.e) { cnt = h.i + 1; cu = te - h.e; } });   // 連斬字樣與傷害數字
+    if (cnt > 0 && inCombo) {
+      const sc = reduced ? 1 : [1.7, 1.4, 1.2, 1.1, 1][Math.min(4, Math.floor(cu / 17))];
+      setS(ctx.cmb, "opacity", "1"); if (ctx.cn._tx !== cnt) { ctx.cn._tx = cnt; ctx.cn.textContent = "×" + cnt; }
+      setS(ctx.cmb, "transform", "scale(" + sc + ")"); const big = cnt === 5 ? "hfx-cmb big" : "hfx-cmb"; if (ctx.cmb.className !== big) ctx.cmb.className = big;
+    } else setS(ctx.cmb, "opacity", "0");
+    ctx.dms.forEach((el, i) => {
+      const h = combo.hits[i], u = te - h.e, ok = inCombo && u >= 0 && u < 520;
+      setS(el, "opacity", ok ? f2(step6(1 - seg(u, 300, 520))) : "0"); if (ok) setS(el, "transform", "translateY(" + (-Math.round(36 * eOut(clamp01(u / 400)))) + "px)");
+    });
+    setS(q(L, "hfx-hits"), "opacity", inCombo ? "1" : "0");
+    /* ===== 二、反黑（2200～）：整個畫面瞬間變暗（亮度突變 1 次），只留怪物發光的眼睛和一道正在聚集的光。減少特效：3 格漸暗到 47% ===== */
+    let to = 0;
+    if (t >= T.blackAt && t < T.burstAt) to = reduced ? BLACK * .5 * Math.min(3, Math.floor((t - T.blackAt) / 33) + 1) / 3 : BLACK;
+    else if (t >= T.burstAt && t < T.burstAt + 66) to = (t - T.burstAt < 33 ? .5 : 0) * BLACK * (reduced ? .5 : 1);   // 恢復（亮度突變第 2 次；兩格）
+    const pre = q(L, "hfx-pretone");
+    setS(pre, "display", !split && t >= T.blackAt && to > 0 ? "block" : "none"); setS(pre, "opacity", f2(to));
+    ctx.tones.forEach(e => setS(e, "opacity", f2(burst ? 0 : to)));
+    setS(q(L, "hfx-tone"), "opacity", f2(burst ? to : 0));
+    const nrm = [Math.cos(rad(TILT)), Math.sin(rad(TILT))];
+    const side0 = (x, y) => ((x - ic[0]) * nrm[0] + (y - ic[1]) * nrm[1]) < 0 ? 0 : 1;
+    const hfT = (i, p) => { const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, o = i ? [14, 32, 1.8] : [-14, -32, -1.8], a = reduced ? 0 : rad(o[2] * f), cx = W / 2, cy = H / 2, dx = p[0] - cx, dy = p[1] - cy;
+      return [cx + Math.cos(a) * dx - Math.sin(a) * dy + o[0] * f * k, cy + Math.sin(a) * dx + Math.cos(a) * dy + o[1] * f * k]; };
+    if (t >= T.blackAt && !burst) {   // 發光的眼睛（疊在反黑之上；斬開後跟著兩半移動）
+      const gp = seg(t, T.blackAt, T.lineAt), fr0 = rad(pz[2]), cs = Math.cos(fr0), sn = Math.sin(fr0);
+      ctx.eyes.forEach(e => {
+        const px = e[0] - ctx.cm[0], py = e[1] - ctx.cm[1]; let x = ctx.cm[0] + cs * px - sn * py + pz[0], y = ctx.cm[1] + sn * px + cs * py + pz[1];
+        if (split) { const qq = hfT(side0(x, y), [x, y]); x = qq[0]; y = qq[1]; }
+        const r = reduced ? 1 : 1 + Math.floor(gp * 4) + (Math.floor((t - T.blackAt) / 90) % 2);
+        g2.globalAlpha = .22; g2.fillStyle = ctx.eyeCol; g2.fillRect(Math.round(x / 2) - 2 - r, Math.round(y / 2) - 2 - r, 4 + 2 * r, 4 + 2 * r);
+        g2.globalAlpha = 1; g2.fillRect(Math.round(x / 2) - 2, Math.round(y / 2) - 2, 4, 4);
+        if (gp > .35) { g2.fillStyle = "#ffffff"; g2.fillRect(Math.round(x / 2) - 1, Math.round(y / 2) - 1, 2, 2); }
+      });
+    }
+    if (t >= T.gatherAt && t < T.lineAt) {   // 正在聚集的光：沿著待會要切的那條斜線，從中心長出來、越來越亮；光點從四周聚過來
+      const gp = seg(t, T.gatherAt, T.lineAt), f = Math.pow(gp, 1.5) * .5, cx2 = ic[0] / 2, cy2 = ic[1] / 2, tn = Math.tan(rad(TILT)), y0 = Math.round(cy2 - f * cy2), y1 = Math.round(cy2 + f * (H / 2 - cy2));
+      const col = gp < .35 ? "#a8741a" : gp < .7 ? "#ffcc33" : "#ffffff", wd = gp < .5 ? 1 : 2;
+      g2.fillStyle = col; for (let y = y0; y < y1; y++) g2.fillRect(Math.round(cx2 + (cy2 - y) * tn) - (wd >> 1), y, wd, 1);
+      for (let i = 0; i < (reduced ? 10 : 24); i++) {
+        const p = (gp * 1.3 + rnd(i * 1.9)) % 1, a = rnd(i * 2.7) * 6.28, R0 = 150 + rnd(i * 3.1) * 230, k = p * p;
+        g2.fillStyle = i % 3 ? "#ffcc33" : "#ffffff"; g2.fillRect(Math.round((ic[0] + Math.cos(a) * R0 * (1 - k)) / 2), Math.round((ic[1] + Math.sin(a) * R0 * (1 - k) * 1.3) / 2), p > .8 ? 1 : 2, p > .8 ? 1 : 2);
       }
     }
-    /* 反黑：全螢幕黑閃 66ms（之後 33ms 一階衰減），整個畫面維持暗到幾乎全黑到碎裂；碎裂後 66ms 兩格還原。
-       減少特效：不閃，改成 3 格（約 0.1 秒）漸暗到 44%，碎裂後同樣還原 */
-    let fl = 0; const fr = t - P.flashAt;
-    if (!reduced && fr >= 0) fl = fr < 66 ? .9 : fr < 99 ? .5 : fr < 132 ? .22 : 0;
-    setS(q(L, "hfx-flash"), "opacity", f2(fl));
-    let to = 0; const full = TONE_OP * (reduced ? .5 : 1);
-    if (t >= P.flashAt && t < P.burstAt) to = reduced ? full * Math.min(3, Math.floor((t - P.flashAt) / 33) + 1) / 3 : TONE_OP;
-    const pre = q(L, "hfx-pretone");
-    setS(pre, "display", !split && to > 0 ? "block" : "none"); setS(pre, "opacity", f2(to));
-    ctx.tones.forEach(e => setS(e, "opacity", f2(to)));
-    const rec = t >= P.burstAt && t < P.burstAt + 66 ? (t - P.burstAt < 33 ? .5 : 0) * full : 0;
-    const t2 = q(L, "hfx-tone"); setS(t2, "opacity", f2(rec));
-    /* 亮線：一條貫穿整個畫面、略微傾斜的亮線（紅黃藍錯開）；縫裡迸出的火花 */
-    if (t >= P.lineAt && t < P.splitAt) {
-      const gr = [.3, .6, 1][Math.min(2, Math.floor((t - P.lineAt) / 20))], cx2 = ic[0] / 2, cy2 = ic[1] / 2, tn = Math.tan(rad(TILT));
-      const y0 = Math.round(cy2 - gr * cy2), y1 = Math.round(cy2 + gr * (H / 2 - cy2));
+    /* ===== 三、斬開（2900）：沿用丙 ===== */
+    if (t >= T.lineAt && t < T.splitAt) {   // 一條貫穿整個畫面、略微傾斜的亮線（紅綠藍錯開）
+      const gr = [.5, .75, 1][Math.min(2, Math.floor((t - T.lineAt) / 20))], cx2 = ic[0] / 2, cy2 = ic[1] / 2, tn = Math.tan(rad(TILT)), y0 = Math.round(cy2 - gr * cy2), y1 = Math.round(cy2 + gr * (H / 2 - cy2));
       for (let y = y0; y < y1; y++) {
         const x = Math.round(cx2 + (cy2 - y) * tn);
         if (!reduced) { g2.globalCompositeOperation = "lighter"; g2.fillStyle = "#ff2a2a"; g2.fillRect(x - 4, y, 3, 1); g2.fillStyle = "#2aff2a"; g2.fillRect(x - 3, y, 4, 1); g2.fillStyle = "#2a6aff"; g2.fillRect(x - 1, y, 4, 1); g2.globalCompositeOperation = "source-over"; }
         g2.fillStyle = reduced ? "#ffe0a0" : "#ffffff"; g2.fillRect(x - 1, y, 2, 1);
       }
     }
-    if (t >= P.splitAt && t < P.burstAt) {
+    if (t >= T.splitAt && t < T.burstAt) {   // 縫裡迸出的火花
       const tn = rad(TILT), dU = [Math.sin(tn), -Math.cos(tn)], n2 = [Math.cos(tn), Math.sin(tn)], st = Math.floor(t / 50);
       for (let i = 0; i < (reduced ? 8 : 22); i++) {
         const p = (rnd(i * 3.3 + st) - .5) * H * 1.1, o = (rnd(i * 5.1 + st) - .5) * 40;
         g2.fillStyle = GOLDS[Math.floor(rnd(i * 7.7 + st) * 4)]; g2.fillRect(Math.round((ic[0] + dU[0] * p + n2[0] * o) / 2), Math.round((ic[1] + dU[1] * p + n2[1] * o) / 2), 1 + (i % 2), 1 + (i % 2));
       }
     }
-    /* 切開：整個畫面沿切線分成左右兩大塊，往反方向明顯錯開（略帶傾斜），停住 330ms 讓人看清楚 */
     setS(world, "display", split ? "block" : "none");
     ctx.hf.forEach((h, i) => {
-      const f = t < P.splitAt ? 0 : t < P.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, o = i ? [14, 32, 1.8] : [-14, -32, -1.8];
+      const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, o = i ? [14, 32, 1.8] : [-14, -32, -1.8];
       setS(h, "transform", "translate3d(" + Math.round(o[0] * f * k) + "px," + Math.round(o[1] * f * k) + "px,0) rotate(" + (reduced ? 0 : o[2] * f) + "deg)");
     });
     ctx.hp.forEach(h => setS(h, "display", burst ? "none" : "block"));
-    /* 光柱：切開的瞬間就從縫裡透出（紅綠藍色差、略傾斜），碎裂後轉正、白金色，之後緩緩呼吸 */
-    if (split && !burst) {
+    if (split && !burst) {   // 光柱：切開的瞬間就從縫裡透出（紅綠藍色差、略傾斜）
       setS(pil, "width", (reduced ? 34 : 40) + "px"); setS(pil, "marginLeft", (reduced ? -17 : -20) + "px"); setS(pil, "transform", "rotate(" + TILT + "deg)"); setS(pil, "opacity", "1");
       if (pil.classList.contains("rgb") !== !reduced) pil.classList.toggle("rgb", !reduced);
     }
     if (burst) {
-      const u = t - P.burstAt, tau = Math.floor(u / 33) * 33 / 1000;
+      const u = t - T.burstAt, tau = Math.floor(u / 33) * 33 / 1000;
       ctx.shards.forEach(s => {
         if (!s.on) { s.on = true; s.el.style.display = ""; s.el.style.willChange = "transform, opacity"; }
-        const k = reduced ? .35 : 1, x = s.vx * k * tau, y = reduced ? s.vy * k * tau : s.vy * tau + .5 * P.G * tau * tau;
+        const k = reduced ? .35 : 1, x = s.vx * k * tau, y = reduced ? s.vy * k * tau : s.vy * tau + .5 * G * tau * tau;
         const rot = reduced ? 0 : Math.round(s.w * tau / 15) * 15;
         const tf = "translate3d(" + Math.round(x) + "px," + Math.round(y) + "px,0) rotate(" + rot + "deg)";
-        const op = f2(step6(1 - seg(u, P.flyMs * (reduced ? .2 : .6), P.flyMs)));
+        const op = f2(step6(1 - seg(u, T.flyMs * (reduced ? .2 : .6), T.flyMs)));
         if (s.tf !== tf) { s.tf = tf; s.el.style.transform = tf; } if (s.op !== op) { s.op = op; s.el.style.opacity = op; }
       });
-      const pw = 44 + (reduced ? -4 : (Math.floor(u / 133) % 2) * 4), fo = step6(1 - seg(t, P.fadeAt, P.fadeEnd));
+      const pw = 44 + (reduced ? -4 : (Math.floor(u / 133) % 2) * 4), fo = step6(1 - seg(t, T.fadeAt, T.fadeEnd));
       if (pil.classList.contains("rgb")) pil.classList.remove("rgb");
       setS(pil, "transform", "rotate(" + [TILT, TILT / 2, 0][Math.min(2, Math.floor(u / 33))] + "deg)");
       setS(pil, "width", pw + "px"); setS(pil, "marginLeft", (-pw / 2) + "px"); setS(pil, "opacity", String(fo));
@@ -270,8 +410,8 @@
       const a = u / 1000;   // 怪物崩成碎塊
       ctx.chips.forEach(c => { if (a > c.life) return; if (a > c.life * .7 && Math.floor(a * 30) % 2) return; g2.fillStyle = c.col; g2.fillRect(Math.round((c.x + c.vx * a) / 2), Math.round((c.y + c.vy * a + .5 * 1500 * a * a) / 2), ctx.cp, ctx.cp); });
     }
-    /* 勝利：金色厚重立體字，從遠處高速衝向鏡頭後定格（減少特效：只做階梯淡入）；之後一道光掃過 */
-    const wf = step6(1 - seg(t, P.fadeAt, P.fadeEnd)), wu = t - P.winAt;
+    /* ===== 四、勝利（3900～）：金色立體字衝向鏡頭定格（減少特效：只淡入），光掃過，階梯淡出 ===== */
+    const wf = step6(1 - seg(t, T.fadeAt, T.fadeEnd)), wu = t - T.winAt;
     ctx.vl.forEach((el, i) => {
       let op = 0, sc = 1;
       if (reduced) { if (i === 0) op = step6(seg(wu, 0, 240)) * wf; }
@@ -280,14 +420,17 @@
     });
     const k8 = Math.floor((wu - 420) / 40);
     ctx.sh.forEach((e, i) => { if (!reduced && k8 >= 0 && k8 <= 7) { const s = -0.3 + k8 * (2.6 / 7); setS(e, "visibility", "visible"); setS(e, "backgroundPosition", ((2 - (s - i)) / 3 * 100).toFixed(1) + "% 0"); } else setS(e, "visibility", "hidden"); });
-    /* 晃動：切開、碎裂、字定格各一下（整數像素、階梯式；減少特效時不晃）。晃的是切開後的「世界」（兩塊、碎片、後層） */
+    /* ===== 晃動：每刀命中後小晃一下，最後一刀、斬開、碎裂、字定格各一下（整數像素、階梯式；減少特效不晃） ===== */
     let sx = 0, sy = 0;
     if (!reduced) {
-      const evs = [{ at: P.splitAt, d: 260, a: 14 }, { at: P.burstAt, d: 260, a: 9 }, { at: P.winAt + 200, d: 150, a: 6 }];
+      const evs = [{ at: T.splitAt, d: 260, a: 14 }, { at: T.burstAt, d: 260, a: 9 }, { at: T.winAt + 200, d: 150, a: 6 }];
+      combo.hits.forEach(h => evs.push({ at: h.r + h.h, d: h.heavy ? 220 : 110, a: h.sh }));
       let best = null; for (const ev of evs) { const rel = t - ev.at; if (rel >= 0 && rel < ev.d) { const amp = ev.a * (1 - rel / ev.d); if (!best || amp > best.amp) best = { amp, step: Math.floor(rel / 33), seed: ev.at }; } }
       if (best) { sx = Math.round((rnd(best.step * 2 + best.seed) - .5) * 2 * best.amp); sy = Math.round((rnd(best.step * 2 + best.seed + 1) - .5) * 1.4 * best.amp); }
     }
-    setS(world, "transform", "translate3d(" + sx + "px," + sy + "px,0)");
+    const wt = "translate3d(" + sx + "px," + sy + "px,0)";
+    setS(world, "transform", wt); setS(ctx.cv, "transform", wt);
+    ctx.roots.forEach(r => setS(r.el, "transform", split ? r.orig : (r.orig ? wt + " " + r.orig : wt)));   // 斬開之前，真實畫面（資訊列、場景、導覽列）本身跟著晃
   }
 
   function renderDown(t, dur) {
@@ -299,11 +442,13 @@
   function cleanup() {
     if (!S) return;
     cancelAnimationFrame(S.raf);
-    const L = S.ctx.L;
+    const ctx = S.ctx, L = ctx.L;
     L.classList.remove("on");
-    q(L, "hfx-cut").innerHTML = ""; q(L, "hfx-vic").innerHTML = "";
+    if (ctx.mon) { ctx.mon.style.transform = ctx.monOrig.transform; ctx.mon.style.animation = ctx.monOrig.animation; ctx.mon.classList.remove("mw", "mg", "mh"); delete ctx.mon._fc; delete ctx.mon._transform; }
+    ctx.roots.forEach(r => { r.el.style.transform = r.orig; delete r.el._transform; });
+    q(L, "hfx-cut").innerHTML = ""; q(L, "hfx-vic").innerHTML = ""; q(L, "hfx-hits").innerHTML = "";
     const lab = q(L, "hfx-label"); lab.className = "hfx-label"; lab.textContent = "";
-    ["hfx-world", "hfx-pretone", "hfx-tone", "hfx-tint", "hfx-dim", "hfx-flash", "hfx-label"].forEach(c => { const e = q(L, c); e.removeAttribute("style"); for (const k of Object.keys(e)) if (k[0] === "_") delete e[k]; });
+    ["hfx-world", "hfx-pretone", "hfx-tone", "hfx-hits", "hfx-dim", "hfx-label", "hfx-cv"].forEach(c => { const e = q(L, c); e.removeAttribute("style"); for (const k of Object.keys(e)) if (k[0] === "_") delete e[k]; });
     const pil = q(L, "pil"); pil.removeAttribute("style"); pil.classList.remove("rgb"); for (const k of Object.keys(pil)) if (k[0] === "_") delete pil[k];
     const cv = q(L, "hfx-cv"); cv.getContext("2d").clearRect(0, 0, cv.width, cv.height);
     S = null;
@@ -312,15 +457,19 @@
   /* 中途中止（切到別的畫面、分頁到背景）：不呼叫 onDone，狀態仍是「演出待播」，回來會從頭補播 */
   function abort() { cleanup(); }
 
-  /* opts: { app, monEl, variant, kind: "kill"|"down", reduced, scale(減少特效的時間縮放), totalMs, downMs, win, downText, onDone } */
+  /* opts: { app, monEl(.hunt-mon), sceneEl, variant, combo(0突刺→C／1橫掃→A／2蓄力→B), kind: "kill"|"down", reduced, scale(減少特效的時間縮放), totalMs, downMs, win, comboText, downText, onDone } */
   function play(opts) {
     if (S) cleanup();
     const app = opts.app, L = ensureLayer(app), reduced = !!opts.reduced;
     const rect = app.getBoundingClientRect(), W = rect.width, H = rect.height;
     const cv = q(L, "hfx-cv"), g2 = cv.getContext("2d");
-    const scale = reduced ? (opts.scale || .85) : 1;
+    const scale = reduced ? (opts.scale || .75) : 1;
     cv.width = Math.ceil(W / 2); cv.height = Math.ceil(H / 2); g2.imageSmoothingEnabled = false;
-    const ctx = { L, rect, W, H, cv, g2, reduced, ic: [W / 2, Math.round(H * .46)], wy: Math.round(H * .30), hf: [], hp: [], tones: [], shards: [], chips: [], deb: [], vl: [], sh: [] };
+    const combo = COMBOS[Math.max(0, Math.min(2, opts.combo | 0))];
+    const roots = ["hud", "screens", "nav"].map(id => document.getElementById(id)).filter(Boolean).map(el => ({ el, orig: el.style.transform || "" }));
+    const mon = opts.monEl || null;
+    const ctx = { L, rect, W, H, cv, g2, reduced, combo, mon, roots, monOrig: mon ? { transform: mon.style.transform || "", animation: mon.style.animation || "" } : null,
+      ic: [W / 2, Math.round(H * .46)], wy: Math.round(H * .30), hf: [], hp: [], tones: [], shards: [], chips: [], deb: [], vl: [], sh: [], dms: [], eyes: [] };
     S = { ctx, onDone: opts.onDone, start: 0, kind: opts.kind, raf: 0 };
     let total;
     if (opts.kind === "down") {
@@ -328,13 +477,13 @@
       const lab = q(L, "hfx-label"); lab.textContent = opts.downText || "倒下了……"; lab.className = "hfx-label down";
       L.classList.add("on");
     } else {
-      total = (opts.totalMs || P.total) * scale;
+      total = (opts.totalMs || T.total) * scale;
       L.classList.add("on");
       try { buildKill(ctx, opts, L); }
       catch (e) { cleanup(); throw e; }
+      if (mon) mon.style.animation = "none";   // 怪物原本的上下晃動先停掉，姿勢由演出控制
       ctx.hp = [...q(L, "hfx-cut").querySelectorAll(".hfx-hp")];
-      q(L, "hfx-tint").style.background = "#ffcc33";
-      q(L, "hfx-pretone").style.background = "#000"; q(L, "hfx-flash").style.background = "#000";
+      q(L, "hfx-pretone").style.background = "#000";
     }
     S.total = total; S.scale = scale; S.start = performance.now();
     const frame = now => {
@@ -353,5 +502,5 @@
   const stats = () => (S && S.ctx.stats) || null;
   const playing = () => !!S;
 
-  root.HuntFx = { play, abort, seek, release: abort, playing, stats };
+  root.HuntFx = { play, abort, seek, release: abort, playing, stats, COMBOS, T };
 })(typeof window !== "undefined" ? window : globalThis);

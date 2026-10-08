@@ -887,6 +887,9 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 
 /* ===== 冒險之地（第 7 座，2026-10-08；js/hunt-ui.js、js/hunt-fx.js、js/hunt-mon.js）===== */
 .hunt-mon { height: min(114px, calc(100cqh - 34px)); min-height: 36px; margin: 0 auto; animation: huntBob 1s steps(1) infinite; }   /* 場景被選項擠矮時，怪物跟著縮小 */
+.hunt-mon.mw { filter: brightness(0) invert(1); }   /* 受擊色：只在怪物身上（白剪影 66ms；最後一刀金色；減少特效只是變亮） */
+.hunt-mon.mg { filter: brightness(0) invert(1) sepia(1) saturate(7) hue-rotate(-8deg) brightness(1.15); }
+.hunt-mon.mh { filter: brightness(1.7); }
 .hunt-mon img { display: block; height: 100%; width: auto; margin: 0 auto; image-rendering: pixelated; }
 @keyframes huntBob { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) { .hunt-mon { animation: none; } }
@@ -903,8 +906,17 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hfx-shd { position: absolute; overflow: hidden; }
 .hfx-ol { position: absolute; left: 0; top: 0; shape-rendering: crispEdges; }
 .hfx-cv { position: absolute; inset: 0; width: 100%; height: 100%; image-rendering: pixelated; pointer-events: none; }
-.hfx-tone, .hfx-tone-in, .hfx-pretone, .hfx-tint, .hfx-dim, .hfx-flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; }
-.hfx-tone, .hfx-tone-in, .hfx-pretone, .hfx-dim, .hfx-flash { background: #000; }
+.hfx-tone, .hfx-tone-in, .hfx-pretone, .hfx-dim { position: absolute; inset: 0; opacity: 0; pointer-events: none; background: #000; }
+.hfx-hits { position: absolute; inset: 0; pointer-events: none; }
+/* 連斬字樣與傷害數字（五秒擊殺） */
+.hfx-cmb { position: absolute; text-align: right; line-height: 1; opacity: 0; white-space: nowrap; transform-origin: 100% 0; }
+.hfx-cmb .cl { display: block; font-size: 22px; color: #ffe0a0; }
+.hfx-cmb .cn { display: block; font-size: 55px; color: #ffcc33; }
+.hfx-cmb .cl, .hfx-cmb .cn { text-shadow: 3px 0 0 #3a1c00, -3px 0 0 #3a1c00, 0 3px 0 #3a1c00, 0 -3px 0 #3a1c00, 3px 3px 0 #3a1c00, -3px -3px 0 #3a1c00, 3px -3px 0 #3a1c00, -3px 3px 0 #3a1c00; }
+.hfx-cmb.big .cn { color: #ff9a1f; }
+.hfx-dm { position: absolute; font-size: 33px; line-height: 1; color: #ffffff; opacity: 0; white-space: nowrap; margin: -16px 0 0 -30px;
+  text-shadow: 3px 0 0 #1a0f2a, -3px 0 0 #1a0f2a, 0 3px 0 #1a0f2a, 0 -3px 0 #1a0f2a, 3px 3px 0 #1a0f2a, -3px -3px 0 #1a0f2a, 3px -3px 0 #1a0f2a, -3px 3px 0 #1a0f2a; }
+.hfx-dm.big { font-size: 55px; color: #ffcc33; margin: -27px 0 0 -50px; text-shadow: 3px 0 0 #3a1c00, -3px 0 0 #3a1c00, 0 3px 0 #3a1c00, 0 -3px 0 #3a1c00, 3px 3px 0 #3a1c00, -3px -3px 0 #3a1c00, 3px -3px 0 #3a1c00, -3px 3px 0 #3a1c00; }
 .hfx-pretone { display: none; }
 .hfx-vic { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
 /* 「勝利」：金色厚重立體字（本體＋兩層殘影），從遠處衝向鏡頭後定格 */

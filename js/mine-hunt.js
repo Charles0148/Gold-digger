@@ -12,7 +12,8 @@
          since     距離上次發展的步數（30 步保底）
          dev       { kind: "cave"|"map" }
          country   { ok: 預抽成敗, pick: null｜0～2 }
-         kills／gold／mon{win,pres}／anim{kind,pick,rid}／after／rid  狩獵
+         kills／gold／mon{win,pres,combo}／anim{kind,pick,rid,combo}／after／rid  狩獵。combo＝斬擊套路 0突刺→C「連刺上挑」／1橫掃→A「快速五連斬」／2蓄力→B「三刀大迴旋」；
+                  單鈕（出招）的怪由呈現抽選那一抽順便決定（不多抽一次），選項怪＝玩家選的招式；都跟著預抽結果存進存檔，重新整理套路不變
          last      { gold, kills, why }  凱旋統計
    - 防作弊：任何影響結果的隨機，在「付出體力的那一刻」抽好、寫進存檔，呼叫端 persist 之後才演出。
    - 金幣：只累積在 run.gold，settle() 才一次進 save.coins；餵食（feed）是原子操作，不扣耐久、不算用壞、不累積紅晶。
@@ -91,8 +92,10 @@
     if (r.phase === "country" && r.dev !== null && !(isObj(r.dev) && (r.dev.kind === "cave" || r.dev.kind === "map"))) return false;
     if (r.phase === "hunt") {
       if (r.mon !== null && !(isObj(r.mon) && typeof r.mon.win === "boolean" && Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2)) return false;
+      if (r.mon && !(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
       if (r.anim !== null) {
         if (!(isObj(r.anim) && (r.anim.kind === "kill" || r.anim.kind === "down") && pick(r.anim.pick) && Number.isInteger(r.anim.rid))) return false;
+        if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = r.anim.pick === null ? 0 : r.anim.pick;   // 舊存檔沒有套路：照選項
         if (!r.mon) return false;
         if (r.after !== "spawn" && r.after !== "full" && r.after !== "down") return false;
       }
@@ -187,8 +190,9 @@
     let win = draw(r) < H.lower.win;
     const uP = drawP(r), P = H.present;
     let pres = uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2;
-    if (r.force) { if (typeof r.force.win === "boolean") win = r.force.win; if (Number.isInteger(r.force.pres)) pres = Math.max(0, Math.min(2, r.force.pres)); delete r.force; }   // 開發者測試用
-    r.mon = { win, pres };
+    let combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));   // 單鈕怪的套路：用「單鈕那一段」的 uP 三等分（pres 0 時 uP<P[0]），不多抽一次，所以不改變抽選次數
+    if (r.force) { if (typeof r.force.win === "boolean") win = r.force.win; if (Number.isInteger(r.force.pres)) pres = Math.max(0, Math.min(2, r.force.pres)); if (Number.isInteger(r.force.combo)) combo = Math.max(0, Math.min(2, r.force.combo)); delete r.force; }   // 開發者測試用
+    r.mon = { win, pres, combo };
     return { ok: true, ev: "mon", pres };
   }
   /* 出招：選項只改演出（斬擊方向與顏色），勝負早在 spawn 決定。結果一次落地，動畫之後才播 */
@@ -197,12 +201,13 @@
     if (!r || r.phase !== "hunt" || !r.mon || r.anim) return { ok: false, reason: "state" };
     if (!(Number.isInteger(idx) && idx >= 0 && idx <= r.mon.pres)) return { ok: false, reason: "arg" };
     r.rid++;
+    const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 選項怪：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
     if (r.mon.win) {
       r.kills++; r.gold = int(r.gold + H.lower.gold, 0, GOLD_MAX);
-      r.anim = { kind: "kill", pick: idx, rid: r.rid };
+      r.anim = { kind: "kill", pick: idx, rid: r.rid, combo: combo };
       r.after = r.kills >= H.lower.count ? "full" : "spawn";
     } else {
-      r.anim = { kind: "down", pick: idx, rid: r.rid };
+      r.anim = { kind: "down", pick: idx, rid: r.rid, combo: combo };
       r.after = "down";
     }
     return { ok: true, anim: r.anim };

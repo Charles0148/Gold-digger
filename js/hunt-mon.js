@@ -70,11 +70,11 @@
     const m = MONS[((i % MONS.length) + MONS.length) % MONS.length], pal = m.pal, G = padOutline(m.g()), h = G.length, w = G[0].length;
     const filled = (x, y) => G[y] && G[y][x] && G[y][x] !== "." && G[y][x] !== "O";
     const eyeCh = c => c === "w" || c === "p" || c === "W";
-    const cell = Array.from({ length: h }, () => Array(w).fill(null)), eye = Array.from({ length: h }, () => Array(w).fill(false));
+    const cell = Array.from({ length: h }, () => Array(w).fill(null)), eye = Array.from({ length: h }, () => Array(w).fill(false)), eyes = [];
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
       const c = G[y][x]; if (c === ".") continue;
       if (c === "O") { cell[y][x] = pal.O; continue; }
-      if (eyeCh(c)) { cell[y][x] = pal.eye; eye[y][x] = true; continue; }
+      if (eyeCh(c)) { cell[y][x] = pal.eye; eye[y][x] = true; eyes.push([x, y]); continue; }
       cell[y][x] = (!filled(x, y - 1) || !filled(x - 1, y)) ? pal.rim : pal.body;
     }
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
@@ -91,7 +91,7 @@
     };
     const style = "<style>.eye{animation:b 3s steps(1) infinite}@keyframes b{0%,93%,100%{opacity:1}94%,97%{opacity:0}}</style>";   // 偶爾眨一下
     const svg = `<svg viewBox="0 0 ${w} ${h}" width="${w * 7}" height="${h * 7}" xmlns="http://www.w3.org/2000/svg" shape-rendering="crispEdges">${style}${rects((x, y) => !eye[y][x])}<g class="eye">${rects((x, y) => eye[y][x])}</g></svg>`;
-    return { svg, w, h, cell, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) };
+    return { svg, w, h, cell, eyes, eye: pal.eye, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) };
   }
   const get = i => { const k = ((i % MONS.length) + MONS.length) % MONS.length; return cache[k] || (cache[k] = build(k)); };
   const api = { count: MONS.length, get, uri: i => get(i).uri, cells: i => get(i) };

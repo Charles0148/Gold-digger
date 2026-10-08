@@ -104,7 +104,7 @@
       if (stalled) {   // 演出後的結果寫入失敗，已回到操作前：不自動重播，讓玩家按「再試一次」
         lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
       } else if (r.anim) {
-        lines = [fill(r.anim.kind === "kill" ? t.monHit[r.anim.pick] : t.downLine, { name: nm })]; tap = "";
+        lines = [fill(r.anim.kind === "kill" ? t.monHit[r.anim.combo === undefined ? r.anim.pick : r.anim.combo] : t.downLine, { name: nm })]; tap = "";
       } else if (r.mon) {
         lines = [fill(t.monAppear[r.kills % t.monAppear.length], { name: nm })]; tap = r.mon.pres === 0 ? "▼ 點擊出招" : "";
         const names = r.mon.pres === 0 ? t.monSingle : r.mon.pres === 1 ? t.monTwo : t.monThree;
@@ -140,7 +140,7 @@
       if (!r2 || !r2.anim || r2.anim.rid !== rid || FX.playing() || !A.onMine()) return;
       const a = r2.anim, fx = H().fx;
       try {
-        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), variant: variantOf(r2), kind: a.kind, pick: a.pick, reduced: reduced(), scale: fx.reducedScale,
+        FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: variantOf(r2), kind: a.kind, combo: a.combo, comboText: T().combo, reduced: reduced(), scale: fx.reducedScale,
           totalMs: fx.totalMs, downMs: fx.downMs, win: T().win, downText: T().down, onDone: () => fxDone(rid) });
       } catch (e) { console.error("斬擊演出失敗：" + (e && e.message)); FX.abort(); fxDone(rid); }
     });
@@ -343,7 +343,7 @@
     addStamina(n) { const M = SV().huntMeta; M.stamina = Math.max(0, Math.min(H().stamina.cap, M.stamina + (n | 0))); persistRender(); return M.stamina; },
     set(o) { MH.devSet(SV(), H(), o); persistRender(); },
     force(o) { const r = RUN(); r.force = o; A.persist(); },
-    fx(kind, pick, t) { FX.seek({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), variant: variantOf(RUN()), kind: kind || "kill", pick: pick || 0, reduced: reduced(), scale: H().fx.reducedScale, totalMs: H().fx.totalMs, downMs: H().fx.downMs, win: T().win, downText: T().down }, t || 0); },
+    fx(kind, combo, t) { FX.seek({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), comboText: T().combo, variant: variantOf(RUN()), kind: kind || "kill", combo: combo || 0, reduced: reduced(), scale: H().fx.reducedScale, totalMs: H().fx.totalMs, downMs: H().fx.downMs, win: T().win, downText: T().down }, t || 0); },
     fxRelease() { FX.release(); },
     fxPref, setFxPref, reduced
   };

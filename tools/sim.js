@@ -86,7 +86,7 @@ function huntSection(runs) {
   H.settings.forEach((S, si) => {
     const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} };
     sv.huntMeta.stamina = ST.cap;
-    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0 };
+    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0 };
     for (let n = 0; n < runs; n++) {
       MH.run(sv, H);
       const before = sv.huntMeta.stamina;
@@ -101,7 +101,7 @@ function huntSection(runs) {
         } else if (r.phase === "dev") MH.enterCountry(sv, H);
         else if (r.phase === "country") { MH.pickCountry(sv, H, 0); MH.afterCountry(sv, H); }
         else if (r.phase === "hunt") {
-          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; MH.strike(sv, H, 0); MH.finishAnim(sv, H, MH.peek(sv, H).anim.rid); }
+          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; if (r.mon.pres === 0) c.combo[r.mon.combo]++; MH.strike(sv, H, 0); MH.finishAnim(sv, H, MH.peek(sv, H).anim.rid); }
           else { ck(false, "狩獵中沒有怪物"); break; }
         } else if (r.phase === "done") { c.gold += r.last.gold; MH.again(sv, H); break; }
       }
@@ -117,10 +117,19 @@ function huntSection(runs) {
     ck(Math.abs(c.mapN / (c.mapN + c.caveN) - (1 - H.walk.caveShare)) <= 0.005, `設定${si + 1} 藏寶圖占比與設定值差超過 0.5 點`);
     ck(c.maxStreak <= H.walk.guarantee, `設定${si + 1} 連續 ${c.maxStreak} 步沒遇到發展，超過保底 ${H.walk.guarantee}`);
     H.present.forEach((p, k) => ck(Math.abs(c.pres[k] / totP - p) <= 0.01, `設定${si + 1} 呈現類型 ${k} 實測 ${pct(c.pres[k] / totP)} 與設定值 ${pct(p)} 差超過 1 點`));
+    { const n0 = c.combo[0] + c.combo[1] + c.combo[2]; c.combo.forEach((x, k) => ck(Math.abs(x / n0 - 1 / 3) <= 0.01, `設定${si + 1} 單鈕怪斬擊套路 ${k} 實測 ${pct(x / n0)} 與三分之一差超過 1 點`)); }
     ck(Math.abs(c.monWin / c.monN - H.lower.win) <= 0.005, `設定${si + 1} 擊倒率實測 ${pct(c.monWin / c.monN)} 與設定值差超過 0.5 點`);
     ck(Math.abs(mcRtp - ex[si].stage1) <= 0.01, `設定${si + 1} 階段 1 回收率實測 ${pct(mcRtp)} 與精確值 ${pct(ex[si].stage1)} 差超過 1 點`);
   });
   console.log(`  階段 1 單獨加權回收率（蒙地卡羅）${pct(wMc, 2)}（精確 ${pct(wS1, 2)}）`);
+  // 每輪耗時（「五秒擊殺」演出：每隻怪不能跳過的演出 ${H.fx.totalMs / 1000} 秒，規格原估 2.5 秒）。時間常數沿用規格第 5 節：走一步 0.5、發展 2、國度 8、結算 2.5、選擇反應 單鈕0.6／二選一1.1／三選一1.5、倒下 2.5
+  {
+    const kt = H.fx.totalMs / 1000, react = H.present[0] * .6 + H.present[1] * 1.1 + H.present[2] * 1.5, S3 = H.settings[2], e3 = ex[2];
+    const K = H.lower.count, k = H.lower.win; let wins = 0, reach = 1; for (let i = 0; i < K; i++) { wins += reach * k; reach *= k; }
+    const per = (killSecs) => e3.walk * .5 + 2 * .5 + 2 + 8 + 2.5 + e3.Q * (wins * (react + killSecs) + (1 - reach) * (.6 + 2.5));
+    console.log(`  --- 每輪耗時（設定三，手動，階段 1）：每隻怪演出 2.5 秒 → ${per(2.5).toFixed(1)} 秒；五秒擊殺 ${kt} 秒 → ${per(kt).toFixed(1)} 秒（每輪平均擊倒 ${(e3.Q * wins).toFixed(2)} 隻，每隻多 ${(kt - 2.5).toFixed(1)} 秒）`);
+    console.log(`  --- 完整遊戲（規格 5：每輪平均擊倒約 3.3 隻，原手動 35.6 秒）：約 ${(35.6 + 3.3 * (kt - 2.5)).toFixed(1)} 秒；每隻怪約 ${kt} 秒、點擊數不變（每隻怪仍是按一下）`);
+  }
   // 打進去之後的機率與設定無關：第一階段只有「下位擊倒率」，固定寫在 config.hunt.lower；每日設定只能有入口三個欄位
   ck(H.settings.every(S => Object.keys(S).sort().join() === "cave,dev,map"), "每日設定只能有 dev／cave／map 三個入口欄位（打進去之後不隨設定變）");
 
