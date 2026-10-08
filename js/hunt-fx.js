@@ -202,7 +202,7 @@
     const W = ctx.W, H = ctx.H, reduced = ctx.reduced, ic = ctx.ic, combo = ctx.combo;
     const th = rad(TILT), nn = [Math.cos(th), Math.sin(th)];
     const tpl = snapshot(opts.app, ctx.rect);
-    const monEl = opts.monEl, img = monEl && monEl.querySelector("img"), m = img ? img.getBoundingClientRect() : null, MC = root.HuntMon && root.HuntMon.cells(opts.variant || 0);
+    const monEl = opts.monEl, img = monEl && monEl.querySelector("img"), m = img ? monEl.getBoundingClientRect() : null, MC = root.HuntMon && root.HuntMon.cells(opts.variant || 0);
     ctx.finalPose = pose(combo, 1e9, 1e9);
     if (m && MC) {
       const sx = m.left - ctx.rect.left, sy = m.top - ctx.rect.top, cp = m.width / MC.w;

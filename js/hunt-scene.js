@@ -4,14 +4,13 @@
    - 來源：Claude outputs/第二階段演出候選稿_2026-10-08/（擁有者 2026-10-08 核准）。每個演出都是「時間 t（毫秒）的純函式」，畫在 98×211 的小畫布（每格放大 4 倍，不抗鋸齒），文字另畫在 780×1688 的疊字畫布
    - 長度＝設定檔 config.hunt.fx 的毫秒數；和候選稿原長不同時整段等比例伸縮（例如餘燼成功後的短版判定）。減少特效：長度 ×0.85、不抖動、粒子減半
    - 閃光規則：沒有全螢幕白閃（天堂的光逐步鋪開、地獄的焰逐步漫上；點燃一路穩定變亮，成敗只在最後 1.5 秒分開）。判定為單向推進，不來回、沒有差一點
-   - 巨龍與新怪物的圖在 js/hunt-mon.js（HuntMon.kit 提供格子工具與巨龍資料）
-   - 風險：巨龍登場／破鱗每格重畫約 2500 個像素格，低階手機的效能沒有實測（候選稿只在桌機測過）；若卡頓可改成預先繪圖
+   - 巨龍使用 js/hunt-mon-art.js 的 v2 四格預繪 PNG；每幀只移動圖片層，不重畫數千格
    ========================================================= */
 (function (root) {
   "use strict";
   const AW = 98, AH = 211;
   const NATIVE = { intro: 3000, brk: 2500, heaven: 6000, hell: 8000, ember: 8000, tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600 };
-  let L = null, A = null, g = null, X = null, tx = null, RED = false, S = null, TX = {}, TR = { realm: "heaven", res: "cont", line: "", gold: 0, ok: true };
+  let L = null, A = null, g = null, X = null, tx = null, D = null, DI = null, RED = false, S = null, TX = {}, TR = { realm: "heaven", res: "cont", line: "", gold: 0, ok: true };
   const kit = () => root.HuntMon.kit;
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const ssub = (t, a, b) => clamp((t - a) / (b - a));
@@ -46,37 +45,29 @@
     T(s, 195, y, size, col, Object.assign({ ls: 6 }, o));
   }
   function shakeAt(t, a, b, amp) { if (RED || t < a || t > b) return [0, 0]; const i = Math.floor(t / 40); return [Math.round((rn(i, 1) - .5) * 2 * amp) * 4, Math.round((rn(i, 2) - .5) * 2 * amp) * 4]; }
-  function begin() { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.clearRect(0, 0, AW, AH); tx.setTransform(1, 0, 0, 1, 0, 0); tx.clearRect(0, 0, 780, 1688); tx.setTransform(2, 0, 0, 2, 0, 0); A.style.transform = ""; }
+  function begin() { g.setTransform(1, 0, 0, 1, 0, 0); g.globalAlpha = 1; g.clearRect(0, 0, AW, AH); tx.setTransform(1, 0, 0, 1, 0, 0); tx.clearRect(0, 0, 780, 1688); tx.setTransform(2, 0, 0, 2, 0, 0); A.style.transform = ""; if (D) { D.style.display = "none"; D.querySelectorAll("i").forEach(e => e.style.display = "none"); } }
   const NP = n => RED ? Math.ceil(n / 2) : n;     // 減少特效：粒子減半
   function vig(a) { for (let i = 0; i < 6; i++) { const w = 6 - i; px(0, 0, w, AH, "#000", a * .16); px(AW - w, 0, w, AH, "#000", a * .16); px(0, 0, AW, w * 2, "#000", a * .16); px(0, AH - w * 2, AW, w * 2, "#000", a * .16); } }
   const fadeTxt = (s, t, a, b, y, size, col, o = {}) => { const al = Math.min(ssub(t, a, a + 250), 1 - ssub(t, b - 250, b)); if (al > 0) T(s, 195, y, size, col, Object.assign({ a: al }, o)); };
   function blit(ctx, C, x0, y0, o = {}) { ctx.globalAlpha = 1; for (const c of C.cells) { ctx.fillStyle = (c.k === "e" && o.noEye) ? (o.body || "#2c2950") : c.col; ctx.fillRect(x0 + c.x, y0 + c.y, 1, 1); } }
 
   /* ===== 駭骨巨龍 ===== */
-  const CORE = "#7fe3ff", OXD = 5, OYD = 62;
-  /* o: asm＝組裝進行毫秒（null＝已組好）；brk＝破鱗進行毫秒（null＝未破）；plates＝是否穿鱗；eyeK 0~1；eyeCol；dy 位移 */
+  /* o: asm＝登場進行毫秒；brk＝破鱗進行毫秒。圖片固定以 128×108 的 2 倍顯示。 */
   function drawDragon(o) {
-    const DR = kit().dragonData(), plateCol = kit().plateCol, C = DR.C, ox = OXD, oy = OYD + (o.dy || 0), asm = o.asm, brk = o.brk;
-    const bt = i => 300 + DR.plates[i].d / 52 * 1000 + rn(i, 3) * 100;
-    const eyeCol = mix("#1a1a30", o.eyeCol || "#7fe3ff", o.eyeK == null ? 1 : o.eyeK);
-    const fly = [];
-    for (let i = 0; i < C.cells.length; i++) {
-      const c = C.cells[i]; let col = c.col, X0 = ox + c.x, Y0 = oy + c.y, al = 1;
-      if (asm != null) {
-        const ta = 150 + c.d / 50 * 1000 + rn(i, 1) * 120, p = ssub(asm, ta, ta + 420);
-        if (p <= 0) continue; const e = eo(p);
-        X0 += Math.round((rn(i, 2) - .5) * 120 * (1 - e)); Y0 -= Math.round((rn(i, 4) * 80 + 30) * (1 - e)); al = p;
-      }
-      if (c.k === "e") col = eyeCol;
-      else if (c.plate != null && o.plates && (asm == null || asm > 1400 + rn(c.plate, 5) * 450)) {
-        const pl = DR.plates[c.plate];
-        if (brk == null || brk < bt(c.plate)) col = plateCol(c, pl);
-        else { const u = brk - bt(c.plate); col = mix(c.col, CORE, ssub(u, 0, 200) * (1 - .45 * ssub(u, 300, 1600))); if (u < 650) fly.push([c, pl, u]); }
-      } else if (brk != null && c.k === "a") col = mix(c.col, CORE, ssub(brk, 300, 1200) * .25 * clamp(1 - c.d / 60));
-      px(X0, Y0, 1, 1, col, al);
-    }
-    fly.forEach(f => { const c = f[0], q = f[2] / 650, dx = (c.x - 1 - 44) / 12 * 26 * q, dy = -16 * q + 60 * q * q; px(ox + c.x + dx, oy + c.y + dy, 1, 1, plateCol(c, f[1]), 1 - q); });
-    if ((o.eyeK == null ? 1 : o.eyeK) > .3 && asm == null || (asm != null && asm > 1900)) { const k = o.eyeK == null ? 1 : o.eyeK; [[41, 12], [48, 12]].forEach(e => glow(ox + e[0], oy + e[1], 5, o.eyeCol || "#7fe3ff", .5 * k)); }
+    if (!D || !DI) return;
+    const broken = o.brk != null && o.brk >= 900, v = broken ? root.HuntMon.DRAGON_BROKEN : root.HuntMon.DRAGON;
+    const src = root.HuntMon.sprite(v); if (DI.getAttribute("src") !== src) DI.setAttribute("src", src);
+    D.style.display = "block"; D.classList.toggle("reduced", RED);
+    let alpha = 1, y = 0, scale = 1;
+    if (o.asm != null) { const p = eo(ssub(o.asm, 350, 1550)); alpha = p; y = Math.round((1 - p) * 150); scale = .72 + .28 * p; }
+    D.style.opacity = alpha; D.style.transform = `translateY(${y}px) scale(${scale})`;
+    if (o.brk != null) D.querySelectorAll("i").forEach((e, i) => {
+      const q = ssub(o.brk, 650 + i * 55, 1450 + i * 55); if (q <= 0 || q >= 1) return;
+      const a = (i / 8) * Math.PI * 2 - 1.4, dx = Math.cos(a) * (35 + 95 * q), dy = Math.sin(a) * (22 + 55 * q) + 90 * q * q;
+      e.style.display = "block"; e.style.opacity = 1 - q; e.style.transform = `translate(${Math.round(dx)}px,${Math.round(dy)}px) rotate(${i * 45 + q * 90}deg)`;
+    });
+    const eyeK = o.eyeK == null ? 1 : o.eyeK;
+    if (eyeK > .3) glow(49, 82, 8, o.eyeCol || "#7fe3ff", .3 * eyeK);
   }
   function cave() {
     bands(["#07060d", "#0d0b1c", "#141126", "#1c1735"], 0, 142);
@@ -277,9 +268,9 @@
   function ensure(app) {
     if (L && L.parentNode === app) return L;
     L = document.createElement("div"); L.id = "huntScene"; L.setAttribute("aria-hidden", "true");
-    L.innerHTML = '<div class="hs-box"><canvas class="hs-art"></canvas><canvas class="hs-tx"></canvas></div><button class="px-btn hs-leave" type="button"></button>';
+    L.innerHTML = '<div class="hs-box"><canvas class="hs-art"></canvas><div class="hs-dragon"><span><img alt=""></span><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><canvas class="hs-tx"></canvas></div><button class="px-btn hs-leave" type="button"></button>';
     app.appendChild(L);
-    A = L.querySelector(".hs-art"); X = L.querySelector(".hs-tx");
+    A = L.querySelector(".hs-art"); X = L.querySelector(".hs-tx"); D = L.querySelector(".hs-dragon"); DI = D.querySelector("img");
     A.width = AW; A.height = AH; X.width = 780; X.height = 1688;
     g = A.getContext("2d", { willReadFrequently: true }); g.imageSmoothingEnabled = false; tx = X.getContext("2d");
     return L;
@@ -299,7 +290,7 @@
   }
   function cleanup() {
     if (!S) return;
-    cancelAnimationFrame(S.raf); L.classList.remove("on"); A.style.transform = "";
+    cancelAnimationFrame(S.raf); L.classList.remove("on"); A.style.transform = ""; if (D) D.style.display = "none";
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, AW, AH); tx.setTransform(1, 0, 0, 1, 0, 0); tx.clearRect(0, 0, 780, 1688); S = null;
   }
   /* o: { app, id: intro|brk|heaven|hell|ember|tunnel|buddy|glyph|roar|fx, ms(目標長度；和原長不同時等比例伸縮), reduced, realm("heaven"|"hell"，場景色調), line(場景句子), ok(點燃成敗), gold(失敗時顯示的金幣), texts, leaveOk, onLeave, onDone } */

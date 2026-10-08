@@ -238,9 +238,10 @@ console.log("=== 11. 開發者設定、種子、雜湊 ===");
   ok(R(sv).phase === "dev" && R(sv).dev.kind === "map" && R(sv).country.ok === false, "devSet 跳到發展");
 }
 
-console.log("=== 12. 怪物（暗影眼光 6 種變體）===");
+console.log("=== 12. 怪物（精美版 14 隻＋角色）===");
 {
   const HM = require(path.join(ROOT, "js/hunt-mon.js"));
+  const HA = require(path.join(ROOT, "js/hunt-mon-art.js"));
   ok(HM.count === 6 && C.hunt.texts.monNames.length === HM.count, "怪物 6 種，名稱數量一致（洞影蝠、影蜘蛛、幽影、影菇、影泥、石影像）");
   const uris = new Set(); let good = true;
   for (let i = 0; i < 6; i++) { const m = HM.get(i); uris.add(m.uri); if (!(m.w > 8 && m.h > 8 && m.cell.length === m.h && m.cell.flat().some(Boolean) && m.svg.includes("<svg"))) good = false; }
@@ -249,6 +250,9 @@ console.log("=== 12. 怪物（暗影眼光 6 種變體）===");
   const rm = [...HM.realm.heaven, ...HM.realm.hell].concat([HM.DRAGON, HM.DRAGON_BROKEN]);
   ok(rm.every(i => { const m = HM.get(i); return m.w > 8 && m.h > 8 && m.eyes.length > 0 && m.cell.flat().some(Boolean); }) && new Set(rm.map(i => HM.get(i).uri)).size === 8, "狹間 6 種新怪＋巨龍 2 種都畫得出來、各不相同、有眼睛可供擊殺演出使用");
   ok(C.hunt.texts.realmMonNames.heaven.length === 3 && C.hunt.texts.realmMonNames.hell.length === 3, "狹間怪名稱天堂 3／地獄 3");
+  const dims = HA.list.map((m, i) => { const b = fs.readFileSync(path.join(ROOT, m.sprite)); return [m.w, m.h, b.readUInt32BE(16), b.readUInt32BE(20), HM.get(i).eyes.length]; });
+  ok(dims.slice(0, 6).every(d => d[0] === 40 && d[1] === 40 && d[2] === 160 && d[3] === 40 && d[4] > 0) && dims.slice(6, 12).every(d => d[0] === 48 && d[1] === 48 && d[2] === 192 && d[3] === 48 && d[4] > 0), "下位 40×40、狹間 48×48：PNG 都是橫排四格且有反黑眼睛座標");
+  ok(dims.slice(12).every(d => d[0] === 128 && d[1] === 108 && d[2] === 512 && d[3] === 108 && d[4] > 0) && /駭骨巨龍/.test(HA.list[12].name) && /破鱗後/.test(HA.list[13].name), "巨龍 v2／破鱗後 v2 為 128×108、橫排四格且有反黑眼睛座標");
   const tt = C.hunt.texts.scene.turn, all = Object.keys(tt).reduce((n, k) => n + tt[k].cont.length + tt[k].end.length, 0);
   ok(Object.keys(tt).length === 6 && all === 36 && Object.keys(tt).every(k => tt[k].cont.length === 3 && tt[k].end.length === 3), "狹間場景 5 種（光羽／焰流分兩組）共 36 句：繼續 3＋結束 3");
   ok(!/再一次|可惜|中獎|大當|稀有|超強|第 ?\{?\w*\}? ?隻/.test(JSON.stringify(C.hunt.texts.scene)), "演出文字沒有審查員禁用字眼（再一次／可惜／中獎／大當／稀有／超強／第 N 隻）");

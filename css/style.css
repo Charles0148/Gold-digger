@@ -928,13 +928,16 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .sum-modal .btns { margin-top: 14px; }
 
 /* ===== 冒險之地（第 7 座，2026-10-08；js/hunt-ui.js、js/hunt-fx.js、js/hunt-mon.js）===== */
-.hunt-mon { height: min(114px, calc(100cqh - 34px)); min-height: 36px; margin: 0 auto; animation: huntBob 1s steps(1) infinite; }   /* 場景被選項擠矮時，怪物跟著縮小 */
+.hunt-mon { position: relative; width: 120px; height: 120px; flex: none; overflow: hidden; margin: 0 auto; animation: huntBob 1s steps(1) infinite; }
 .hunt-mon.mw { filter: brightness(0) invert(1); }   /* 受擊色：只在怪物身上（白剪影 66ms；最後一刀金色；減少特效只是變亮） */
 .hunt-mon.mg { filter: brightness(0) invert(1) sepia(1) saturate(7) hue-rotate(-8deg) brightness(1.15); }
 .hunt-mon.mh { filter: brightness(1.7); }
-.hunt-mon img { display: block; height: 100%; width: auto; margin: 0 auto; image-rendering: pixelated; }
+.hunt-mon img { display: block; width: 400%; max-width: none; height: 100%; image-rendering: pixelated; animation: huntIdle 1s steps(1,end) infinite; will-change: transform; }
 @keyframes huntBob { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
-@media (prefers-reduced-motion: reduce) { .hunt-mon { animation: none; } }
+@keyframes huntIdle { 0%,24.99% { transform: translateX(0); } 25%,49.99% { transform: translateX(-25%); } 50%,74.99% { transform: translateX(-50%); } 75%,100% { transform: translateX(-75%); } }
+.hunt-mon.reduced, .hunt-mon.reduced img { animation: none; }
+.hunt-mon.reduced img { transform: translateX(0); }
+@media (prefers-reduced-motion: reduce) { .hunt-mon, .hunt-mon img { animation: none; } .hunt-mon img { transform: translateX(0); } }
 /* 斬擊演出圖層（丙＋反黑）：蓋住整個遊戲畫面，演出中擋住點擊（每隻怪的演出不能跳過）。由下往上：後層＋兩大塊＋碎片 → 畫布 → 色調／閃光 → 勝利字 */
 #huntFx { position: absolute; inset: 0; z-index: 70; overflow: hidden; display: none; pointer-events: auto; touch-action: none; }
 #huntFx.on { display: block; }
@@ -987,7 +990,10 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .fx-opts .px-btn { flex: 1; min-height: 40px; }
 
 /* 第二階段（2026-10-08）：已核准的巨龍、轉生狹間怪物與場景色調 */
-.hunt-mon.dragon { height: min(190px, calc(100cqh - 34px)); }
+.hunt-mon.heaven, .hunt-mon.hell { width: 144px; height: 144px; }
+.hunt-mon.dragon { width: 256px; height: 216px; }
+@container (max-height: 250px) { .hunt-mon.dragon { width: 128px; height: 108px; } }
+@container (max-height: 176px) { .hunt-mon { width: 80px; height: 80px; } .hunt-mon.heaven, .hunt-mon.hell { width: 96px; height: 96px; } .hunt-mon.dragon { width: 128px; height: 108px; } }
 .hunt-mon.heaven img { filter: drop-shadow(0 0 5px rgba(255,233,168,.85)) drop-shadow(0 0 2px #fff6d0); }
 .hunt-mon.hell img { filter: drop-shadow(0 0 5px rgba(255,58,42,.85)) drop-shadow(0 0 2px #ff9a6a); }
 #scene.realm-heaven { background-color: #3a3524; background-image: radial-gradient(ellipse at 50% 0%, rgba(255,240,180,.28), transparent 70%), repeating-linear-gradient(0deg, rgba(255,236,160,.07) 0 16px, transparent 16px 32px), repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 16px, transparent 16px 32px); }
@@ -999,6 +1005,12 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 #huntScene canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
 #huntScene .hs-art { image-rendering: pixelated; }
 #huntScene .hs-tx { pointer-events: none; }
+#huntScene .hs-dragon { position: absolute; z-index: 1; left: calc(50% - 128px); top: 220px; width: 256px; height: 216px; overflow: visible; transform-origin: 50% 100%; image-rendering: pixelated; }
+#huntScene .hs-dragon span { display: block; width: 100%; height: 100%; overflow: hidden; }
+#huntScene .hs-dragon img { display: block; width: 400%; max-width: none; height: 100%; image-rendering: pixelated; animation: huntIdle 1s steps(1,end) infinite; }
+#huntScene .hs-dragon.reduced img { animation: none; transform: translateX(0); }
+#huntScene .hs-dragon i { display: none; position: absolute; z-index: 2; left: calc(50% - 8px); top: 48%; width: 16px; height: 16px; background: #9f99e6; border: 4px solid #4a4484; image-rendering: pixelated; }
+#huntScene .hs-tx { z-index: 3; }
 #huntScene .hs-leave { position: absolute; right: 10px; top: 10px; min-height: 40px; padding: 6px 12px; opacity: .85; }
 #huntFx[data-realm="heaven"] .hv-t { color: #fff4c8; }
 #huntFx[data-realm="hell"] .hv-t { color: #ff8a4a; }

@@ -51,7 +51,7 @@
   const curVariant = r => (r.phase === "dragon" ? ((r.anim && r.anim.kind === "kill") || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
   const curName = r => (r.phase === "dragon" ? T().dragonName : r.phase === "realm" ? T().realmMonNames[r.realm.type][realmIdx(r)] : monName(variantOf(r)));
   const monCls = r => (r.phase === "dragon" ? " dragon" : r.phase === "realm" ? " " + r.realm.type : "");
-  const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}"><img src="${HM.uri(v)}" alt=""></div>`;
+  const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}${reduced() ? " reduced" : ""}"><img src="${HM.sprite(v)}" alt=""></div>`;
   const akey = r => r.seed + ":" + (r.anim ? r.anim.rid : 0);
   const SC = root.HuntScene;
   const later = (ms, f) => {
