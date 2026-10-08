@@ -27,14 +27,14 @@ const HUNT_RUNS = HUNT_ONLY ? +(process.argv[3] || 400000) : Math.max(100000, Ma
 
 /* ---------- §8.10 冒險狩獵礦坑（第 7 座，2026-10-08；規格 Claude outputs/新礦坑_冒險狩獵_規格定案v2_2026-10-08.md） ----------
    只跑這一節：node tools/sim.js hunt [輪數，預設 400000]
-   ① 精確期望值（不靠亂數）：第一階段單獨回收率、完整遊戲（加上之後階段的巨龍／狹間，參數在 config.hunt.later）回收率。
+   ① 精確期望值（不靠亂數）：第一階段單獨回收率、完整遊戲（加上巨龍／狹間，參數在 config.hunt.dragon／realm）回收率。
       完整遊戲要落在規格 3.4 的表值（112.9／116.4／119.4／126.6／134.2／144.6）±1.0，依設定分佈加權 120%±1，設定六減設定一 28～36 點。
       第一階段（只有下位 3 隻怪、沒有巨龍和狹間）單獨回收率很低是預期的，全部不開放，不影響玩家。
    ② 蒙地卡羅：直接驅動 js/mine-hunt.js 的真實狀態機（不是另寫一份模型），驗證入口機率、30 步保底、呈現類型比例、擊倒率、第一階段回收率。
    ③ 餵食：換算只會少不會多（無套利）、多把先加總再捨去、單把換算為 0 不可餵、試用版不可餵、鑽頭 1,380。 */
 function huntSection(runs) {
   const MH = require(path.join(ROOT, "js/mine-hunt.js"));
-  const H = C.hunt, ST = H.stamina, LW = H.later, dist = R.settingDist;
+  const H = C.hunt, ST = H.stamina, DR = H.dragon, RM = H.realm, dist = R.settingDist;
   let bad = 0;
   const ck = (ok, msg) => { if (!ok) { bad++; console.log(`  ✗ ${msg}`); } return ok; };
   console.log(`\n=== §8.10 冒險狩獵礦坑（${runs.toLocaleString()} 輪／設定）===`);
@@ -51,16 +51,16 @@ function huntSection(runs) {
     let spent = walk * ST.perStep + ST.countryCost + Q * stepsL * ST.perStep, gold = Q * goldL;
     const out = { walk, Q, passL, stage1: gold / (spent * ST.valuePer), spent1: spent, gold1: gold };
     if (full) {
-      const d = LW.dragon, enter = passL * d.win;
+      const d = DR, enter = passL * d.win;
       spent += Q * passL * ST.perStep; gold += Q * passL * d.win * d.gold;
       const rnd = (h, cap, w) => { let m = 0; for (let n = 0; n < cap; n++) m += Math.pow(h, n); return { m, gold: m * w, pcap: Math.pow(h, cap - 1) }; };
-      const Hv = rnd(LW.heaven.cont, LW.heaven.cap, LW.heaven.gold), Gv = rnd(LW.hell.cont, LW.hell.cap, LW.hell.gold);
-      const a = LW.heaven.nextHeaven, b = LW.hell.nextHeaven, ph = Hv.pcap * LW.ember, pg = Gv.pcap * LW.ember;
+      const Hv = rnd(RM.heaven.cont, RM.heaven.cap, RM.heaven.gold), Gv = rnd(RM.hell.cont, RM.hell.cap, RM.hell.gold);
+      const a = RM.heaven.nextHeaven, b = RM.hell.nextHeaven, ph = Hv.pcap * RM.ember, pg = Gv.pcap * RM.ember;
       const solve = (Hx, Gx) => {
         const A11 = 1 - ph * a, A12 = -ph * (1 - a), A21 = -pg * b, A22 = 1 - pg * (1 - b), det = A11 * A22 - A12 * A21;
         return { Eh: (Hx * A22 - A12 * Gx) / det, Eg: (A11 * Gx - A21 * Hx) / det };
       };
-      const st = solve(Hv.m, Gv.m), gd = solve(Hv.gold, Gv.gold), ent = x => LW.entryHeaven * x.Eh + (1 - LW.entryHeaven) * x.Eg;
+      const st = solve(Hv.m, Gv.m), gd = solve(Hv.gold, Gv.gold), ent = x => RM.entryHeaven * x.Eh + (1 - RM.entryHeaven) * x.Eg;
       spent += Q * enter * ent(st) * ST.perStep; gold += Q * enter * ent(gd);
       out.full = gold / (spent * ST.valuePer);
     }
@@ -80,17 +80,18 @@ function huntSection(runs) {
   ck(H.settings.length === 6 && dist.length === 6, "每日設定必須 6 種");
 
   // ---- ② 蒙地卡羅：真實狀態機 ----
-  console.log(`  --- 蒙地卡羅（真實 js/mine-hunt.js，每輪：旅途→發展→國度→下位狩獵→凱旋）---`);
-  console.log(`  設定｜每步發展率(排除保底)｜洞窟成功｜藏寶圖成功｜單鈕/二選一/三選一｜擊倒率｜最長連續沒發展｜階段1回收率（精確）`);
+  console.log(`  --- 蒙地卡羅（真實 js/mine-hunt.js，每輪：旅途→發展→國度→下位→巨龍→狹間→餘燼→凱旋）---`);
+  console.log(`  設定｜每步發展率(排除保底)｜洞窟成功｜藏寶圖成功｜單鈕/二選一/三選一｜擊倒率｜最長連續沒發展｜完整遊戲回收率（精確）`);
   let wMc = 0;
   H.settings.forEach((S, si) => {
     const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} };
     sv.huntMeta.stamina = ST.cap;
-    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0 };
+    const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0,
+      dragonN: 0, dragonWin: 0, entryN: 0, entryHeaven: 0, rmKills: 0, rmMax: { heaven: 0, hell: 0 }, rmRounds: { heaven: 0, hell: 0 }, rmFull: { heaven: 0, hell: 0 }, emberN: 0, emberOk: 0, nextN: { heaven: 0, hell: 0 }, nextHeaven: { heaven: 0, hell: 0 }, lowerN: 0, lowerPass: 0 };
     for (let n = 0; n < runs; n++) {
       MH.run(sv, H);
       const before = sv.huntMeta.stamina;
-      for (let guard = 0; guard < 200; guard++) {
+      for (let guard = 0; guard < 5000; guard++) {
         const r = MH.peek(sv, H);
         if (r.phase === "walk") {
           const since = r.since, res = MH.step(sv, H, { setting: si + 1 });
@@ -100,17 +101,31 @@ function huntSection(runs) {
           if (res.ev === "dev") { c.maxStreak = Math.max(c.maxStreak, c.streak); c.streak = 0; const kd = MH.peek(sv, H); if (kd.dev.kind === "cave") { c.caveN++; if (kd.country.ok) c.caveOk++; } else { c.mapN++; if (kd.country.ok) c.mapOk++; } }
         } else if (r.phase === "dev") MH.enterCountry(sv, H);
         else if (r.phase === "country") { MH.pickCountry(sv, H, 0); MH.afterCountry(sv, H); }
-        else if (r.phase === "hunt") {
-          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; if (r.mon.pres === 0) c.combo[r.mon.combo]++; MH.strike(sv, H, 0); MH.finishAnim(sv, H, MH.peek(sv, H).anim.rid); }
+        else if (r.anim) {   // 演出播完（判定、擊殺、點燃…）
+          if (r.anim.kind === "judge") { const t = r.anim.type; if (r.anim.first) { c.entryN++; if (t === "heaven") c.entryHeaven++; } c.rmRounds[t]++; }
+          MH.finishAnim(sv, H, r.anim.rid);
+        } else if (r.phase === "hunt") {
+          if (r.mon) { c.monN++; if (r.mon.win) c.monWin++; c.pres[r.mon.pres]++; if (r.mon.pres === 0) c.combo[r.mon.combo]++; MH.strike(sv, H, 0); }
           else { ck(false, "狩獵中沒有怪物"); break; }
+        } else if (r.phase === "dragon") {
+          if (!r.mon) { ck(false, "巨龍階段沒有怪物"); break; }
+          c.dragonN++; if (r.mon.win) c.dragonWin++; MH.strike(sv, H, 0);
+        } else if (r.phase === "realm") {
+          if (!r.mon) { ck(false, "狹間中沒有怪物"); break; }
+          c.rmKills++; MH.strike(sv, H, 0);
+          const rr = MH.peek(sv, H).realm; c.rmMax[rr.type] = Math.max(c.rmMax[rr.type], rr.n);
+        } else if (r.phase === "ember") {
+          c.emberN++; if (r.ember.ok) c.emberOk++; c.rmFull[r.realm.type]++; c.nextN[r.realm.type]++; if (r.ember.next === "heaven") c.nextHeaven[r.realm.type]++;
+          MH.ignite(sv, H);
         } else if (r.phase === "done") { c.gold += r.last.gold; MH.again(sv, H); break; }
       }
       c.spent += before - sv.huntMeta.stamina;
     }
     const mcRtp = c.gold / (c.spent * ST.valuePer);
+    c.lowerN = c.monN; 
     wMc += mcRtp * dist[si];
     const totP = c.pres[0] + c.pres[1] + c.pres[2];
-    console.log(`  ${si + 1}｜${pct(c.freeDev / c.free, 2)}（${pct(S.dev, 2)}）｜${pct(c.caveOk / c.caveN)}（${pct(S.cave)}）｜${pct(c.mapOk / c.mapN)}（${pct(S.map)}）｜${c.pres.map(x => pct(x / totP, 0)).join("/")}｜${pct(c.monWin / c.monN)}｜${c.maxStreak} 步｜${pct(mcRtp)}（${pct(ex[si].stage1)}）`);
+    console.log(`  ${si + 1}｜${pct(c.freeDev / c.free, 2)}（${pct(S.dev, 2)}）｜${pct(c.caveOk / c.caveN)}（${pct(S.cave)}）｜${pct(c.mapOk / c.mapN)}（${pct(S.map)}）｜${c.pres.map(x => pct(x / totP, 0)).join("/")}｜${pct(c.monWin / c.monN)}｜${c.maxStreak} 步｜${pct(mcRtp)}（${pct(ex[si].full)}）`);
     ck(Math.abs(c.freeDev / c.free - S.dev) <= 0.003, `設定${si + 1} 每步發展率實測 ${pct(c.freeDev / c.free, 2)} 與設定值 ${pct(S.dev, 2)} 差超過 0.3 點`);
     ck(Math.abs(c.caveOk / c.caveN - S.cave) <= 0.005, `設定${si + 1} 洞窟國度成功率實測 ${pct(c.caveOk / c.caveN)} 與設定值差超過 0.5 點`);
     ck(Math.abs(c.mapOk / c.mapN - S.map) <= 0.01, `設定${si + 1} 藏寶圖國度成功率實測 ${pct(c.mapOk / c.mapN)} 與設定值差超過 1 點（樣本較少）`);
@@ -119,9 +134,19 @@ function huntSection(runs) {
     H.present.forEach((p, k) => ck(Math.abs(c.pres[k] / totP - p) <= 0.01, `設定${si + 1} 呈現類型 ${k} 實測 ${pct(c.pres[k] / totP)} 與設定值 ${pct(p)} 差超過 1 點`));
     { const n0 = c.combo[0] + c.combo[1] + c.combo[2]; c.combo.forEach((x, k) => ck(Math.abs(x / n0 - 1 / 3) <= 0.01, `設定${si + 1} 單鈕怪斬擊套路 ${k} 實測 ${pct(x / n0)} 與三分之一差超過 1 點`)); }
     ck(Math.abs(c.monWin / c.monN - H.lower.win) <= 0.005, `設定${si + 1} 擊倒率實測 ${pct(c.monWin / c.monN)} 與設定值差超過 0.5 點`);
-    ck(Math.abs(mcRtp - ex[si].stage1) <= 0.01, `設定${si + 1} 階段 1 回收率實測 ${pct(mcRtp)} 與精確值 ${pct(ex[si].stage1)} 差超過 1 點`);
+    ck(Math.abs(mcRtp - ex[si].full) <= 0.015, `設定${si + 1} 完整遊戲回收率實測 ${pct(mcRtp)} 與精確值 ${pct(ex[si].full)} 差超過 1.5 點`);
+    // 第二階段：巨龍／判定／狹間／餘燼（打進去之後與設定無關，六個設定都要通過同一套門檻）
+    const pr = (a, b) => (b ? a / b : 0);
+    console.log(`     巨龍勝 ${pct(pr(c.dragonWin, c.dragonN))}｜首次天堂 ${pct(pr(c.entryHeaven, c.entryN))}｜每次進狹間平均擊倒 ${pr(c.rmKills, c.entryN).toFixed(2)} 隻｜撐滿天堂 ${pct(pr(c.rmFull.heaven, c.rmRounds.heaven), 2)}／地獄 ${pct(pr(c.rmFull.hell, c.rmRounds.hell), 1)}｜餘燼成功 ${pct(pr(c.emberOk, c.emberN))}｜撐滿後下一輪天堂 天堂者 ${pct(pr(c.nextHeaven.heaven, c.nextN.heaven))}／地獄者 ${pct(pr(c.nextHeaven.hell, c.nextN.hell))}｜單輪最多 天堂 ${c.rmMax.heaven}／地獄 ${c.rmMax.hell}`);
+    ck(Math.abs(pr(c.dragonWin, c.dragonN) - DR.win) <= 0.005, `設定${si + 1} 巨龍勝率實測 ${pct(pr(c.dragonWin, c.dragonN))} 與 ${pct(DR.win)} 差超過 0.5 點`);
+    ck(Math.abs(pr(c.entryHeaven, c.entryN) - RM.entryHeaven) <= 0.005, `設定${si + 1} 首次天堂比例實測 ${pct(pr(c.entryHeaven, c.entryN))} 與 ${pct(RM.entryHeaven)} 差超過 0.5 點`);
+    ck(c.emberN > 100 && Math.abs(pr(c.emberOk, c.emberN) - RM.ember) <= 0.02, `設定${si + 1} 餘燼成功率實測 ${pct(pr(c.emberOk, c.emberN))}（${c.emberN} 次）與 ${pct(RM.ember)} 差超過 2 點`);
+    ck(Math.abs(pr(c.rmKills, c.entryN) - 7.01) <= 0.15, `設定${si + 1} 每次進狹間平均擊倒 ${pr(c.rmKills, c.entryN).toFixed(2)} 隻，與 7.01 差超過 0.15`);
+    ck(c.rmMax.heaven <= RM.heaven.cap && c.rmMax.hell <= RM.hell.cap, `設定${si + 1} 單輪擊倒超過上限（天堂 ${c.rmMax.heaven}／地獄 ${c.rmMax.hell}）`);
+    ck(Math.abs(pr(c.nextHeaven.heaven, c.nextN.heaven) - RM.heaven.nextHeaven) <= 0.03 && Math.abs(pr(c.nextHeaven.hell, c.nextN.hell) - RM.hell.nextHeaven) <= 0.03, `設定${si + 1} 撐滿後下一輪天堂比例偏離（樣本 ${c.nextN.heaven}／${c.nextN.hell}）`);
   });
-  console.log(`  階段 1 單獨加權回收率（蒙地卡羅）${pct(wMc, 2)}（精確 ${pct(wS1, 2)}）`);
+  console.log(`  完整遊戲加權回收率（蒙地卡羅，真實狀態機）${pct(wMc, 2)}（精確 ${pct(wFull, 2)}）`);
+  ck(Math.abs(wMc - 1.20) <= 0.015, `蒙地卡羅完整遊戲加權回收率 ${pct(wMc, 2)} 不在 120%±1.5`);
   // 每輪耗時（「五秒擊殺」演出：每隻怪不能跳過的演出 ${H.fx.totalMs / 1000} 秒，規格原估 2.5 秒）。時間常數沿用規格第 5 節：走一步 0.5、發展 2、國度 8、結算 2.5、選擇反應 單鈕0.6／二選一1.1／三選一1.5、倒下 2.5
   {
     const kt = H.fx.totalMs / 1000, react = H.present[0] * .6 + H.present[1] * 1.1 + H.present[2] * 1.5, S3 = H.settings[2], e3 = ex[2];

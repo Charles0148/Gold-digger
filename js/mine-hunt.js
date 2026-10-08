@@ -14,7 +14,13 @@
          country   { ok: 預抽成敗, pick: null｜0～2 }
          kills／gold／mon{win,pres,combo}／anim{kind,pick,rid,combo}／after／rid  狩獵。combo＝斬擊套路 0突刺→C「連刺上挑」／1橫掃→A「快速五連斬」／2蓄力→B「三刀大迴旋」；
                   單鈕（出招）的怪由呈現抽選那一抽順便決定（不多抽一次），選項怪＝玩家選的招式；都跟著預抽結果存進存檔，重新整理套路不變
-         last      { gold, kills, why }  凱旋統計
+         第二階段（2026-10-08，規格 新礦坑_冒險狩獵_第二階段規格）：phase 新增 "dragon"巨龍｜"realm"轉生狹間｜"ember"輪迴的餘燼
+         realm     { type:"heaven"|"hell", n:本輪已擊倒隻數, round:第幾輪, total:本趟狹間累計 }（判定演出開始時建立，凱旋清掉）
+         ember     { ok:預抽成敗, next:成功後下一輪 "heaven"|"hell", pressed }（撐滿進入餘燼時預抽）
+         mon 擴充  巨龍多 entry（預抽的入口類型）、pres 固定 2；狹間多 cont（這隻打完是否繼續）、win 固定 true
+         anim.kind 新增 "judge"（帶 type、first）｜"ember"；after 新增 "judge"｜"rspawn"｜"rend"｜"ember"｜"emberfail"；hunt 的 "full" 現在＝接到巨龍
+         抽選次數（寫死，不得改順序）：巨龍 draw×2（勝負、入口天堂）；狹間每隻 draw×1（繼續）＋drawP×1（呈現＋套路）；進餘燼 draw×2（成功、下一輪天堂）；判定 0
+         last      { gold, kills, why:"full"(舊)|"down"|"empty"|"realm"|"ember", realmKills?, rounds? }  凱旋統計
    - 防作弊：任何影響結果的隨機，在「付出體力的那一刻」抽好、寫進存檔，呼叫端 persist 之後才演出。
    - 金幣：只累積在 run.gold，settle() 才一次進 save.coins；餵食（feed）是原子操作，不扣耐久、不算用壞、不累積紅晶。
    ========================================================= */
@@ -22,7 +28,8 @@
   "use strict";
   const int = (x, lo, hi) => { const n = Math.floor(Number(x)); return Number.isFinite(n) ? Math.max(lo, Math.min(hi, n)) : lo; };
   const isObj = o => o && typeof o === "object" && !Array.isArray(o);
-  const PHASES = ["walk", "dev", "country", "hunt", "done"];
+  const PHASES = ["walk", "dev", "country", "hunt", "dragon", "realm", "ember", "done"];
+  const KINDS = ["heaven", "hell"];
   const GOLD_MAX = 1e9;
 
   /* ---- 種子抽選：第 n 次抽 ＝ 雜湊(seed, n)，回傳 [0,1)。只防重整／讀檔重抽，不是伺服器級 ---- */
@@ -42,7 +49,7 @@
   function newMeta() { return { v: 1, stamina: 0, visits: 0, claimed: {}, seenLight: false, gifted: false }; }
   function newRun(rng) {
     return { phase: "walk", seed: newSeed(rng), n: 0, seedP: newSeed(rng), nP: 0, since: 0, dev: null, country: null,
-      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null };
+      kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null };
   }
   const mineId = H => (H.mine || {}).id || "m7";
 
@@ -82,25 +89,61 @@
     r.since = int(r.since, 0, 1e6); r.kills = int(r.kills, 0, 1e6); r.rid = int(r.rid, 0, 1e9);
     r.gold = int(r.gold, 0, GOLD_MAX);
     const cnt = (H.lower || {}).count || 3;
-    if (r.kills > cnt) return false;
     const pick = p => p === null || (Number.isInteger(p) && p >= 0 && p <= 2);
+    const RL = H.realm || {};
+    const capOf = t => ((RL[t] || {}).cap) || 20;
+    // 第二階段欄位：缺的補 null；格式不對的丟掉重補（realm 在狹間時是必要的，壞了才整趟作廢）
+    if (r.realm === undefined) r.realm = null;
+    if (r.ember === undefined) r.ember = null;
+    if (r.realm !== null) {
+      if (isObj(r.realm) && KINDS.includes(r.realm.type)) {
+        r.realm.n = int(r.realm.n, 0, capOf(r.realm.type)); r.realm.round = int(r.realm.round, 1, 1e6); r.realm.total = int(r.realm.total, 0, 1e6);
+      } else r.realm = null;
+    }
+    if (r.ember !== null && !(isObj(r.ember) && typeof r.ember.ok === "boolean" && KINDS.includes(r.ember.next))) r.ember = null;
+    if (r.ember) r.ember.pressed = r.ember.pressed === true;
+    if (r.phase !== "realm" && r.phase !== "ember") r.realm = null;
+    if (r.phase !== "ember") r.ember = null;
+    if (r.phase === "hunt" && r.kills > cnt) return false;
+    if (r.phase === "dragon" && r.kills > cnt + 1) return false;
     if (r.phase === "dev" || r.phase === "country") {
       if (!isObj(r.country) || typeof r.country.ok !== "boolean" || !pick(r.country.pick === undefined ? null : r.country.pick)) return false;
       if (r.country.pick === undefined) r.country.pick = null;
     }
     if (r.phase === "dev") { if (!isObj(r.dev) || (r.dev.kind !== "cave" && r.dev.kind !== "map")) return false; }
     if (r.phase === "country" && r.dev !== null && !(isObj(r.dev) && (r.dev.kind === "cave" || r.dev.kind === "map"))) return false;
-    if (r.phase === "hunt") {
-      if (r.mon !== null && !(isObj(r.mon) && typeof r.mon.win === "boolean" && Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2)) return false;
-      if (r.mon && !(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
-      if (r.anim !== null) {
-        if (!(isObj(r.anim) && (r.anim.kind === "kill" || r.anim.kind === "down") && pick(r.anim.pick) && Number.isInteger(r.anim.rid))) return false;
-        if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = r.anim.pick === null ? 0 : r.anim.pick;   // 舊存檔沒有套路：照選項
-        if (!r.mon) return false;
-        if (r.after !== "spawn" && r.after !== "full" && r.after !== "down") return false;
+    const hasMon = r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm";
+    if (hasMon) {
+      if (r.mon !== null) {
+        if (!(isObj(r.mon) && typeof r.mon.win === "boolean" && Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2)) return false;
+        if (!(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
+        if (r.phase === "dragon" && (r.mon.pres !== 2 || !KINDS.includes(r.mon.entry))) return false;
+        if (r.phase === "realm" && (r.mon.win !== true || typeof r.mon.cont !== "boolean")) return false;
       }
-    } else { if (r.mon !== null || r.anim !== null) return false; }
-    if (r.phase === "done") { if (!isObj(r.last)) return false; r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6); if (!["full", "down", "empty"].includes(r.last.why)) return false; }
+    } else if (r.mon !== null) return false;
+    if (r.phase === "realm" && !r.realm) return false;
+    if (r.phase === "ember" && (!r.realm || !r.ember)) return false;
+    if (r.anim !== null) {
+      if (!isObj(r.anim) || !Number.isInteger(r.anim.rid)) return false;
+      const k = r.anim.kind, af = r.after;
+      if (r.phase === "hunt" || r.phase === "dragon") {
+        if (!((k === "kill" || k === "down") && pick(r.anim.pick) && r.mon)) return false;
+        if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = r.anim.pick === null ? 0 : r.anim.pick;   // 舊存檔沒有套路：照選項
+        if (r.phase === "hunt" && af !== "spawn" && af !== "full" && af !== "down") return false;
+        if (r.phase === "dragon" && af !== "judge" && af !== "down") return false;
+      } else if (r.phase === "realm") {
+        if (k === "kill") {
+          if (!(pick(r.anim.pick) && r.mon && (af === "rspawn" || af === "rend" || af === "ember"))) return false;
+          if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = 0;
+        } else if (k === "judge") {
+          if (r.mon || af !== "rspawn" || !KINDS.includes(r.anim.type)) return false;
+          r.anim.first = r.anim.first === true;
+        } else return false;
+      } else if (r.phase === "ember") {
+        if (!(k === "ember" && r.ember.pressed && (af === "judge" || af === "emberfail"))) return false;
+      } else return false;
+    } else if (r.phase === "ember") r.ember.pressed = false;   // 按了點燃卻沒有演出待播：回到可再按
+    if (r.phase === "done") { if (!isObj(r.last)) return false; r.last.gold = int(r.last.gold, 0, GOLD_MAX); r.last.kills = int(r.last.kills, 0, 1e6); if (!["full", "down", "empty", "realm", "ember"].includes(r.last.why)) return false; if (r.last.realmKills !== undefined) r.last.realmKills = int(r.last.realmKills, 0, 1e6); if (r.last.rounds !== undefined) r.last.rounds = int(r.last.rounds, 0, 1e6); }
     if (r.force !== undefined && !isObj(r.force)) delete r.force;
     return true;
   }
@@ -121,7 +164,7 @@
     const S = H.stamina;
     if (r.phase === "walk") return S.perStep;
     if (r.phase === "dev") return S.countryCost;
-    if (r.phase === "hunt" && !r.mon && !r.anim) return S.perStep;
+    if ((r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim) return S.perStep;
     return 0;
   }
   function halted(sv, H) { const n = need(sv, H); return n > 0 && stamina(sv) < n; }
@@ -181,45 +224,109 @@
     return spawn(sv, H);
   }
 
-  /* ---- 狩獵：遇到一隻怪＝付 1 體力＋預抽勝負與呈現類型 ---- */
+  /* 開發者強制值只用一次（spawn／進餘燼各取自己的欄位，用完就刪） */
+  function takeForce(r, keys) {
+    const f = r.force; if (!f) return {};
+    const out = {}; keys.forEach(k => { if (f[k] !== undefined) { out[k] = f[k]; delete f[k]; } });
+    if (!Object.keys(f).length) delete r.force;
+    return out;
+  }
+  const presOf = (H, uP) => { const P = H.present; return uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2; };
+
+  /* ---- 遇到一隻怪＝付 1 體力＋預抽。下位／巨龍／狹間三種（抽選次數見檔頭，寫死）---- */
   function spawn(sv, H) {
     const r = peek(sv, H), M = sv.huntMeta;
-    if (!r || r.phase !== "hunt" || r.mon || r.anim) return { ok: false, reason: "state" };
+    if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || r.mon || r.anim) return { ok: false, reason: "state" };
     if (M.stamina < H.stamina.perStep) return { ok: false, reason: "hungry", need: H.stamina.perStep - M.stamina };
     M.stamina -= H.stamina.perStep;
-    let win = draw(r) < H.lower.win;
+    if (r.phase === "dragon") {   // 勝負、入口天堂各 1 抽；呈現不抽（固定三選一，套路＝玩家選的）
+      let win = draw(r) < H.dragon.win, entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
+      const f = takeForce(r, ["win", "entry"]);
+      if (typeof f.win === "boolean") win = f.win;
+      if (KINDS.includes(f.entry)) entry = f.entry;
+      r.mon = { win, pres: 2, combo: 0, entry };
+      return { ok: true, ev: "mon", pres: 2 };
+    }
+    let win = true, cont = false;
+    if (r.phase === "hunt") win = draw(r) < H.lower.win; else cont = draw(r) < H.realm[r.realm.type].cont;
     const uP = drawP(r), P = H.present;
-    let pres = uP < P[0] ? 0 : uP < P[0] + P[1] ? 1 : 2;
+    let pres = presOf(H, uP);
     let combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));   // 單鈕怪的套路：用「單鈕那一段」的 uP 三等分（pres 0 時 uP<P[0]），不多抽一次，所以不改變抽選次數
-    if (r.force) { if (typeof r.force.win === "boolean") win = r.force.win; if (Number.isInteger(r.force.pres)) pres = Math.max(0, Math.min(2, r.force.pres)); if (Number.isInteger(r.force.combo)) combo = Math.max(0, Math.min(2, r.force.combo)); delete r.force; }   // 開發者測試用
-    r.mon = { win, pres, combo };
+    const f = takeForce(r, ["win", "pres", "combo", "cont"]);   // 開發者測試用
+    if (typeof f.win === "boolean" && r.phase === "hunt") win = f.win;
+    if (typeof f.cont === "boolean" && r.phase === "realm") cont = f.cont;
+    if (Number.isInteger(f.pres)) pres = Math.max(0, Math.min(2, f.pres));
+    if (Number.isInteger(f.combo)) combo = Math.max(0, Math.min(2, f.combo));
+    r.mon = r.phase === "hunt" ? { win, pres, combo } : { win: true, pres, combo, cont };
     return { ok: true, ev: "mon", pres };
   }
   /* 出招：選項只改演出（斬擊方向與顏色），勝負早在 spawn 決定。結果一次落地，動畫之後才播 */
   function strike(sv, H, idx) {
     const r = peek(sv, H);
-    if (!r || r.phase !== "hunt" || !r.mon || r.anim) return { ok: false, reason: "state" };
+    if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || !r.mon || r.anim) return { ok: false, reason: "state" };
     if (!(Number.isInteger(idx) && idx >= 0 && idx <= r.mon.pres)) return { ok: false, reason: "arg" };
     r.rid++;
     const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 選項怪：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
     if (r.mon.win) {
-      r.kills++; r.gold = int(r.gold + H.lower.gold, 0, GOLD_MAX);
+      r.kills++;
+      if (r.phase === "hunt") { r.gold = int(r.gold + H.lower.gold, 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
+      else if (r.phase === "dragon") { r.gold = int(r.gold + H.dragon.gold, 0, GOLD_MAX); r.after = "judge"; }
+      else {
+        const RT = H.realm[r.realm.type];
+        r.realm.n++; r.realm.total++; r.gold = int(r.gold + RT.gold, 0, GOLD_MAX);
+        r.after = r.realm.n >= RT.cap ? "ember" : r.mon.cont ? "rspawn" : "rend";
+      }
       r.anim = { kind: "kill", pick: idx, rid: r.rid, combo: combo };
-      r.after = r.kills >= H.lower.count ? "full" : "spawn";
     } else {
       r.anim = { kind: "down", pick: idx, rid: r.rid, combo: combo };
       r.after = "down";
     }
     return { ok: true, anim: r.anim };
   }
+  /* 判定演出開始：建立（或重設）本輪狹間。結果＝type，早就預抽好 */
+  function startRealm(r, type, first) {
+    r.rid++;
+    const prev = r.realm;
+    r.realm = { type, n: 0, round: prev ? prev.round + 1 : 1, total: prev ? prev.total : 0 };
+    r.phase = "realm"; r.ember = null; r.mon = null;
+    r.anim = { kind: "judge", type, first, rid: r.rid }; r.after = "rspawn";
+  }
+  /* 撐滿 → 進餘燼：預抽成敗、成功後下一輪天堂（各 1 抽，共 2 抽） */
+  function enterEmber(sv, H) {
+    const r = peek(sv, H), RT = H.realm[r.realm.type];
+    let ok = draw(r) < H.realm.ember, next = draw(r) < RT.nextHeaven ? "heaven" : "hell";
+    const f = takeForce(r, ["emberOk", "emberNext"]);
+    if (typeof f.emberOk === "boolean") ok = f.emberOk;
+    if (KINDS.includes(f.emberNext)) next = f.emberNext;
+    r.phase = "ember"; r.ember = { ok, next, pressed: false }; r.mon = null; r.anim = null; r.after = null;
+    return { ok: true, ev: "ember" };
+  }
+  /* 按「點燃」（單鈕）：成敗早已預抽，這裡只是開始演出 */
+  function ignite(sv, H) {
+    const r = peek(sv, H);
+    if (!r || r.phase !== "ember" || !r.ember || r.ember.pressed || r.anim) return { ok: false, reason: "state" };
+    r.ember.pressed = true; r.rid++;
+    r.anim = { kind: "ember", rid: r.rid }; r.after = r.ember.ok ? "judge" : "emberfail";
+    return { ok: true, anim: r.anim };
+  }
   /* 演出播完（或重開後補播完）：rid 對不上就不動作，防止重複前進／重複入帳 */
   function finishAnim(sv, H, rid) {
     const r = peek(sv, H);
-    if (!r || r.phase !== "hunt" || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
-    const after = r.after;
+    if (!r || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
+    if (r.phase === "done" || !PHASES.includes(r.phase)) return { ok: false, reason: "state" };
+    const after = r.after, entry = r.mon && r.mon.entry;
     r.anim = null; r.mon = null; r.after = null;
-    if (after === "spawn") return spawn(sv, H);
-    settle(sv, H, after);   // "full"｜"down"
+    if (after === "spawn" || after === "rspawn") return spawn(sv, H);
+    if (after === "full") { r.phase = "dragon"; return spawn(sv, H); }   // 下位打滿 → 巨龍（第一階段存檔播第 3 隻演出中也走這裡）
+    if (after === "judge") {
+      if (r.phase === "dragon") startRealm(r, entry, true);
+      else startRealm(r, r.ember.next, false);
+      return { ok: true, ev: "judge" };
+    }
+    if (after === "ember") return enterEmber(sv, H);
+    if (after === "rend") { settle(sv, H, "realm"); return { ok: true, ev: "done" }; }
+    if (after === "emberfail") { settle(sv, H, "ember"); return { ok: true, ev: "done" }; }
+    settle(sv, H, after);   // "down"
     return { ok: true, ev: "done" };
   }
 
@@ -230,7 +337,8 @@
     const g = int(r.gold, 0, GOLD_MAX);
     sv.coins = (Number(sv.coins) || 0) + g;
     r.last = { gold: g, kills: r.kills, why };
-    r.gold = 0; r.mon = null; r.anim = null; r.after = null; r.dev = null; r.country = null;
+    if (r.realm) { r.last.realmKills = r.realm.total; r.last.rounds = r.realm.round; }
+    r.gold = 0; r.mon = null; r.anim = null; r.after = null; r.dev = null; r.country = null; r.realm = null; r.ember = null;
     r.phase = "done";
     return { ok: true, gold: g, why };
   }
@@ -253,7 +361,7 @@
   /* 這一趟有沒有「還沒結束的進度」（離開時提醒用）：走過路、拿了發展、國度、狩獵中或有累積金幣 */
   function inProgress(sv, H) {
     const r = peek(sv, H); if (!r) return false;
-    return r.phase === "dev" || r.phase === "country" || r.phase === "hunt" || r.gold > 0 || r.since > 0;
+    return r.phase === "dev" || r.phase === "country" || r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm" || r.phase === "ember" || r.gold > 0 || r.since > 0;
   }
 
   /* ---- 餵食（小精靈）：鎬子整把換體力 ----
@@ -312,13 +420,19 @@
     if (o.phase === "walk") { Object.assign(r, { phase: "walk", dev: null, country: null, mon: null, anim: null, after: null }); }
     else if (o.phase === "dev") { Object.assign(r, { phase: "dev", dev: { kind: o.kind === "map" ? "map" : "cave" }, country: { ok: o.ok !== false, pick: null }, mon: null, anim: null, after: null, since: 0 }); }
     else if (o.phase === "country") { Object.assign(r, { phase: "country", dev: { kind: o.kind === "map" ? "map" : "cave" }, country: { ok: o.ok !== false, pick: null }, mon: null, anim: null, after: null }); }
-    else if (o.phase === "hunt") { Object.assign(r, { phase: "hunt", dev: null, country: null, mon: null, anim: null, after: null, kills: int(o.kills, 0, 2) }); }
+    else if (o.phase === "hunt") { Object.assign(r, { phase: "hunt", dev: null, country: null, mon: null, anim: null, after: null, kills: int(o.kills, 0, 2), realm: null, ember: null }); }
+    else if (o.phase === "dragon") { Object.assign(r, { phase: "dragon", dev: null, country: null, mon: null, anim: null, after: null, kills: H.lower.count, realm: null, ember: null }); }
+    else if (o.phase === "realm" || o.phase === "ember") {   // o.type 天堂／地獄、o.n 本輪已擊倒隻數（ember 一律撐滿）、o.round、o.ok／o.next（ember）
+      const type = o.type === "hell" ? "hell" : "heaven", cap = H.realm[type].cap, n = o.phase === "ember" ? cap : int(o.n, 0, cap - 1);
+      Object.assign(r, { phase: o.phase, dev: null, country: null, mon: null, anim: null, after: null, kills: H.lower.count + 1 + n, realm: { type, n, round: int(o.round || 1, 1, 1e6), total: n },
+        ember: o.phase === "ember" ? { ok: o.ok !== false, next: o.next === "hell" ? "hell" : "heaven", pressed: false } : null });
+    }
     if (o.force) r.force = o.force;
     return r;
   }
 
   const api = { PHASES, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
-    spawn, strike, finishAnim, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
+    spawn, strike, ignite, finishAnim, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
   root.MineHunt = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);
