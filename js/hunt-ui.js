@@ -83,7 +83,7 @@
     const st = $("sceneStage");
     if (!$("huntHp") || $("huntHp").parentNode !== st) {
       const hp = document.createElement("div"); hp.id = "huntHp"; hp.className = "hunt-hp"; hp.innerHTML = '<i class="c"></i>'.repeat(10); st.appendChild(hp);
-      const hero = document.createElement("div"); hero.id = "huntHero"; hero.className = "hunt-hero"; hero.innerHTML = `<img src="${HM.uri(HM.HERO)}" alt="">`; st.appendChild(hero);
+      const hero = document.createElement("div"); hero.id = "huntHero"; hero.className = "hunt-hero"; hero.innerHTML = `<img src="assets/hunt-hero/hero.png" alt="">`; st.appendChild(hero);   // 勇者 B 白金騎士（40×40 idle 4 格，2026-10-10 擁有者選定）
     }
     return { hp: $("huntHp"), hero: $("huntHero") };
   }
@@ -94,7 +94,7 @@
   }
   function showBattle(r) {   // 戰鬥中（有怪、或擊殺／倒下／來回演出）才顯示血條與角色；旅途、判定、餘燼不顯示。怪物沒有血條
     const e = battleEls(), fight = (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !!r.mon;
-    e.hp.classList.toggle("on", fight); e.hero.classList.toggle("on", fight);
+    e.hp.classList.toggle("on", fight); e.hero.classList.toggle("on", fight); e.hero.classList.toggle("reduced", reduced());
     if (fight) setHp(r.mon.sc ? MH.hpAt(r.mon, r.mon.t) : r.rv === 4 ? r.hp / r.maxHp * H().battle.hpMax : H().battle.hpMax);
   }
   function floatNum(text, cls, el, dx, dy) {
@@ -376,7 +376,7 @@
       const x = t.at, dragon = r.phase === "dragon";
       subTxt = r.mon ? curName(r) : "";
       if (r.story) {
-        bigHtml = r.story.kind === "dragon" ? monHtml(HM.DRAGON, " dragon") : A.colored("· ·", sub());
+        bigHtml = r.story.kind === "dragon" ? monHtml(HM.DRAGON, " dragon") : r.story.kind === "open" ? `<span class="hunt-fairy-spr lg${reduced() ? " reduced" : ""}"><img src="assets/hunt-hero/fairy-hurt.png" alt=""></span>` : A.colored("· ·", sub());   // 開場：受傷的小精靈飛來
         lines = storyLines(r, h); tap = "▼ 點擊繼續";
         if (r.story.kind === "collapse") { lines = lines.slice(r.story.step | 0, (r.story.step | 0) + 1); tap = " "; }
         else page("st" + r.story.kind + r.rid + r.kills);
@@ -654,11 +654,11 @@
     const hpN = Math.max(0, Math.min(10, Math.ceil(hp / maxHp * 10))), hpCells = '<i class="on"></i>'.repeat(hpN) + '<i></i>'.repeat(10 - hpN);
     const ref = Math.max(1, H().stamina.barRef || 100), pct = Math.min(100, st / ref * 100), staminaColor = st > 30 ? "#55ff55" : st > 8 ? "#ffcc33" : "#ff5555";
     const card = $("huntCard");
-    const companion = r.companion ? '<div class="hunt-card-companion">✦ 同伴：受傷的小精靈</div>' : "";
+    const companion = r.companion ? '<div class="hunt-card-companion"><span class="hunt-fairy-spr sm"><img src="assets/hunt-hero/fairy-ally.png" alt=""></span>同伴：受傷的小精靈</div>' : "";
     card.classList.toggle("compact", compact); card.classList.toggle("has-companion", !!r.companion); card.setAttribute("aria-expanded", compact ? "false" : "true");
     card.innerHTML = compact
       ? `<div class="hunt-card-line"><span>血量</span><span class="hunt-card-hp${hp <= maxHp * .4 ? " low" : ""}">${hpCells}</span><b>${num(hp)}／${num(maxHp)}</b><span class="fairy">小精靈 ${num(st)} 步</span><span class="gold">${num(r.gold)}</span><span class="fold">▼</span></div>${companion}`
-      : `<div class="hunt-portrait"><img src="${HM.uri(HM.HERO)}" alt="旅人"></div><div class="hunt-card-info">
+      : `<div class="hunt-portrait"><span class="hunt-portrait-spr"><img src="assets/hunt-hero/hero.png" alt="旅人"></span></div><div class="hunt-card-info">
           <div class="hunt-card-row"><span class="key">血量</span><span class="hunt-card-hp${hp <= maxHp * .4 ? " low" : ""}">${hpCells}</span><span class="value">${num(hp)}／${num(maxHp)}</span></div>
           <div class="hunt-card-row fairy"><span class="key">小精靈</span><span class="hunt-card-bar"><i style="width:${pct}%;background:${staminaColor}"></i></span><span class="value">${num(st)} 步</span></div>
           <div class="hunt-card-small"><span>本輪金幣 <b>${num(r.gold)}</b></span><span>去過國度 <b>${num(SV().huntMeta.visits)}</b> 次</span></div>

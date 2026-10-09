@@ -215,14 +215,18 @@
     trText(t, d, th);
   }
   const SPIRIT_PAL = { body: "#35305a", rim: "#ffe9a8", eye: "#ffe9a8", O: "#07070b", acc: "#ffe9a8", mem: "#1b1838", mrim: "#3d3a73", hole: "#0f0e22" };
-  let _spirit = null;
+  let _spirit = null, _fairyImg = null;
+  const fairyImg = () => { if (!_fairyImg && typeof Image !== "undefined") { _fairyImg = new Image(); _fairyImg.src = "assets/hunt-hero/fairy.png"; } return _fairyImg && _fairyImg.complete && _fairyImg.naturalWidth ? _fairyImg : null; };   // 小精靈 B 星芒（24×24 idle 4 格）
   function sBuddy(t) {
     const th = THEME(), d = 2400; trFrame(th); const hot = TR.realm === "heaven" ? "#ffe9a8" : "#ff7a2a";
     for (let i = 0; i < 6; i++) disc(10 + i * 17, 150 + (i % 2) * 6, 7, mix(th.dk, th.bg[3], .5));
     const face = ssub(t, 500, 1000), bob = Math.floor(t / 450) % 2, ex = 54 - Math.round(face * 4);
     if (!_spirit) { const o = kit().Grid(14, 12); o.el(6.5, 6, 5, 4, "a"); o.mln(3, 3, 2, 0, "a"); o.mrc(4, 5, 1, 2, "e"); o.mset(6, 10, "h"); _spirit = o.G; }
     const sp = kit().toCells(_spirit, Object.assign({}, SPIRIT_PAL, { eye: hot, rim: hot }));
-    blit(g, sp, ex, 118 + bob, { noEye: face < 1, body: SPIRIT_PAL.body }); glow(ex + 6, 124 + bob, 12, hot, .3);
+    const fi = fairyImg();
+    if (fi) { g.imageSmoothingEnabled = false; g.drawImage(fi, (RED ? 0 : Math.floor(t / 250) % 4) * 24, 0, 24, 24, ex - 5, 112 + bob, 24, 24); }
+    else blit(g, sp, ex, 118 + bob, { noEye: face < 1, body: SPIRIT_PAL.body });
+    glow(ex + 6, 124 + bob, 12, hot, .3);
     if (t > 1000) { px(6, 66, 86, 28, "#e8e8e8"); px(7, 67, 84, 26, "#1b1b1f"); px(ex + 4, 94, 4, 3, "#e8e8e8"); px(ex + 5, 94, 2, 2, "#1b1b1f"); }
     px(0, 0, AW, AH, "#000", ssub(t, d - 250, d));
     const al = Math.min(ssub(t, 1050, 1300), 1 - ssub(t, d - 550, d - 300)); if (al > 0) T(TR.line, 195, 320, 15, "#e8e8e8", { a: al });

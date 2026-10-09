@@ -1052,7 +1052,16 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hunt-hp.low .c.on { background: #ffcc33; }
 .hunt-hero { position: absolute; left: 12px; bottom: 6px; height: min(60px, 34cqh); display: none; z-index: 1; }
 .hunt-hero.on { display: block; }
-.hunt-hero img { display: block; height: 100%; width: auto; image-rendering: pixelated; }
+.hunt-hero { height: min(80px, 40cqh); aspect-ratio: 1 / 1; overflow: hidden; }   /* 勇者 B 精美版：40×40 idle 4 格，每格 300ms */
+.hunt-hero img { display: block; height: 100%; width: 400%; max-width: none; image-rendering: pixelated; animation: huntIdle 1.2s steps(1,end) infinite; }
+.hunt-portrait-spr { display: block; width: 50px; height: 50px; overflow: hidden; }
+.hunt-portrait-spr img { display: block; width: 400% !important; max-width: none; height: 100% !important; image-rendering: pixelated; }   /* 卡片肖像只顯示第 1 格 */
+.hunt-fairy-spr { display: inline-block; overflow: hidden; vertical-align: middle; }
+.hunt-fairy-spr img { display: block; width: 400%; max-width: none; height: 100%; image-rendering: pixelated; animation: huntIdle 1s steps(1,end) infinite; }
+.hunt-fairy-spr.sm { width: 24px; height: 24px; margin-right: 4px; }
+.hunt-fairy-spr.lg { width: 72px; height: 72px; }
+.hunt-fairy-spr.reduced img, .hunt-hero.reduced img { animation: none; }
+@media (prefers-reduced-motion: reduce) { .hunt-hero img, .hunt-fairy-spr img { animation: none; } }
 @container (max-height: 130px) { .hunt-hero { display: none !important; } }
 .hunt-num { position: absolute; z-index: 3; font-size: 15px; color: #e8e8e8; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; pointer-events: none; white-space: nowrap; }
 .hunt-num.sub { color: var(--sub); }

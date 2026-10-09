@@ -126,6 +126,7 @@
   /* ---------- 場景畫布（130x110 格） ---------- */
   const AW = 130, AH = 110;
   const SP = { k: "#0e0e12", t: "#9eeeff", u: "#5fc3dc", e: "#14202a" };
+  const FAIRY = typeof Image !== "undefined" ? Object.assign(new Image(), { src: "assets/hunt-hero/fairy.png" }) : {};
   const SPR = ["..kkkk..", ".kttttk.", "kttttttk", "ktettetk", "kttttttk", ".kuuuuk.", "..kuuk..", "...kk..."];   // 小精靈（沿用候選稿的圓形淡青，和 HUD「小精靈」同色）
   const K = "#0e0e12", WD = "#a8693a", WL = "#c98c52", WB = "#6e4524", IR = "#6b7794", IRL = "#98a4c0", GD = "#ffcc33", IN = "#150f12";
   const CY = 52, CXL = 14, CXR = 90, CXC = 52;   // 木箱的 y 與 x（左／右／置中）
@@ -140,7 +141,11 @@
     const withAlpha = (a, fn) => { a = Math.round(clamp(a) * 5) / 5; if (a <= 0) return; if (a >= 1) { fn(); return; } og.clearRect(0, 0, AW, AH); g = og; fn(); g = g0; g0.globalAlpha = a; g0.drawImage(off, 0, 0); g0.globalAlpha = 1; };
     const spr = (rows, pal, x, y) => rows.forEach((r, j) => { for (let i = 0; i < r.length; i++) { const c = pal[r[i]]; if (c) px(x + i, y + j, 1, 1, c); } });
     const iconG = (id, x, y, s) => { const m = iconGrid(keyOf(id)); for (let j = 0; j < 16; j++) for (let i = 0; i < 16; i++) if (m[j][i]) { g.fillStyle = m[j][i]; g.fillRect(Math.floor(x) + i * s, Math.floor(y) + j * s, s, s); } };
-    const spirit = (x, y) => { spr(SPR, SP, Math.floor(x), Math.floor(y)); px(x + 2, y + 9, 4, 1, "#0b0a0e", .6); };
+    const spirit = (x, y) => {   // 小精靈 B 星芒（24×24）；圖還沒載入時退回原本的 8×8
+      if (FAIRY.complete && FAIRY.naturalWidth) { g.imageSmoothingEnabled = false; g.drawImage(FAIRY, (RED ? 0 : Math.floor(Date.now() / 250) % 4) * 24, 0, 24, 24, Math.floor(x) - 8, Math.floor(y) - 14, 24, 24); }
+      else spr(SPR, SP, Math.floor(x), Math.floor(y));
+      px(x + 2, y + 9, 4, 1, "#0b0a0e", .6);
+    };
     const bobOf = t => (RED ? 0 : Math.floor(t / 450) % 2);
 
     function bg() {
