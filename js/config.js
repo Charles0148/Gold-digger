@@ -1120,6 +1120,9 @@
         { id: "star-ember", quality: "rare", name: "星火徽記", text: "讓整趟冒險都更穩", hunt: 0.010, dragon: 0.020, realm: 0.006 }
       ],
       itemQuality: { common: 0.70, good: 0.25, rare: 0.05 },
+      /* 終結技獨立演出流：不改勝負抽選。真復活待劇情與整體回收率校準後才可由擁有者決定開啟。 */
+      finisher: { chargeTier: { win: [0.20, 0.35, 0.45], lose: [0.65, 0.30, 0.05] }, autoReleaseMs: 3000, autoModeReleaseMs: 250 },
+      revive: { fakeRate: 0.05, trueRate: 0 },
       /* 斬擊演出（js/hunt-fx.js）。reducedScale：減少特效時的時間縮放 */
       fx: { totalMs: 5000, reducedScale: 0.75, downMs: 1500,
              dragonIntroMs: 3000, dragonScaleMs: 2500, dragonDownMs: 3000, judgeMs: { heaven: 6000, hell: 8000, again: 4000 }, emberMs: 8000,
@@ -1155,6 +1158,10 @@
         win: "勝利",
         combo: "連斬",
         down: "倒下了……",
+        pendingTitle: "撤退中……",
+        pendingGold: "目前可帶回 {g} 金幣（尚未結算）",
+        pendingBody: "同伴正把你帶離戰場。旅途還沒有完全結束。",
+        pendingContinue: "繼續",
         downLine: "{name}的一撞讓你站不穩，你倒了下去。同伴把你拖回旅途。",
         doneFull: "凱旋！這一趟打倒了 {k} 隻，帶回金幣 {g}。",
         doneDown: "雖然倒下了，還是帶回了金幣 {g}。",

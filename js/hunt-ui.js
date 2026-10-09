@@ -48,7 +48,7 @@
   /* 第二階段（2026-10-08）：狹間怪天堂 3 種（曦羽梟、輝環水母、曦角鹿）、地獄 3 種（焰鬃犬、裂角魔影、熔瞳）；駭骨巨龍（12）、破鱗後的巨龍（13，擊殺演出用）。圖在 js/hunt-mon.js */
   const realmIdx = r => ((((r.seed >>> 0) + r.realm.total - (r.anim && r.anim.kind === "kill" ? 1 : 0)) % 3) + 3) % 3;
   const isLast = r => !r.mon || !r.mon.sc || r.mon.t >= r.mon.sc.R - 1;   // 這是最後一輪（沒有劇本的舊戰鬥視為 1 輪）
-  const curVariant = r => (r.phase === "dragon" ? ((r.anim && r.anim.kind === "kill") || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
+  const curVariant = r => (r.phase === "dragon" ? ((r.anim && (r.anim.kind === "kill" || (r.anim.kind === "finish" && r.anim.outcome === "win"))) || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
   const curName = r => (r.phase === "dragon" ? T().dragonName : r.phase === "realm" ? T().realmMonNames[r.realm.type][realmIdx(r)] : monName(variantOf(r)));
   const monCls = r => (r.phase === "dragon" ? " dragon" : r.phase === "realm" ? " " + r.realm.type : "");
   const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}${reduced() ? " reduced" : ""}"><img src="${HM.sprite(v)}" alt=""></div>`;
@@ -224,6 +224,10 @@
         lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
       } else if (judging) {
         bigHtml = A.colored("· ·", sub()); lines = [t.judgeTug[0]]; tap = "";
+      } else if (r.anim && r.anim.kind === "finish" && r.anim.stage === "pending") {
+        bigHtml = A.colored(t.pendingTitle, "#9fb4d8"); subTxt = "";
+        lines = [t.pendingBody, A.colored(fill(t.pendingGold, { g: num(r.gold) }), "#ffcc33")]; tap = "";
+        choices = [{ c: "finishcontinue:" + r.anim.rid, label: t.pendingContinue, gold: true }];
       } else if (r.anim && r.anim.kind === "round") {
         lines = [roundLines(r, r.anim.t)[0]]; tap = "";
       } else if (r.anim) {
@@ -308,6 +312,19 @@
       const r2 = MH.peek(SV(), H());
       if (!r2 || !r2.anim || r2.anim.rid !== rid || FX.playing() || ui.stage || !A.onMine()) return;
       const a = r2.anim, fx = H().fx, t = T();
+      if (a.kind === "finish" && a.stage === "pending") return;
+      if (a.kind === "finish" && a.stage === "charge") {
+        return FX.playCharge({ app: $("app"), tier: a.tier, reduced: reduced(), auto: !!A.save().auto, autoMs: H().finisher.autoReleaseMs, autoModeMs: H().finisher.autoModeReleaseMs,
+          onDone: () => { const res = A.commit(() => MH.releaseCharge(SV(), H(), rid)); if (res && res.failed) { ui.stalled = 0; A.stopAuto(); A.toast(T().saveFail, 2400); } if (A.onMine()) render(); } });
+      }
+      if (a.kind === "finish" && a.stage === "revive") {
+        return FX.playRevive({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: curVariant(r2), tone: r2.phase === "realm" ? r2.realm.type : "", finisher: a.finisher, combo: a.combo, comboText: t.combo, reduced: reduced(), scale: fx.reducedScale, win: t.win, onDone: () => fxDone(rid) });
+      }
+      if (a.kind === "finish" && a.stage === "attack") {
+        const failed = a.outcome === "lose" || a.fake;
+        return FX.play({ app: $("app"), monEl: document.querySelector("#sceneBig .hunt-mon"), sceneEl: $("sceneStage"), variant: curVariant(r2), tone: r2.phase === "realm" ? r2.realm.type : "", kind: failed ? "fail" : "kill", finisher: a.finisher, combo: a.combo, comboText: t.combo, reduced: reduced(), scale: fx.reducedScale,
+          totalMs: fx.totalMs, win: t.win, downText: t.down, onDone: failed ? () => { const res = A.commit(() => MH.pendingDefeat(SV(), H(), rid)); if (res && res.failed) { ui.stalled = 0; A.stopAuto(); A.toast(T().saveFail, 2400); } if (A.onMine()) render(); } : () => fxDone(rid) });
+      }
       if (a.kind === "judge") return judgeStage(a, rid);
       if (a.kind === "ember") return emberStage(r2, rid);
       if (a.kind === "round") return playRound(r2, rid, () => fxDone(rid));   // 回合戰鬥的中途一輪
@@ -455,6 +472,7 @@
   function doIgnite() { return act(() => MH.ignite(SV(), H())); }
   function doAgain() { ui.doneSeen = false; ui.flash = null; return act(() => MH.again(SV(), H())); }
   function doContinue() { return act(() => MH.continueRun(SV(), H())); }
+  function doFinishContinue(rid) { return act(() => MH.continueDefeat(SV(), H(), rid)); }
   function doItem(side, rid) { return act(() => MH.pickItem(SV(), H(), side, rid)); }
   function doItemDone(rid) { return act(() => MH.dismissItem(SV(), H(), rid)); }
 
@@ -518,6 +536,7 @@
     else if (k === "panel") attrPanel(true);
     else if (k === "bag") bagPanel();
     else if (k === "continue") doContinue();
+    else if (k === "finishcontinue") doFinishContinue(+v);
     else if (k === "item") doItem(v, +x);
     else if (k === "itemdone") doItemDone(+v);
     else if (k === "cpick") doPick(+v);

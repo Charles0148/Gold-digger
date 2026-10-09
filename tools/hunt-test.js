@@ -24,6 +24,20 @@ const defOf = id => C.tools.find(t => t.id === id);
 const fresh = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H).rv = 2; return sv; };
 const fresh3 = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H); return sv; };
 const R = sv => MH.peek(sv, H);
+/* 舊回歸多數只關心「整段演出完成後」的狀態；新終結技拆成蓄力／出招／暫待／復活，這個測試包裝器把整段跑完。
+   新流程各停點與未入帳保證另在第 16 節逐步驗證。 */
+const finishRaw = MH.finishAnim;
+MH.finishAnim = function (sv, h, rid) {
+  let r = MH.peek(sv, h);
+  if (!r || !r.anim || r.anim.rid !== rid || r.anim.kind !== "finish") return finishRaw(sv, h, rid);
+  if (r.anim.stage === "charge") MH.releaseCharge(sv, h, rid);
+  r = MH.peek(sv, h);
+  if (r.anim && r.anim.stage === "attack" && (r.anim.outcome === "lose" || r.anim.fake)) MH.pendingDefeat(sv, h, rid);
+  r = MH.peek(sv, h);
+  if (r.anim && r.anim.stage === "pending") MH.continueDefeat(sv, h, rid);
+  r = MH.peek(sv, h);
+  return r && r.anim && r.anim.rid === rid ? finishRaw(sv, h, rid) : { ok: true, ev: "done" };
+};
 /* 一路走到「發展」：回傳步數。setting 預設 3 */
 function walkToDev(sv, setting = 3) { let n = 0; while (R(sv).phase === "walk") { const r = MH.step(sv, H, { setting }); if (!r.ok) throw new Error("walk " + r.reason); n++; if (n > 100) throw new Error("no dev"); } return n; }
 /* 搜一個「國度成功」或「失敗」的種子：換新種子重跑，直到符合 */
@@ -128,7 +142,7 @@ function toHunt(sv, win, pres) {   // 用開發者設定直接進狩獵並強制
   const sv = fresh(100, 1000);
   toHunt(sv, true, 0);
   ok(R(sv).mon.pres === 0 && !MH.strike(sv, H, 1).ok, "單鈕：只能選 0");
-  ok(MH.strike(sv, H, 0).ok && R(sv).anim.kind === "kill" && R(sv).gold === 11 && R(sv).kills === 1 && sv.coins === 1000, "擊倒：金幣只進本輪累積，錢包不變");
+  ok(MH.strike(sv, H, 0).ok && R(sv).anim.kind === "finish" && R(sv).anim.stage === "charge" && R(sv).gold === 0 && R(sv).kills === 0 && sv.coins === 1000, "最後一輪：先存蓄力與終結技，尚未增加擊倒／本輪金幣／錢包");
   ok(!MH.strike(sv, H, 0).ok, "演出中不能再出招");
   const rid = R(sv).anim.rid;
   ok(MH.finishAnim(sv, H, rid + 5).reason === "state" && R(sv).anim, "rid 對不上不動作");
@@ -148,7 +162,7 @@ function toHunt(sv, win, pres) {   // 用開發者設定直接進狩獵並強制
   toHunt(sv, true, 1);
   MH.strike(sv, H, 1); MH.finishAnim(sv, H, R(sv).anim.rid);   // 先打倒一隻
   MH.devSet(sv, H, { phase: "hunt", kills: R(sv).kills, force: { win: false, pres: 1 } }); R(sv).mon = null; R(sv).anim = null; MH.spawn(sv, H);
-  ok(R(sv).mon.win === false && MH.strike(sv, H, 0).ok && R(sv).anim.kind === "down" && sv.coins === 500, "角色倒下：播倒下演出，金幣還沒入帳");
+  ok(R(sv).mon.win === false && MH.strike(sv, H, 0).ok && R(sv).anim.kind === "finish" && R(sv).anim.outcome === "lose" && sv.coins === 500, "角色倒下：先播蓄力與敗北終結技，金幣還沒入帳");
   const st = sv.huntMeta.stamina; MH.finishAnim(sv, H, R(sv).anim.rid);
   ok(R(sv).phase === "done" && R(sv).last.why === "down" && sv.coins === 511 && sv.huntMeta.stamina === st, "倒下 → 凱旋：已累積的 11 金幣照拿，體力保留");
 }
@@ -163,7 +177,7 @@ console.log("=== 7. 退出礦坑：金幣照拿、體力保留、本輪進度清
   const v = fresh(99, 50); walkToDev(v, 6); ok(MH.inProgress(v, H), "走到發展：算進行中（離開時提醒）");
   const w = fresh(9, 50); ok(!MH.inProgress(w, H), "剛進來沒走：不用提醒");
   const dn = fresh(9, 50); toHunt(dn, true, 0); MH.strike(dn, H, 0);   // 演出播到一半就退出
-  ok(MH.leave(dn, H).gold === 11 && dn.coins === 61, "演出播到一半退出：結果已記入，金幣照拿");
+  ok(MH.leave(dn, H).gold === 0 && dn.coins === 50, "終結技完成前退出：未完成這隻不給金幣，既有累積仍會照拿");
 }
 
 console.log("=== 8. 演出播到一半關掉遊戲：重開後補播，不重抽 ===");
@@ -172,7 +186,7 @@ console.log("=== 8. 演出播到一半關掉遊戲：重開後補播，不重抽
   toHunt(sv, true, 1); MH.strike(sv, H, 1);
   const saved = J(sv);                       // 這一刻存檔，然後關掉遊戲
   MH.fix(saved, H);
-  ok(R(saved).anim && R(saved).anim.kind === "kill" && R(saved).anim.pick === 1 && R(saved).gold === 11, "存檔裡有待補播的演出與已記好的金幣");
+  ok(R(saved).anim && R(saved).anim.kind === "finish" && R(saved).anim.stage === "charge" && R(saved).anim.pick === 1 && R(saved).gold === 0, "存檔裡有待補播的蓄力／終結技，尚未先給金幣");
   const before = JSON.stringify(R(saved).mon), n = R(saved).n;
   ok(JSON.stringify(R(saved).mon) === before && R(saved).n === n, "重開不重抽");
   ok(MH.finishAnim(saved, H, R(saved).anim.rid).ok && R(saved).kills === 1, "補播完成後才往下");
@@ -313,7 +327,7 @@ console.log("=== 14. 第二階段：巨龍、判定、狹間、餘燼（規格 �
     ok(seq() === seq() && seq().length > 20, "固定 seed 重放兩次：巨龍／狹間／餘燼結果一模一樣"); }
   // 巨龍勝：金幣 +90 → 判定 → 狹間
   { const sv = toDragon(100, { win: true, entry: "hell" }); ok(R(sv).mon.entry === "hell" && R(sv).mon.win, "強制巨龍勝、地獄入口");
-    ok(!MH.strike(sv, H, 3).ok && MH.strike(sv, H, 2).ok && R(sv).anim.combo === 2 && R(sv).gold === 90 && R(sv).after === "judge" && sv.coins === 1000, "巨龍三選一出招：套路＝所選、金幣 +90 記在本輪、尚未入帳");
+    ok(!MH.strike(sv, H, 3).ok && MH.strike(sv, H, 2).ok && R(sv).anim.combo === 2 && R(sv).anim.kind === "finish" && R(sv).gold === 0 && R(sv).after === null && sv.coins === 1000, "巨龍三選一出招：套路＝所選，結果完成前不先加金幣");
     const saved = J(sv); MH.fix(saved, H); ok(R(saved).phase === "dragon" && R(saved).anim && R(saved).mon.entry === "hell", "演出中重新整理：巨龍演出補播、入口類型不變");
     const rid = R(sv).anim.rid;
     ok(MH.finishAnim(sv, H, rid).ev === "judge" && R(sv).phase === "realm" && R(sv).anim.kind === "judge" && R(sv).anim.type === "hell" && R(sv).anim.first === true && R(sv).realm.type === "hell" && R(sv).realm.n === 0 && !R(sv).mon, "播完 → 判定演出（地獄、第一次）");
@@ -322,7 +336,7 @@ console.log("=== 14. 第二階段：巨龍、判定、狹間、餘燼（規格 �
     const st = sv.huntMeta.stamina; ok(MH.finishAnim(sv, H, R(sv).anim.rid).ev === "mon" && R(sv).mon.win && sv.huntMeta.stamina === st - 1 && MH.need(sv, H) === 0, "判定播完 → 自動付 1 體力遇第一隻狹間怪"); }
   // 巨龍敗 → 撤退，金幣照拿
   { const sv = toDragon(100, { win: false, entry: "heaven" }); sv.coins = 500; R(sv).gold = 33;
-    ok(MH.strike(sv, H, 1).ok && R(sv).anim.kind === "down" && R(sv).gold === 33 && R(sv).after === "down", "巨龍敗：倒下演出，不加金幣");
+    ok(MH.strike(sv, H, 1).ok && R(sv).anim.kind === "finish" && R(sv).anim.outcome === "lose" && R(sv).gold === 33 && R(sv).after === null, "巨龍敗：蓄力後進敗北終結技，不加金幣");
     MH.finishAnim(sv, H, R(sv).anim.rid);
     ok(R(sv).last.dragon === true, "巨龍敗北：結算標記 dragon（用專屬句子）");
     ok(R(sv).phase === "done" && R(sv).last.why === "down" && sv.coins === 533 && R(sv).last.gold === 33 && !R(sv).realm, "巨龍敗 → 撤退結算，下位 33 金幣照拿，沒有進狹間"); }
@@ -340,13 +354,13 @@ console.log("=== 14. 第二階段：巨龍、判定、狹間、餘燼（規格 �
     MH.fix(dn, H); ok(R(dn).phase === "done" && R(dn).last.why === "full", "第一階段凱旋（why:full）原樣保留"); }
   // 狹間：金幣、隻數、繼續／結束、不會倒下
   { const sv = fresh(100, 0); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 0, force: { cont: true, pres: 0 } }); MH.spawn(sv, H);
-    ok(!MH.strike(sv, H, 1).ok && MH.strike(sv, H, 0).ok && R(sv).gold === 34 && R(sv).realm.n === 1 && R(sv).realm.total === 1 && R(sv).after === "rspawn", "天堂一隻 +34、n／total 各 +1、繼續");
+    ok(!MH.strike(sv, H, 1).ok && MH.strike(sv, H, 0).ok && R(sv).gold === 0 && R(sv).realm.n === 0 && R(sv).anim.kind === "finish", "天堂出招後先播完整終結技，不提前改金幣／隻數");
     MH.finishAnim(sv, H, R(sv).anim.rid); ok(R(sv).mon && R(sv).phase === "realm", "繼續 → 下一隻（付 1 體力）");
-    R(sv).mon.cont = false; MH.strike(sv, H, 0); ok(R(sv).after === "rend", "這隻 cont=false → 結束");
+    R(sv).mon.cont = false; MH.strike(sv, H, 0); ok(R(sv).anim.kind === "finish" && R(sv).after === null, "這隻 cont=false → 終結技後才結束");
     const coins = sv.coins; MH.finishAnim(sv, H, R(sv).anim.rid);
     ok(R(sv).phase === "done" && R(sv).last.why === "realm" && R(sv).last.gold === 68 && R(sv).last.realmKills === 2 && sv.coins === coins + 68 && !R(sv).realm, "狹間結束 → 凱旋：金幣一次入帳、realm 清除、統計"); }
-  { const sv = fresh(100, 0); MH.devSet(sv, H, { phase: "realm", type: "hell", n: 0, force: { cont: true } }); MH.spawn(sv, H); MH.strike(sv, H, 0);
-    ok(R(sv).gold === 68, "地獄一隻 +68"); }
+  { const sv = fresh(100, 0); MH.devSet(sv, H, { phase: "realm", type: "hell", n: 0, force: { cont: true } }); MH.spawn(sv, H); MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid);
+    ok(R(sv).gold === 68, "地獄終結技完成後 +68"); }
   // 狹間中體力 0：停住不動、狀態保留；餵食後從原處接上
   { const sv = fresh(1, 0); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 4, force: { cont: true } }); MH.spawn(sv, H); MH.strike(sv, H, 0);
     MH.finishAnim(sv, H, R(sv).anim.rid);
@@ -449,12 +463,12 @@ console.log("=== 15. 回合戰鬥（厚重輪數）：劇本、血量、存檔�
     const nB = R(sv).nB, rid = R(sv).anim.rid; ok(MH.finishAnim(sv, H, rid).ev === "round" && R(sv).mon.t === 1 && !R(sv).anim && R(sv).nB === nB && !MH.finishAnim(sv, H, rid).ok, "播完 → 第 2 輪等待選招（t+1、不重排、不重複前進）");
     const sv3 = J(sv); MH.fix(sv3, H); ok(R(sv3).mon.t === 1 && JSON.stringify(R(sv3).mon.sc) === m0 && !R(sv3).anim, "等待選招中重新整理：回到同一輪（第 2 輪）");
     for (let k = 0; k < 2; k++) { MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); } MH.strike(sv, H, 2);
-    ok(R(sv).anim.kind === "kill" && R(sv).anim.combo === 2 && R(sv).gold === 11 && R(sv).kills === 1, "最後一輪選蓄力 → 5 秒擊殺的套路＝蓄力（B），金幣此刻才加"); }
+    ok(R(sv).anim.kind === "finish" && R(sv).anim.combo === 2 && R(sv).gold === 0 && R(sv).kills === 0, "最後一輪選蓄力 → 蓄力池終結技，完成前不先加金幣"); }
   { const sv = fresh(500); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, combo: 1, rounds: 2 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); MH.strike(sv, H, 0); ok(R(sv).anim.combo === 1, "單鈕怪：最後一輪套路＝預抽的套路"); }
   // 舊戰鬥（沒有劇本）＝1 輪
   { const old = { v: 1, coins: 0, huntMeta: { stamina: 50 }, huntRuns: { m7: { phase: "hunt", seed: 5, seedP: 6, n: 3, nP: 1, since: 0, kills: 1, gold: 11, mon: { win: true, pres: 1, combo: 0 }, anim: null, after: null, rid: 1, last: null } } };
     MH.fix(old, H); const nB0 = R(old).nB; ok(R(old).mon.sc === undefined && R(old).hp === 100 && Number.isInteger(R(old).seedB), "舊存檔：沒有劇本的怪維持沒有（視為 1 輪），seedB 由舊 seed 推出、血量補滿");
-    MH.strike(old, H, 1); ok(R(old).anim.kind === "kill" && R(old).nB === nB0, "舊戰鬥出招 → 直接 5 秒擊殺（結果就是 mon.win），不補排、不動 nB");
+    MH.strike(old, H, 1); ok(R(old).anim.kind === "finish" && R(old).anim.stage === "charge" && R(old).nB === nB0, "舊戰鬥出招 → 新蓄力終結技（結果仍是 mon.win），不補排、不動 nB");
     const old2 = J(old); delete R(old2).seedB; MH.fix(old2, H); const old3 = J(old); delete R(old3).seedB; MH.fix(old3, H); ok(R(old2).seedB === R(old3).seedB, "seedB 補值是確定的（只由舊 seed 推出）");
     const old4 = { v: 1, coins: 0, huntRuns: { m7: { phase: "hunt", seed: 5, seedP: 6, n: 3, nP: 1, since: 0, kills: 1, gold: 11, mon: { win: false, pres: 0, combo: 0 }, anim: { kind: "down", pick: 0, rid: 2, combo: 0 }, after: "down", rid: 2, last: null } } };
     MH.fix(old4, H); ok(MH.finishAnim(old4, H, 2).ev === "done" && R(old4).last.why === "down" && old4.coins === 11, "舊存檔播倒下中重新整理：照舊播完、結算"); }
@@ -466,7 +480,7 @@ console.log("=== 15. 回合戰鬥（厚重輪數）：劇本、血量、存檔�
     const d = mk(() => {}); MH.strike(d, H, 0); R(d).anim.t = 5; MH.fix(d, H); ok(R(d).phase === "walk", "round 演出的輪次對不上 → 收斂（金幣入帳）"); }
   { const sv = fresh(50); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 3, force: { cont: true, rounds: 3 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); const sv2 = J(sv); MH.fix(sv2, H); ok(R(sv2).phase === "realm" && R(sv2).anim.kind === "round", "狹間怪的中途輪重新整理後保留"); }
   { const sv = fresh(50); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: false, pres: 0, rounds: 3 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); MH.strike(sv, H, 0);
-    const j = J(sv); MH.fix(j, H); ok(R(j).anim.kind === "down" && R(j).mon.t === 2 && R(j).mon.sc.R === 3, "最後一輪（倒下）演出中重新整理：補播，劇本還在"); }
+    const j = J(sv); MH.fix(j, H); ok(R(j).anim.kind === "finish" && R(j).anim.outcome === "lose" && R(j).mon.t === 2 && R(j).mon.sc.R === 3, "最後一輪（敗北終結技）中重新整理：補播，劇本還在"); }
   { const sv = fresh(1, 0); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, rounds: 4 } }); sv.huntMeta.stamina = 1; MH.spawn(sv, H); ok(sv.huntMeta.stamina === 0 && !MH.halted(sv, H), "體力 0 時戰鬥中不停住（出招不扣體力）"); for (let k = 0; k < 3; k++) { MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); } ok(R(sv).mon.t === 3 && sv.huntMeta.stamina === 0, "多輪都不扣體力"); }
   { const sv = fresh(50); sv.coins = 5; MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, rounds: 4 } }); R(sv).gold = 22; MH.spawn(sv, H); MH.strike(sv, H, 0); ok(MH.leave(sv, H).gold === 22 && sv.coins === 27, "戰鬥中退出：先前累積的金幣入帳，這隻不給"); }
   ok(MH.hpAt(null, 0) === null, "hpAt 沒有劇本時回傳 null");
@@ -484,8 +498,8 @@ console.log("=== 16. 第三階段 3B：能力、道具、空箱、歸零、舊�
 
   // 能力點：擊倒先落存檔、下一隻生成前停點、確認不可退、遞減且永遠低於硬頂。
   { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: { win: true, pres: 0, rounds: 1 } }); const n0 = r.n, p0 = r.nP; MH.spawn(sv, H); MH.strike(sv, H, 0);
-    ok(r.attr.free === 1 && r.attr.earned === 1 && r.anim.attrEarned === 1 && r.n === n0 + 1 && r.nP === p0 + 1, "下位擊倒 +1 可分配點；勝負／呈現抽選次數不變");
-    const rid = r.anim.rid; MH.finishAnim(sv, H, rid); ok(r.awaiting === "spawn" && !r.mon && r.attr.free === 1, "演出後停在安全點，重新整理前不先生成下一隻");
+    ok(r.attr.free === 0 && r.n === n0 + 1 && r.nP === p0 + 1, "終結技完成前不先發能力點；勝負／呈現抽選次數不變");
+    const rid = r.anim.rid; MH.finishAnim(sv, H, rid); ok(r.awaiting === "spawn" && !r.mon && r.attr.free === 1 && r.attr.earned === 1, "演出完成才發 +1，停在安全點且不先生成下一隻");
     const snap = J(sv); MH.fix(snap, H); ok(R(snap).awaiting === "spawn" && R(snap).attr.free === 1 && R(snap).n === r.n, "安全點重新整理：點數與抽選索引不變");
     ok(!MH.allocate(sv, H, { hunt: 2 }).ok && MH.allocate(sv, H, { hunt: 1 }).ok && r.attr.hunt === 1 && r.attr.free === 0 && !MH.allocate(sv, H, { hunt: -1 }).ok, "不能超支；確認投入後不可退回／重配");
     const p1 = MH.chance(r, H, "hunt"); r.attr.hunt = 1000000; const pHuge = MH.chance(r, H, "hunt");
@@ -493,9 +507,9 @@ console.log("=== 16. 第三階段 3B：能力、道具、空箱、歸零、舊�
     r.attr.hunt = 1; const n1 = r.n; MH.continueRun(sv, H); ok(r.mon && r.n === n1 + 1 && !r.awaiting, "繼續後才生成下一隻，只用原本一次勝負抽選"); }
 
   // 巨龍 +2、狹間每第 3 隻 +1。
-  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "dragon", force: { win: true, entry: "heaven", rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); ok(r.attr.free === 2, "駭骨巨龍擊倒 +2 點"); MH.finishAnim(sv, H, r.anim.rid); ok(r.awaiting === "judge" && r.pendingEntry === "heaven", "巨龍點數在判定演出前提供安全停點");
+  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "dragon", force: { win: true, entry: "heaven", rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); ok(r.attr.free === 0, "駭骨巨龍終結技完成前不先發點數"); MH.finishAnim(sv, H, r.anim.rid); ok(r.awaiting === "judge" && r.pendingEntry === "heaven" && r.attr.free === 2, "巨龍完成後 +2，判定演出前提供安全停點");
     MH.allocate(sv, H, { realm: 2 }); MH.continueRun(sv, H); ok(r.anim.kind === "judge" && r.attr.realm === 2, "投入後再進天堂／地獄判定"); }
-  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 2, force: { cont: true, rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); ok(r.realm.n === 3 && r.attr.free === 1, "狹間每輪第 3 隻取得 1 點"); }
+  { const sv = fresh3(100, 0), r = R(sv); MH.devSet(sv, H, { phase: "realm", type: "heaven", n: 2, force: { cont: true, rounds: 1 } }); MH.spawn(sv, H); MH.strike(sv, H, 0); MH.finishAnim(sv, H, r.anim.rid); ok(r.realm.n === 3 && r.attr.free === 1, "狹間每輪第 3 隻完成後取得 1 點"); }
 
   // 5／28／42／25 四路線與六道具；選擇、重整、resolution 都不可重複。
   { const sv = triggerOffer(0, .05), r = R(sv), o = r.itemOffer; ok(o.route === "direct" && o.stage === "show" && MH.ITEM_IDS.includes(o.chosen) && r.items[o.chosen] === 1, "直接取得 5%：先存一件六種道具，再顯示"); const ni = r.nI; const j = J(sv); MH.fix(j, H); ok(R(j).nI === ni && R(j).itemOffer.chosen === o.chosen, "直接取得重整不重抽"); ok(MH.dismissItem(sv, H, o.rid).ok && !MH.dismissItem(sv, H, o.rid).ok, "直接取得 resolution 防重複"); }
@@ -519,6 +533,45 @@ console.log("=== 16. 第三階段 3B：能力、道具、空箱、歸零、舊�
 }
 
 function itemMapForTest(r) { return MH.ITEM_IDS.find(id => r.items && r.items[id]) || null; }
+
+console.log("=== 17. 終結技／蓄力／假復活／暫待結算 ===");
+{
+  const FX = globalThis.HuntFx, pools = MH.FINISHER_POOLS;
+  ok(FX.FINISHERS.length === 8 && pools.map(x => x.length).join() === "3,3,2", "8 種終結技：突刺 3／橫掃 3／蓄力 2");
+  ok(FX.FINISHERS.map(x => x.word).join("") === "穿閃裂滅破斷墜斬" && FX.FINISHERS.every(x => x.cut.angle === x.last.a || x.cut.angle === x.last.cutAngle), "八個招牌字齊全，切線跟最後一刀");
+
+  const mk = (win, force = {}) => { const sv = fresh3(50, 7), r = R(sv); MH.devSet(sv, H, { phase: "hunt", kills: 0, force: Object.assign({ win, pres: 2, rounds: 1 }, force) }); r.seedFx = force.seedFx === undefined ? 123 : force.seedFx; r.nFx = 0; r.seedRev = force.seedRev === undefined ? 456 : force.seedRev; r.nRev = 0; MH.spawn(sv, H); return sv; };
+  { const sv = mk(true, { fakeRevive: false }), r = R(sv), before = { n: r.n, nP: r.nP }, fx = J(r.mon.fx); MH.strike(sv, H, 2);
+    ok(pools[2].includes(r.anim.finisher) && r.anim.finisher === fx.moves[2], "按鈕只決定風格池，池內使用已存檔的獨立演出結果");
+    const re = J(sv); MH.fix(re, H); ok(JSON.stringify(R(re).anim) === JSON.stringify(r.anim) && R(re).n === before.n && R(re).nP === before.nP, "終結技／階數重整不重抽，也不多動勝負／呈現流"); }
+
+  const wc = [0,0,0], lc = [0,0,0], N = 30000; let fake = 0, trueRev = 0;
+  for (let i = 1; i <= N; i++) {
+    const w = mk(true, { seedFx: i * 7919 + 3 }); wc[R(w).mon.fx.tier - 1]++; if (R(w).mon.fx.fake) fake++;
+    const l = mk(false, { seedFx: i * 104729 + 7, seedRev: i * 31337 + 11 }); lc[R(l).mon.fx.tier - 1]++; if (R(l).mon.fx.revive) trueRev++;
+  }
+  ok(wc.every((n,i) => Math.abs(n/N - H.finisher.chargeTier.win[i]) < .012), `勝利蓄力約 20／35／45（${wc.map(n=>(n/N*100).toFixed(1)).join("/")}%）`);
+  ok(lc.every((n,i) => Math.abs(n/N - H.finisher.chargeTier.lose[i]) < .012), `敗北蓄力約 65／30／5（${lc.map(n=>(n/N*100).toFixed(1)).join("/")}%）`);
+  ok(Math.abs(fake/N - .05) < .006, `假復活為勝利約 5%（${(fake/N*100).toFixed(2)}%）`);
+  ok(H.revive.trueRate === 0 && trueRev === 0, "真復活機制保留，但 config=0 時 30,000 次不發生");
+
+  { const sv = mk(false, { revive: false, chargeTier: 2 }), r = R(sv); MH.strike(sv, H, 1); const rid = r.anim.rid, coins = sv.coins;
+    ok(r.anim.stage === "charge" && r.anim.tier === 2 && !MH.pendingDefeat(sv, H, rid).ok, "蓄力尚未放手前不能跳到敗北暫待");
+    ok(MH.releaseCharge(sv, H, rid).ok && r.anim.stage === "attack" && !MH.releaseCharge(sv, H, rid).ok, "放手只生效一次，立即進終結技");
+    ok(MH.pendingDefeat(sv, H, rid).ok && r.anim.stage === "pending" && sv.coins === coins && r.gold === 0, "倒下至按繼續前錢包與本趟金幣都不增加");
+    const reload = J(sv); MH.fix(reload, H); ok(JSON.stringify(R(reload).anim) === JSON.stringify(r.anim) && reload.coins === coins, "暫待結算重新整理不重抽、不入帳");
+    ok(MH.continueDefeat(sv, H, rid).ev === "done" && R(sv).phase === "done" && sv.coins === coins && !MH.continueDefeat(sv, H, rid).ok, "真敗按繼續只結算一次，rid 防重複"); }
+
+  for (const forced of [{ win: true, fakeRevive: true }, { win: false, revive: true }]) {
+    const sv = mk(forced.win, forced), r = R(sv); MH.strike(sv, H, 0); const rid = r.anim.rid; MH.releaseCharge(sv, H, rid); MH.pendingDefeat(sv, H, rid); const before = sv.coins;
+    ok(MH.continueDefeat(sv, H, rid).ev === "revive" && r.anim.stage === "revive" && sv.coins === before && finishRaw(sv, H, rid).ok && R(sv).kills === 1, forced.win ? "假復活：先敗北後沿原結果接回勝利" : "真復活機制：強制測試可由原敗接回勝利");
+  }
+  const uiSrc = fs.readFileSync(path.join(ROOT, "js/hunt-ui.js"), "utf8"), fxSrc = fs.readFileSync(path.join(ROOT, "js/hunt-fx.js"), "utf8");
+  ok(/MH\.releaseCharge[\s\S]*A\.commit|A\.commit\(\(\) => MH\.releaseCharge/.test(uiSrc) && /A\.commit\(\(\) => MH\.pendingDefeat/.test(uiSrc) && /function doFinishContinue[\s\S]*act\(\(\) => MH\.continueDefeat/.test(uiSrc), "蓄力放手、敗北暫待、繼續都經原子提交與失敗回滾");
+  ok(/S\.hold = 0; msg\.textContent = "放開了，重新凝聚"/.test(fxSrc) && /S\.auto && S\.peak >= autoModeMs/.test(fxSrc) && /autoModeMs: H\(\)\.finisher\.autoModeReleaseMs/.test(uiSrc) && H.finisher.autoModeReleaseMs === 250 && H.finisher.autoReleaseMs === 3000, "未到頂放開從頭蓄；自動模式 250ms 放手；手動頂住約 3 秒自動斬下");
+  ok(FX.T.burstAt - FX.T.blackAt > 1000, "全螢幕反黑進出間隔超過 1 秒，沒有新增全螢幕閃白");
+  ok(!/中獎|賠率|押注/.test(JSON.stringify({ finisher: H.finisher, revive: H.revive, pending: [H.texts.pendingTitle,H.texts.pendingGold,H.texts.pendingBody] })), "新玩家文字不含賭博用語");
+}
 
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);

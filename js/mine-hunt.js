@@ -9,10 +9,11 @@
          phase   "walk"旅途｜"dev"發展已揭曉｜"country"國度｜"hunt"狩獵｜"done"凱旋（金幣已入帳，只看統計）
          seed／n    勝負種子流（第 n 次抽 ＝ 雜湊(seed, n)，n 存檔 → 讀檔重整不能重抽）
          seedP／nP  呈現類型種子流（獨立，不改變勝負序列）
+         seedFx／nFx 終結技、蓄力與假復活種子流；seedRev／nRev 真復活種子流；兩者都不碰既有勝負與收入抽選
          since     距離上次發展的步數（30 步保底）
          dev       { kind: "cave"|"map" }
          country   { ok: 預抽成敗, pick: null｜0～2 }
-         kills／gold／mon{win,pres,combo}／anim{kind,pick,rid,combo}／after／rid  狩獵。combo＝斬擊套路 0突刺→C「連刺上挑」／1橫掃→A「快速五連斬」／2蓄力→B「三刀大迴旋」；
+         kills／gold／mon{win,pres,combo,fx}／anim{kind,stage,pick,rid,combo,finisher,tier}／after／rid  狩獵。combo＝風格池 0突刺／1橫掃／2蓄力；fx 保存池內終結技、蓄力階與真／假復活結果；
                   單鈕（出招）的怪由呈現抽選那一抽順便決定（不多抽一次），選項怪＝玩家選的招式；都跟著預抽結果存進存檔，重新整理套路不變
          第二階段（2026-10-08，規格 新礦坑_冒險狩獵_第二階段規格）：phase 新增 "dragon"巨龍｜"realm"轉生狹間｜"ember"輪迴的餘燼
          realm     { type:"heaven"|"hell", n:本輪已擊倒隻數, round:第幾輪, total:本趟狹間累計 }（判定演出開始時建立，凱旋清掉）
@@ -49,22 +50,31 @@
   const draw = run => mix(run.seed, run.n++);        // 勝負／入口
   const drawP = run => mix(run.seedP, run.nP++);     // 呈現類型
   const drawI = run => mix(run.seedI, run.nI++);     // 第三階段道具專用；絕不碰勝負流
+  const drawFx = run => mix(run.seedFx, run.nFx++);  // 終結技／蓄力／假復活；絕不碰勝負流
+  const drawRev = run => mix(run.seedRev, run.nRev++); // 真復活；絕不碰勝負流
   const newSeed = rng => Math.floor((rng || Math.random)() * 4294967296) >>> 0;
+  const FINISHER_POOLS = [["pierce-rise", "meteor-pierce", "sky-rend"], ["gale-seven", "twin-moon-cross", "horizon-break"], ["moonwheel-fall", "mountain-one"]];
+  const FINISHER_IDS = [].concat(...FINISHER_POOLS);
 
   function newMeta() { return { v: 1, stamina: 0, visits: 0, claimed: {}, seenLight: false, gifted: false }; }
   function newRun(rng) {
     return { phase: "walk", seed: newSeed(rng), n: 0, seedP: newSeed(rng), nP: 0, since: 0, dev: null, country: null,
       kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null, seedB: newSeed(rng), nB: 0, hp: 100,
-      rv: 3, seedI: newSeed(rng), nI: 0, attr: { free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 }, items: {}, itemOffer: null, awaiting: null, pendingEntry: null };
+      rv: 3, seedI: newSeed(rng), nI: 0, seedFx: newSeed(rng), nFx: 0, seedRev: newSeed(rng), nRev: 0,
+      attr: { free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 }, items: {}, itemOffer: null, awaiting: null, pendingEntry: null };
   }
   const mineId = H => (H.mine || {}).id || "m7";
 
   const attr0 = () => ({ free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 });
   const itemMap = r => { const all = (r && r.items) || {}; for (const id of ITEM_IDS) if (all[id]) return id; return null; };
   function fixStage3(r, H) {
-    r.rv = r.rv === 3 ? 3 : 2;   // 缺版號＝第二階段舊行程；走完前沿用舊門檻，固定種子重放不變
+    r.rv = r.rv === 3 ? 3 : 2;   // 頂層 save.v 仍為 1；缺版號＝第二階段舊行程
     r.seedI = Number.isFinite(r.seedI) ? r.seedI >>> 0 : (mix(r.seed, 0x1A73C9E5) * 4294967296) >>> 0;
     r.nI = int(r.nI === undefined ? 0 : r.nI, 0, 1e9);
+    r.seedFx = Number.isFinite(r.seedFx) ? r.seedFx >>> 0 : (mix(r.seedP, 0x46A17C2D) * 4294967296) >>> 0;
+    r.nFx = int(r.nFx === undefined ? 0 : r.nFx, 0, 1e9);
+    r.seedRev = Number.isFinite(r.seedRev) ? r.seedRev >>> 0 : (mix(r.seed, 0x6B4F91E3) * 4294967296) >>> 0;
+    r.nRev = int(r.nRev === undefined ? 0 : r.nRev, 0, 1e9);
     const a = isObj(r.attr) ? r.attr : attr0();
     for (const k of ["free", "hunt", "dragon", "realm", "earned"]) a[k] = int(a[k], 0, Number.MAX_SAFE_INTEGER);
     r.attr = a;
@@ -92,6 +102,23 @@
             ((choice || empty) && o.stage === "offer" && o.chosen !== null)) r.itemOffer = null;
       }
     } else r.itemOffer = null;
+  }
+
+  function tierRoll(win, u, H) {
+    const a = ((H.finisher || {}).chargeTier || {})[win ? "win" : "lose"] || (win ? [0.20, 0.35, 0.45] : [0.65, 0.30, 0.05]);
+    return u < a[0] ? 1 : u < a[0] + a[1] ? 2 : 3;
+  }
+  function addFinishRolls(r, H, force) {
+    if (!r.mon || r.mon.fx) return;
+    const eligible = r.phase === "hunt" || r.phase === "dragon";
+    let fake = false, revive = false;
+    if (eligible && r.mon.win) fake = drawFx(r) < Number(((H.revive || {}).fakeRate) || 0);
+    if (eligible && !r.mon.win) revive = drawRev(r) < Number(((H.revive || {}).trueRate) || 0);
+    const tier = tierRoll(r.mon.win, drawFx(r), H);
+    const moves = FINISHER_POOLS.map(pool => pool[Math.min(pool.length - 1, Math.floor(drawFx(r) * pool.length))]);
+    if (force && typeof force.fakeRevive === "boolean") fake = force.fakeRevive && eligible && r.mon.win;
+    if (force && typeof force.revive === "boolean") revive = force.revive && eligible && !r.mon.win;
+    r.mon.fx = { fake, revive, tier: int(force && force.chargeTier !== undefined ? force.chargeTier : tier, 1, 3), moves };
   }
 
   /* ---- fixHuntSave：本機讀檔、adoptSave、Game.setSave、newSave 四個入口共用。冪等。
@@ -173,6 +200,8 @@
           if (scOk(r.mon.sc, r.mon.win) && Number.isInteger(r.mon.t) && r.mon.t >= 0 && r.mon.t < r.mon.sc.R) { /* 保留 */ }
           else { delete r.mon.sc; delete r.mon.t; }
         } else delete r.mon.t;
+        if (!r.anim) addFinishRolls(r, H, null);
+        if (r.mon.fx && (!(typeof r.mon.fx.fake === "boolean" && typeof r.mon.fx.revive === "boolean" && Number.isInteger(r.mon.fx.tier) && r.mon.fx.tier >= 1 && r.mon.fx.tier <= 3 && Array.isArray(r.mon.fx.moves) && r.mon.fx.moves.length === 3 && r.mon.fx.moves.every((x, i) => FINISHER_POOLS[i].includes(x))))) return false;
       }
     } else if (r.mon !== null) return false;
     if (r.phase === "realm" && !r.realm) return false;
@@ -182,6 +211,8 @@
       const k = r.anim.kind, af = r.after;
       if (k === "round" && (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm")) {
         if (!(r.mon && r.mon.sc && af === "round" && pick(r.anim.pick) && r.anim.t === r.mon.t && r.mon.t < r.mon.sc.R - 1)) return false;
+      } else if (k === "finish" && (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm")) {
+        if (!(r.mon && ["charge", "attack", "pending", "revive"].includes(r.anim.stage) && ["win", "lose"].includes(r.anim.outcome) && FINISHER_IDS.includes(r.anim.finisher) && Number.isInteger(r.anim.tier) && r.anim.tier >= 1 && r.anim.tier <= 3)) return false;
       } else if (r.phase === "hunt" || r.phase === "dragon") {
         if (!((k === "kill" || k === "down") && pick(r.anim.pick) && r.mon)) return false;
         if (!(Number.isInteger(r.anim.combo) && r.anim.combo >= 0 && r.anim.combo <= 2)) r.anim.combo = r.anim.pick === null ? 0 : r.anim.pick;   // 舊存檔沒有套路：照選項
@@ -448,11 +479,12 @@
     M.stamina -= H.stamina.perStep;
     if (r.phase === "dragon") {   // 勝負、入口天堂各 1 抽；呈現不抽（固定三選一，套路＝玩家選的）
       let win = draw(r) < chance(r, H, "dragon"), entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
-      const f = takeForce(r, ["win", "entry", "rounds"]);
+      const f = takeForce(r, ["win", "entry", "rounds", "fakeRevive", "revive", "chargeTier"]);
       if (typeof f.win === "boolean") win = f.win;
       if (KINDS.includes(f.entry)) entry = f.entry;
       r.mon = { win, pres: 2, combo: 0, entry };
       addScript(r, H, f.rounds);
+      addFinishRolls(r, H, f);
       return { ok: true, ev: "mon", pres: 2 };
     }
     let win = true, cont = false;
@@ -460,13 +492,14 @@
     const uP = drawP(r), P = H.present;
     let pres = presOf(H, uP);
     let combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));   // 單鈕怪的套路：用「單鈕那一段」的 uP 三等分（pres 0 時 uP<P[0]），不多抽一次，所以不改變抽選次數
-    const f = takeForce(r, ["win", "pres", "combo", "cont", "rounds"]);   // 開發者測試用
+    const f = takeForce(r, ["win", "pres", "combo", "cont", "rounds", "fakeRevive", "revive", "chargeTier"]);   // 開發者測試用
     if (typeof f.win === "boolean" && r.phase === "hunt") win = f.win;
     if (typeof f.cont === "boolean" && r.phase === "realm") cont = f.cont;
     if (Number.isInteger(f.pres)) pres = Math.max(0, Math.min(2, f.pres));
     if (Number.isInteger(f.combo)) combo = Math.max(0, Math.min(2, f.combo));
     r.mon = r.phase === "hunt" ? { win, pres, combo } : { win: true, pres, combo, cont };
     addScript(r, H, f.rounds);
+    addFinishRolls(r, H, f);
     return { ok: true, ev: "mon", pres };
   }
   /* 出招：選項只改演出（斬擊方向與顏色），勝負早在 spawn 決定。結果一次落地，動畫之後才播 */
@@ -478,25 +511,48 @@
     r.rid++;
     if (!lastRound) { r.anim = { kind: "round", pick: idx, rid: r.rid, t: r.mon.t }; r.after = "round"; return { ok: true, anim: r.anim }; }   // 中途一輪：只是來回的演出
     const combo = r.mon.pres === 0 ? r.mon.combo : idx;   // 最後一輪的招式決定 5 秒擊殺的套路：突刺 0→C、橫掃 1→A、蓄力 2→B；單鈕怪：預抽時定好的那一種
-    if (r.mon.win) {
-      r.kills++;
-      let gained = 0;
-      if (sc && r.phase === "hunt") r.hp = Math.max(1, hpAt(r.mon, sc.R));   // 血量帶到下一隻（下位 → 巨龍）
-      if (r.phase === "hunt") { gained = earnAttr(r, 1); r.gold = int(r.gold + goldOf(r, H, "hunt"), 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
-      else if (r.phase === "dragon") { gained = earnAttr(r, 2); r.gold = int(r.gold + goldOf(r, H, "dragon"), 0, GOLD_MAX); r.after = "judge"; }
-      else {
-        const RT = H.realm[r.realm.type];
-        r.realm.n++; r.realm.total++; r.gold = int(r.gold + goldOf(r, H, r.realm.type), 0, GOLD_MAX);
-        if (r.realm.n % 3 === 0) gained = earnAttr(r, 1);
-        r.after = r.realm.n >= RT.cap ? "ember" : r.mon.cont ? "rspawn" : "rend";
-      }
-      r.anim = { kind: "kill", pick: idx, rid: r.rid, combo: combo };
-      if (gained) r.anim.attrEarned = gained;
-    } else {
-      r.anim = { kind: "down", pick: idx, rid: r.rid, combo: combo };
-      r.after = "down";
-    }
+    addFinishRolls(r, H, null);
+    const fx = r.mon.fx, finisher = fx.moves[combo];
+    r.anim = { kind: "finish", stage: "charge", pick: idx, rid: r.rid, combo, finisher, tier: fx.tier,
+      outcome: r.mon.win ? "win" : "lose", fake: fx.fake === true, revive: fx.revive === true };
+    r.after = null;
     return { ok: true, anim: r.anim };
+  }
+
+  function releaseCharge(sv, H, rid) {
+    const r = peek(sv, H);
+    if (!r || !r.anim || r.anim.rid !== rid || r.anim.kind !== "finish" || r.anim.stage !== "charge") return { ok: false, reason: "state" };
+    r.anim.stage = "attack";
+    return { ok: true, anim: r.anim };
+  }
+  function pendingDefeat(sv, H, rid) {
+    const r = peek(sv, H);
+    if (!r || !r.anim || r.anim.rid !== rid || r.anim.kind !== "finish" || r.anim.stage !== "attack" || (r.anim.outcome !== "lose" && !r.anim.fake)) return { ok: false, reason: "state" };
+    r.anim.stage = "pending";
+    return { ok: true, ev: "pending" };
+  }
+  function continueDefeat(sv, H, rid) {
+    const r = peek(sv, H);
+    if (!r || !r.anim || r.anim.rid !== rid || r.anim.kind !== "finish" || r.anim.stage !== "pending") return { ok: false, reason: "state" };
+    if (r.anim.fake || r.anim.revive) { r.anim.stage = "revive"; return { ok: true, ev: "revive" }; }
+    settle(sv, H, "down");
+    return { ok: true, ev: "done" };
+  }
+
+  function applyWin(r, H) {
+    r.kills++;
+    let gained = 0;
+    const sc = r.mon && r.mon.sc;
+    if (sc && r.phase === "hunt") r.hp = Math.max(1, hpAt(r.mon, sc.R));
+    if (r.phase === "hunt") { gained = earnAttr(r, 1); r.gold = int(r.gold + goldOf(r, H, "hunt"), 0, GOLD_MAX); r.after = r.kills >= H.lower.count ? "full" : "spawn"; }
+    else if (r.phase === "dragon") { gained = earnAttr(r, 2); r.gold = int(r.gold + goldOf(r, H, "dragon"), 0, GOLD_MAX); r.after = "judge"; }
+    else {
+      const RT = H.realm[r.realm.type];
+      r.realm.n++; r.realm.total++; r.gold = int(r.gold + goldOf(r, H, r.realm.type), 0, GOLD_MAX);
+      if (r.realm.n % 3 === 0) gained = earnAttr(r, 1);
+      r.after = r.realm.n >= RT.cap ? "ember" : r.mon.cont ? "rspawn" : "rend";
+    }
+    return gained;
   }
   /* 判定演出開始：建立（或重設）本輪狹間。結果＝type，早就預抽好 */
   function startRealm(r, type, first) {
@@ -530,6 +586,12 @@
     if (!r || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
     if (r.phase === "done" || !PHASES.includes(r.phase)) return { ok: false, reason: "state" };
     if (r.after === "round" && r.anim.kind === "round" && r.mon) { r.anim = null; r.after = null; r.mon.t++; return { ok: true, ev: "round" }; }   // 這一輪播完 → 回到等待選招
+    if (r.anim.kind === "finish") {
+      const resolvesWin = (r.anim.stage === "attack" && r.anim.outcome === "win" && !r.anim.fake) || r.anim.stage === "revive";
+      if (!resolvesWin || !r.mon) return { ok: false, reason: "state" };
+      const gained0 = applyWin(r, H);
+      if (gained0) r.anim.attrEarned = gained0;
+    }
     const after = r.after, entry = r.mon && r.mon.entry, gained = int(r.anim.attrEarned, 0, 2);
     r.anim = null; r.mon = null; r.after = null;
     if (after === "spawn" || after === "rspawn") { if (gained) { r.awaiting = after; return { ok: true, ev: "attr" }; } return spawn(sv, H); }
@@ -663,7 +725,8 @@
 
   const api = { PHASES, ATTRS, ITEM_IDS, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
     chance, goldOf, itemDef, makeItemOffer, pickItem, dismissItem, attrSafe, attrActive, allocate, continueRun,
-    spawn, strike, ignite, finishAnim, makeScript, scOk, hpAt, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet };
+    spawn, strike, releaseCharge, pendingDefeat, continueDefeat, ignite, finishAnim, makeScript, scOk, hpAt, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet,
+    FINISHER_POOLS };
   root.MineHunt = api;
   if (typeof module !== "undefined") module.exports = api;
 })(typeof window !== "undefined" ? window : globalThis);

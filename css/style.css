@@ -979,6 +979,25 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 /* 「倒下」演出（沒有血）：畫面漸暗＋藍灰字 */
 .hfx-label { position: absolute; left: 0; right: 0; top: 34%; text-align: center; font-size: 36px; line-height: 1.1; letter-spacing: .12em; color: #9fb4d8; opacity: 0; pointer-events: none;
   text-shadow: 2px 0 #10182a, -2px 0 #10182a, 0 2px #10182a, 0 -2px #10182a; }
+.hfx-hitword, .hfx-sign, .hfx-revive { position:absolute; z-index:5; opacity:0; pointer-events:none; text-align:center; font-weight:bold; color:#ffe9a8; text-shadow:4px 0 #3a1c00,-4px 0 #3a1c00,0 4px #3a1c00,0 -4px #3a1c00; }
+.hfx-hitword { font-size:44px; transform:translate(-50%,-50%); }
+.hfx-sign { left:50%; top:24%; font-size:118px; line-height:1; transform:translate(-50%,-50%); }
+.hfx-sign.fail { color:#777987; text-shadow:4px 0 #282936,-4px 0 #282936,0 4px #282936,0 -4px #282936; filter:grayscale(1); }
+.hfx-revive { left:0; right:0; top:22%; font-size:126px; color:#ff745c; text-shadow:5px 0 #47130e,-5px 0 #47130e,0 5px #47130e,0 -5px #47130e; }
+.hfx-charge { position:absolute; inset:0; display:none; background:radial-gradient(circle at 50% 42%,rgba(255,204,51,.22),rgba(0,0,0,.62) 58%,rgba(0,0,0,.82)); text-align:center; user-select:none; }
+.hfx-charge.on { display:block; }
+.hc-orb { position:absolute; left:50%; top:40%; width:52px; height:52px; margin:-26px; border:5px solid #bfeaff; box-shadow:0 0 0 8px rgba(191,234,255,.12),0 0 28px #bfeaff; transform:rotate(45deg); }
+.hfx-charge[data-tier="2"] .hc-orb { width:78px; height:78px; margin:-39px; border-color:#ffcc33; box-shadow:0 0 0 10px rgba(255,204,51,.15),0 0 36px #ffcc33; }
+.hfx-charge[data-tier="3"] .hc-orb { width:108px; height:108px; margin:-54px; border-color:#ff745c; box-shadow:0 0 0 12px rgba(255,80,50,.17),0 0 46px #ff745c; }
+.hc-tier { position:absolute; left:0; right:0; top:20%; min-height:55px; font-size:42px; color:#ffe9a8; text-shadow:3px 3px #2a1200; }
+.hc-msg { position:absolute; left:18px; right:18px; bottom:18%; font-size:22px; color:#fff; text-shadow:2px 2px #000; }
+.hc-release { position:absolute; inset:15% 0 auto; display:none; flex-direction:column; align-items:center; gap:8px; }
+.hc-release.on { display:flex; }
+.hc-release b { font-size:112px; line-height:1; color:#ffe9a8; text-shadow:5px 5px #5a2d00; }
+.hc-release span { font-size:32px; color:#fff; text-shadow:3px 3px #000; }
+.hc-release i { font-size:42px; font-style:normal; transform:translateY(8px); }
+.hc-bar { position:absolute; left:18%; right:18%; bottom:12%; height:12px; border:3px solid #141417; background:#33334f; }
+.hc-bar i { display:block; height:100%; width:0; background:#ffe9a8; }
 /* 餵食視窗 */
 .feed-modal { text-align: left; }
 .feed-title { color: var(--gold-lt); text-align: center; }

@@ -1,7 +1,7 @@
 /* =========================================================
-   冒險狩獵礦坑：「五秒擊殺」演出（連斬 5 刀 → 反黑蓄力 → 整個畫面斬開碎裂 → 金色勝利），以及「倒下」演出
+   冒險狩獵礦坑：8 種終結技、三階蓄力、敗北與復活演出
    - 瀏覽器：window.HuntFx。只做畫面，不碰存檔；演出播完呼叫 onDone，呼叫端才往下一步走
-   - 來源：Claude outputs/五秒擊殺候選稿_2026-10-08/（擁有者 2026-10-08 定案；毫秒數與每一刀細節見該資料夾說明.md）。斬開那段沿用「丙＋反黑」
+   - 來源：既有五秒擊殺正式流程＋Claude outputs/終結技候選稿_2026-10-09/（擁有者核准）；斬開沿用真實遊戲快照、逐片裁切與「丙＋反黑」
    - 每隻怪都播、不能跳過。總長 5000 毫秒：
        0～2200     連斬 5 刀（套路依招式：突刺→C「連刺上挑」、橫掃→A「快速五連斬」、蓄力→B「三刀大迴旋」；單鈕怪的套路預抽時就決定並存檔）
        2200～2900  反黑蓄力：全畫面瞬間反黑（94%），只留怪物發光的眼睛和一道聚集的光
@@ -53,7 +53,24 @@
       { r: 1840, h: 0, kind: "spin", th: 11, col: "#ffcc33", off: [0, 0], kb: [0, -14], tilt: 4, spk: 20, sh: 5, dmg: 41, pre: "ring", lift: 22 },
       { r: 1990, h: 120, kind: "none", cutAngle: 0, col: "#ffcc33", off: [0, 0], kb: [0, -12], tilt: 6, spk: 28, sh: 9, dmg: 96, heavy: true }] }
   ];
-  COMBOS.forEach(c => { let acc = 0; c.hits.forEach((h, i) => { h.e = h.r - acc; h.i = i; acc += h.h; }); c.last = c.hits[c.hits.length - 1]; c.endRaw = c.last.r + c.last.h; });
+  COMBOS[0].id = "pierce-rise"; COMBOS[0].name = "貫星上挑"; COMBOS[0].pool = 0; COMBOS[0].word = "穿";
+  COMBOS[1].id = "gale-seven"; COMBOS[1].name = "疾風亂舞"; COMBOS[1].pool = 1; COMBOS[1].word = "滅";
+  COMBOS[2].id = "moonwheel-fall"; COMBOS[2].name = "月輪墜"; COMBOS[2].pool = 2; COMBOS[2].word = "墜";
+  const H = (r, a, len, kind, heavy) => ({ r, h: heavy ? 120 : 55, kind: kind || "line", a, len, th: heavy ? 14 : 7, col: heavy ? "#ffcc33" : "#ffffff", off: [0, 0], kb: [heavy ? 20 : 9, heavy ? -5 : 3], tilt: heavy ? 5 : 2, spk: heavy ? 28 : 10, sh: heavy ? 9 : 3, dmg: heavy ? 90 : 20, heavy: !!heavy, pre: heavy ? "glint" : null });
+  const F = (id, name, pool, word, cut, defs) => ({ id, name, pool, word, cut: { angle: cut, at: [0, 0], source: "終結技最後一刀" }, hits: defs.map((d, i) => H(d[0], d[1], d[2], d[3], i === defs.length - 1)) });
+  const FINISHERS = [
+    COMBOS[0],
+    F("meteor-pierce", "流星穿心", 0, "閃", -35, [[300,0,300,"stab"],[430,8,310,"stab"],[560,-8,320,"stab"],[690,4,330,"stab"],[820,-4,340,"stab"],[1000,0,390,"stab"],[1700,-35,580,"launch"]]),
+    F("sky-rend", "天翔裂", 0, "裂", -62, [[300,-10,350,"stab"],[560,10,350,"stab"],[900,90,420,"line"],[1500,-62,600,"launch"]]),
+    COMBOS[1],
+    F("twin-moon-cross", "雙月十字", 1, "破", 152, [[300,-35,360,"line"],[620,35,360,"line"],[1000,28,430,"line"],[1750,152,560,"line"]]),
+    F("horizon-break", "地平斷", 1, "斷", 0, [[350,-15,360,"line"],[800,15,360,"line"],[1500,0,640,"line"]]),
+    COMBOS[2],
+    F("mountain-one", "斷岳一文字", 2, "斬", -18, [[1300,-18,740,"line"]])
+  ];
+  const FINISHER_BY_ID = Object.fromEntries(FINISHERS.map(x => [x.id, x]));
+  const HIT_WORDS = { "pierce-rise": ["突","刺","突","刺"], "meteor-pierce": ["突","刺","突","刺","貫","突"], "sky-rend": ["突","刺","落"], "gale-seven": ["斬","裂","斬","疾","斬","裂"], "twin-moon-cross": ["斬","裂","交"], "horizon-break": ["斬","裂"], "moonwheel-fall": ["斬","裂","旋","旋"], "mountain-one": [] };
+  FINISHERS.forEach(c => { let acc = 0; c.hits.forEach((h, i) => { h.e = h.r - acc; h.i = i; h.hitWord = (HIT_WORDS[c.id] || [])[i] || c.word; acc += h.h; }); c.last = c.hits[c.hits.length - 1]; c.endRaw = c.last.r + c.last.h; });
   /* 每套路只有一份切線幾何：angle 是畫面座標的刀痕方向，at 是相對怪物中心的通過點。後段所有效果共用 p／d／n。 */
   function cutGeom(combo, center, W, H) {
     const a = rad(combo.cut.angle), p = [center[0] + combo.cut.at[0], center[1] + combo.cut.at[1]], d = [Math.cos(a), Math.sin(a)], n = [-d[1], d[0]];
@@ -96,7 +113,8 @@
     layer = document.createElement("div");
     layer.id = "huntFx"; layer.setAttribute("aria-hidden", "true");
     layer.innerHTML = '<div class="hfx-world"><div class="hfx-back"><div class="pil"></div></div><div class="hfx-cut"></div><div class="hfx-tone"></div></div>' +
-      '<div class="hfx-pretone"></div><canvas class="hfx-cv"></canvas><div class="hfx-hits"></div><div class="hfx-vic"></div><div class="hfx-dim"></div><div class="hfx-label"></div>';
+      '<div class="hfx-pretone"></div><canvas class="hfx-cv"></canvas><div class="hfx-hits"></div><div class="hfx-vic"></div><div class="hfx-dim"></div><div class="hfx-label"></div><div class="hfx-revive">逆</div>' +
+      '<div class="hfx-charge"><div class="hc-orb"></div><div class="hc-tier"></div><div class="hc-msg">按住螢幕，凝聚最後一擊</div><div class="hc-release"><b>放</b><span>放手斬下！</span><i>☝</i></div><div class="hc-bar"><i></i></div></div>';
     app.appendChild(layer);
     return layer;
   }
@@ -241,8 +259,10 @@
     // 連斬字樣與傷害數字
     const sc = (opts.sceneEl || opts.app).getBoundingClientRect(), hits = q(L, "hfx-hits");
     hits.innerHTML = '<div class="hfx-cmb" style="right:' + Math.round(ctx.rect.right - sc.right + 12) + 'px;top:' + Math.round(sc.top - ctx.rect.top + 8) + 'px"><span class="cl">' + (opts.comboText || "連斬") + '</span><span class="cn">×1</span></div>' +
-      combo.hits.map((h, i) => '<div class="hfx-dm' + (h.heavy ? " big" : "") + '" style="left:' + Math.round(ctx.cm[0] + h.off[0] + (rnd(i * 3.7) - .5) * 70) + "px;top:" + Math.round(ctx.cm[1] + h.off[1] - 30) + 'px">' + h.dmg + "</div>").join("");
+      combo.hits.map((h, i) => '<div class="hfx-dm' + (h.heavy ? " big" : "") + '" style="left:' + Math.round(ctx.cm[0] + h.off[0] + (rnd(i * 3.7) - .5) * 70) + "px;top:" + Math.round(ctx.cm[1] + h.off[1] - 30) + 'px">' + h.dmg + '</div><div class="hfx-hitword" style="left:' + Math.round(ctx.cm[0] + (i % 2 ? 82 : -82)) + 'px;top:' + Math.round(ctx.cm[1] - 82 + (i % 3) * 20) + 'px">' + h.hitWord + "</div>").join("") +
+      '<div class="hfx-sign">' + combo.word + "</div>";
     ctx.cmb = hits.querySelector(".hfx-cmb"); ctx.cn = ctx.cmb.querySelector(".cn"); ctx.dms = [...hits.querySelectorAll(".hfx-dm")];
+    ctx.hitWords = [...hits.querySelectorAll(".hfx-hitword")]; ctx.sign = hits.querySelector(".hfx-sign");
     // 勝利字樣：本體＋兩層殘影（衝向鏡頭時的速度線）
     const g = ch => '<span class="hv-g"><span class="hv-t">' + ch + '</span><span class="hv-t hv-sh">' + ch + "</span></span>";
     const vic = q(L, "hfx-vic");
@@ -351,7 +371,18 @@
       const h = combo.hits[i], u = te - h.e, ok = inCombo && u >= 0 && u < 520;
       setS(el, "opacity", ok ? f2(step6(1 - seg(u, 300, 520))) : "0"); if (ok) setS(el, "transform", "translateY(" + (-Math.round(36 * eOut(clamp01(u / 400)))) + "px)");
     });
+    ctx.hitWords.forEach((el, i) => { const h = combo.hits[i], u = te - h.e, ok = inCombo && !h.heavy && u >= 0 && u < 480; setS(el, "opacity", ok ? f2(step6(1 - seg(u, 300, 480))) : "0"); if (ok) setS(el, "transform", "translate(-50%,-50%) scale(" + (reduced ? 1 : 1 + .45 * (1 - seg(u, 0, 100))) + ")"); });
+    { const u = te - combo.last.e, ok = (inCombo || ctx.fail) && u >= 0; setS(ctx.sign, "opacity", ok ? f2(step6(1 - seg(u, ctx.fail ? 850 : 850, ctx.fail ? 1450 : 1500))) : "0"); if (ok) { const crack = ctx.fail && u > 180 && !reduced ? (Math.floor(u / 70) % 2 ? 3 : -3) : 0; setS(ctx.sign, "transform", "translate(calc(-50% + " + crack + "px),-50%) scale(" + (reduced ? 1 : 1 + .75 * (1 - seg(u, 0, 160))) + ")"); ctx.sign.classList.toggle("fail", !!ctx.fail && u > 180); } }
     setS(q(L, "hfx-hits"), "opacity", inCombo ? "1" : "0");
+    if (ctx.fail && t >= Math.min(T.blackAt, combo.endRaw + 260)) {
+      const u = t - Math.min(T.blackAt, combo.endRaw + 260), dim = Math.min(.68, seg(u, 0, 700) * .68);
+      setS(q(L, "hfx-dim"), "opacity", f2(dim)); setS(q(L, "hfx-label"), "opacity", f2(seg(u, 520, 900)));
+      setS(q(L, "hfx-hits"), "opacity", "1");
+      if (ctx.hero) { const fall = eOut(seg(u, 80, 520)); setS(ctx.hero, "transform", "translate3d(" + Math.round(-18 * fall) + "px," + Math.round(8 * fall) + "px,0) rotate(" + Math.round(-82 * fall) + "deg)"); setS(ctx.hero, "opacity", f2(1 - .35 * fall)); }
+      const shake = reduced || u > 260 ? 0 : (Math.floor(u / 33) % 2 ? 8 : -8) * (1 - u / 260);
+      const wt0 = "translate3d(" + Math.round(shake) + "px,0,0)"; ctx.roots.forEach(r => setS(r.el, "transform", r.orig ? wt0 + " " + r.orig : wt0)); setS(ctx.cv, "transform", wt0);
+      return;
+    }
     /* ===== 二、反黑（2200～）：整個畫面瞬間變暗（亮度突變 1 次），只留怪物發光的眼睛和一道正在聚集的光。減少特效：3 格漸暗到 47% ===== */
     let to = 0;
     if (t >= T.blackAt && t < T.burstAt) to = reduced ? BLACK * .5 * Math.min(3, Math.floor((t - T.blackAt) / 33) + 1) / 3 : BLACK;
@@ -465,8 +496,11 @@
     if (!S) return;
     cancelAnimationFrame(S.raf);
     const ctx = S.ctx, L = ctx.L;
-    L.classList.remove("on");
+    L.classList.remove("on", "charge"); L.onpointerdown = L.onpointerup = L.onpointercancel = L.onpointerleave = null;
+    const charge = q(L, "hfx-charge"); if (charge) { charge.classList.remove("on"); charge.removeAttribute("data-tier"); const rel = charge.querySelector(".hc-release"); if (rel) rel.classList.remove("on"); }
+    const rev = q(L, "hfx-revive"); if (rev) rev.removeAttribute("style");
     if (ctx.mon) { ctx.mon.style.transform = ctx.monOrig.transform; ctx.mon.style.animation = ctx.monOrig.animation; ctx.mon.classList.remove("mw", "mg", "mh"); delete ctx.mon._fc; delete ctx.mon._transform; }
+    if (ctx.hero) { ctx.hero.style.transform = ctx.heroOrig.transform; ctx.hero.style.opacity = ctx.heroOrig.opacity; delete ctx.hero._transform; delete ctx.hero._opacity; }
     ctx.roots.forEach(r => { r.el.style.transform = r.orig; delete r.el._transform; });
     q(L, "hfx-cut").innerHTML = ""; q(L, "hfx-vic").innerHTML = ""; q(L, "hfx-hits").innerHTML = "";
     const lab = q(L, "hfx-label"); lab.className = "hfx-label"; lab.textContent = "";
@@ -487,12 +521,13 @@
     const cv = q(L, "hfx-cv"), g2 = cv.getContext("2d");
     const scale = reduced ? (opts.scale || .75) : 1;
     cv.width = Math.ceil(W / 2); cv.height = Math.ceil(H / 2); g2.imageSmoothingEnabled = false;
-    const combo = COMBOS[Math.max(0, Math.min(2, opts.combo | 0))];
+    const combo = FINISHER_BY_ID[opts.finisher] || COMBOS[Math.max(0, Math.min(2, opts.combo | 0))];
     const roots = ["hud", "screens", "nav"].map(id => document.getElementById(id)).filter(Boolean).map(el => ({ el, orig: el.style.transform || "" }));
     const mon = opts.monEl || null;
+    const hero = document.querySelector(".hunt-hero");
     L.dataset.realm = opts.tone || "";   // 狹間的擊殺演出：天堂（金白）／地獄（赤紅）色調（CSS 與刀光顏色）
-    const ctx = { L, rect, W, H, cv, g2, reduced, combo, mon, tone: opts.tone || "", roots, monOrig: mon ? { transform: mon.style.transform || "", animation: mon.style.animation || "" } : null,
-      ic: [W / 2, Math.round(H * .46)], wy: Math.round(H * .30), hf: [], hp: [], tones: [], shards: [], chips: [], deb: [], vl: [], sh: [], dms: [], eyes: [] };
+    const ctx = { L, rect, W, H, cv, g2, reduced, combo, mon, hero, heroOrig: hero ? { transform: hero.style.transform || "", opacity: hero.style.opacity || "" } : null, fail: opts.kind === "fail", tone: opts.tone || "", roots, monOrig: mon ? { transform: mon.style.transform || "", animation: mon.style.animation || "" } : null,
+      ic: [W / 2, Math.round(H * .46)], wy: Math.round(H * .30), hf: [], hp: [], tones: [], shards: [], chips: [], deb: [], vl: [], sh: [], dms: [], hitWords: [], eyes: [] };
     S = { ctx, onDone: opts.onDone, start: 0, kind: opts.kind, raf: 0 };
     let total;
     if (opts.kind === "down") {
@@ -500,8 +535,9 @@
       const lab = q(L, "hfx-label"); lab.textContent = opts.downText || "倒下了……"; lab.className = "hfx-label down";
       L.classList.add("on");
     } else {
-      total = (opts.totalMs || T.total) * scale;
+      total = (opts.kind === "fail" ? Math.min(T.blackAt, combo.endRaw + 260) + 1600 : (opts.totalMs || T.total)) * scale;
       L.classList.add("on");
+      if (opts.kind === "fail") { const lab = q(L, "hfx-label"); lab.textContent = opts.downText || "倒下了……"; lab.className = "hfx-label down"; }
       try { buildKill(ctx, opts, L); }
       catch (e) { cleanup(); throw e; }
       if (mon) mon.style.animation = "none";   // 怪物原本的上下晃動先停掉，姿勢由演出控制
@@ -520,10 +556,43 @@
     if (opts.kind === "down") renderDown(0, total / scale); else render(0);
     S.raf = requestAnimationFrame(frame);
   }
+  function playCharge(opts) {
+    if (S) cleanup();
+    const L = ensureLayer(opts.app), cv = q(L, "hfx-cv"), reduced = !!opts.reduced, target = Math.max(1, Math.min(3, opts.tier | 0));
+    const ctx = { L, cv, roots: [], mon: null, monOrig: null }, box = q(L, "hfx-charge"), tier = box.querySelector(".hc-tier"), msg = box.querySelector(".hc-msg"), rel = box.querySelector(".hc-release"), bar = box.querySelector(".hc-bar i");
+    const th = reduced ? [490, 975, 1425] : [650, 1300, 1900], peakAt = th[target - 1], autoMs = Math.max(500, Number(opts.autoMs) || 3000), autoModeMs = Math.max(0, Number(opts.autoModeMs) || 250);
+    S = { ctx, onDone: opts.onDone, kind: "charge", raf: 0, hold: 0, peak: 0, holding: !!opts.auto, last: performance.now(), target, auto: !!opts.auto };
+    L.classList.add("on", "charge"); box.classList.add("on");
+    const down = e => { e.preventDefault(); if (S && S.kind === "charge" && !S.auto) S.holding = true; };
+    const up = e => { if (e) e.preventDefault(); if (!S || S.kind !== "charge" || S.auto) return; S.holding = false; if (S.peak) return finish(); if (S.hold > 0) { S.hold = 0; msg.textContent = "放開了，重新凝聚"; } };
+    L.onpointerdown = down; L.onpointerup = up; L.onpointercancel = up; L.onpointerleave = up;
+    const frame = now => {
+      if (!S || S.kind !== "charge") return;
+      const dt = Math.min(100, now - S.last); S.last = now;
+      if (S.holding && !S.peak) { S.hold += dt; if (S.hold >= peakAt) { S.hold = peakAt; S.peak = 1; } }
+      else if (S.peak && S.holding) S.peak += dt;
+      const k = S.hold >= th[2] ? 3 : S.hold >= th[1] ? 2 : S.hold >= th[0] ? 1 : 0;
+      tier.textContent = k ? ["一階", "二階", "三階"][k - 1] : ""; box.dataset.tier = String(k); bar.style.width = Math.round(Math.min(1, S.hold / peakAt) * 100) + "%";
+      if (S.peak) { rel.classList.add("on"); msg.textContent = "放手！斬下最後一擊"; }
+      else if (S.holding) msg.textContent = "凝聚中……";
+      if (S.peak && ((S.auto && S.peak >= autoModeMs) || (!S.auto && S.peak >= autoMs))) return finish();
+      S.raf = requestAnimationFrame(frame);
+    };
+    S.raf = requestAnimationFrame(frame);
+  }
+  function playRevive(opts) {
+    const total = 3650;
+    play(Object.assign({}, opts, { kind: "kill", totalMs: total }));
+    if (!S) return;
+    S.kind = "revive"; const start = performance.now(), R = q(S.ctx.L, "hfx-revive"), scale = S.scale;
+    cancelAnimationFrame(S.raf); S.start = start; S.total = total * scale;
+    const frame = now => { if (!S) return; const t = (now - start) / scale, mapped = Math.min(T.total, T.blackAt + Math.max(0, t - 900) * (T.total - T.blackAt) / (total - 900)); R.style.opacity = t > 1050 && t < 2050 ? String(step6(Math.min(seg(t,1050,1280),1-seg(t,1800,2050)))) : "0"; if (now-start >= S.total) return finish(); render(mapped); S.raf=requestAnimationFrame(frame); };
+    S.raf=requestAnimationFrame(frame);
+  }
   /* 測試用：停在指定時間（演出時間 ms）擷取畫面。HuntFx.seek(opts, t)；HuntFx.release() 還原；HuntFx.stats() 回報碎片數與節點數 */
   function seek(opts, t) { if (!S || !S.manual) { opts.onDone = null; play(opts); cancelAnimationFrame(S.raf); S.manual = true; } if (S.kind === "down") renderDown(t, S.total / S.scale); else render(t); }
   const stats = () => (S && S.ctx.stats) || null;
   const playing = () => !!S;
 
-  root.HuntFx = { play, abort, seek, release: abort, playing, stats, COMBOS, cutGeom, T };
+  root.HuntFx = { play, playCharge, playRevive, abort, seek, release: abort, playing, stats, COMBOS, FINISHERS, cutGeom, T };
 })(typeof window !== "undefined" ? window : globalThis);
