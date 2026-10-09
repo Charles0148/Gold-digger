@@ -313,6 +313,8 @@
         choices = [{ c: "finishcontinue:" + r.anim.rid, label: t.pendingContinue, gold: true }];
       } else if (r.anim && r.anim.kind === "round") {
         lines = [roundLines(r, r.anim.t)[0]]; tap = "";
+      } else if (r.anim && r.anim.kind === "finish") {
+        lines = [t.finishLine]; tap = "";   // 終結技演出中不先顯示倒下或勝利的句子，結果交給演出揭曉
       } else if (r.anim) {
         if (r.anim.kind === "kill") lines = [dragon ? fill(t.dragonKill, { g: MH.goldOf(r, h, "dragon") }) : realm ? fill(t.realmKill, { name: nm, g: MH.goldOf(r, h, r.realm.type) }) : fill(t.monHit[r.anim.combo === undefined ? r.anim.pick : r.anim.combo], { name: nm })];
         else lines = [dragon ? t.dragonDownLine : fill(t.downLine, { name: nm })];

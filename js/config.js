@@ -1278,6 +1278,7 @@
         pendingBody: "同伴正把你帶離戰場。旅途還沒有完全結束。",
         pendingContinue: "繼續",
         downLine: "{name}的一撞讓你站不穩，你倒了下去。同伴把你拖回旅途。",
+        finishLine: "決勝的一擊，就在眼前……",   // 蓄力／出招中：結果揭曉前不先寫勝負
         doneFull: "凱旋！這一趟打倒了 {k} 隻，帶回金幣 {g}。",
         doneDown: "雖然倒下了，還是帶回了金幣 {g}。",
         doneEmpty: "這一趟空手而歸。再走一輪吧。",
