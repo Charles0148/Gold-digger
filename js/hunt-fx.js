@@ -5,7 +5,7 @@
    - 每隻怪都播、不能跳過。總長 5000 毫秒：
        0～2200     連斬 5 刀（套路依招式：突刺→C「連刺上挑」、橫掃→A「快速五連斬」、蓄力→B「三刀大迴旋」；單鈕怪的套路預抽時就決定並存檔）
        2200～2900  反黑蓄力：全畫面瞬間反黑（94%），只留怪物發光的眼睛和一道聚集的光
-       2900～3850  整個畫面沿略斜切線分成左右兩大塊，錯開約 32 像素停住 330ms；3230 各自碎成 22 片玻璃，怪物崩成碎塊
+       2900～3850  整個畫面沿該套路最後一刀的切線分成兩大塊，沿法線錯開約 35 像素停住 330ms；3230 各自碎成 22 片玻璃，怪物崩成碎塊
        3900～5000  金色立體「勝利」衝向鏡頭定格、光掃過、階梯淡出；結束後畫面完整復原
    - 連斬階段：每刀命中停頓 45～120ms（動畫時間凍結）、怪物擊退／傾斜、受擊色只在怪物身上（白剪影 66ms，最後一刀金色 100ms）、
      刀痕與火花畫在半解析度小畫布上、右上角「連斬 ×N」字樣（每刀 +1 彈一下）、每刀一個傷害數字（純演出用的數字，與勝負、金幣無關）
@@ -26,7 +26,6 @@
   const step6 = v => Math.round(clamp01(v) * 6) / 6;
   const f2 = v => String(+v.toFixed(2));
   const OV = 0.75;   // 兩半互相重疊的像素，避免縫隙
-  const TILT = 7;    // 切線傾斜角（度）：上端偏右
   const T = { blackAt: 2200, gatherAt: 2300, lineAt: 2840, splitAt: 2900, burstAt: 3230, flyMs: 620, winAt: 3900, fadeAt: 4750, fadeEnd: 5000, total: 5000 };
   const RADII = [0, 70, 170, 330, 1000], RADII_RED = [0, 130, 1000], G = 900;
   const WIN_SCALE = [.12, .22, .38, .6, .95, 1.5, 1.7, 1.35, 1.12, 1.0];   // 每格 33ms：從遠處衝向鏡頭，過頭一點再定格
@@ -35,26 +34,40 @@
 
   /* ---- 三種連斬套路。r＝命中的時間（ms，含停頓），h＝命中停頓。每套路 5 次命中。索引對應招式：0 突刺→C、1 橫掃→A、2 蓄力→B ---- */
   const COMBOS = [
-    { id: "C", name: "連刺上挑", hits: [
+    { id: "C", name: "連刺上挑", cut: { angle: -55, at: [0, 0], source: "上挑末端切線" }, hits: [
       { r: 300, h: 45, kind: "stab", a: 0, len: 330, th: 4, col: "#ffffff", off: [-12, -10], kb: [8, 0], tilt: 1, spk: 8, sh: 2, dmg: 14 },
       { r: 500, h: 45, kind: "stab", a: 180, len: 330, th: 4, col: "#7fe3ff", off: [12, 12], kb: [-8, 0], tilt: -1, spk: 8, sh: 2, dmg: 16 },
       { r: 680, h: 50, kind: "stab", a: 12, len: 330, th: 5, col: "#ffcc33", off: [-6, -18], kb: [8, 3], tilt: 1, spk: 9, sh: 3, dmg: 18 },
       { r: 840, h: 55, kind: "stab", a: 168, len: 330, th: 5, col: "#ff9a1f", off: [6, 10], kb: [-8, 3], tilt: -1, spk: 9, sh: 3, dmg: 21 },
-      { r: 1500, h: 120, kind: "launch", th: 13, col: "#ffcc33", off: [0, 0], kb: [12, 0], tilt: 5, spk: 28, sh: 9, dmg: 92, heavy: true, pre: "gather", air: { h: 76, d: 560 } }] },
-    { id: "A", name: "快速五連斬", hits: [
+      { r: 1500, h: 120, kind: "launch", cutAngle: -55, th: 13, col: "#ffcc33", off: [0, 0], kb: [12, 0], tilt: 5, spk: 28, sh: 9, dmg: 92, heavy: true, pre: "gather", air: { h: 76, d: 560 } }] },
+    { id: "A", name: "快速五連斬", cut: { angle: 28, at: [0, 0], source: "X 交叉的主刀（先畫、較重）" }, hits: [
       { r: 300, h: 50, kind: "line", a: 35, len: 270, th: 7, col: "#ffcc33", off: [0, -4], kb: [10, 6], tilt: 2, spk: 10, sh: 3, dmg: 24 },
       { r: 700, h: 55, kind: "line", a: 145, len: 270, th: 7, col: "#7fe3ff", off: [0, 0], kb: [-10, 6], tilt: -2, spk: 10, sh: 3, dmg: 27 },
       { r: 1040, h: 60, kind: "line", a: -2, len: 320, th: 9, col: "#ffffff", off: [0, 8], kb: [18, 0], tilt: 3, spk: 12, sh: 4, dmg: 31 },
       { r: 1320, h: 65, kind: "line", a: -62, len: 250, th: 8, col: "#ff9a1f", off: [-10, 10], kb: [8, -16], tilt: -3, spk: 12, sh: 4, dmg: 36 },
-      { r: 1880, h: 110, kind: "line2", a: 28, a2: 152, len: 440, th: 12, col: "#ffcc33", off: [0, 0], kb: [28, 12], tilt: 6, spk: 26, sh: 9, dmg: 88, heavy: true, pre: "glint" }] },
-    { id: "B", name: "三刀大迴旋", hits: [
+      { r: 1880, h: 110, kind: "line2", a: 28, a2: 152, cutAngle: 28, len: 440, th: 12, col: "#ffcc33", off: [0, 0], kb: [28, 12], tilt: 6, spk: 26, sh: 9, dmg: 88, heavy: true, pre: "glint" }] },
+    { id: "B", name: "三刀大迴旋", cut: { angle: 0, at: [0, 0], source: "大迴旋收刀點的切線" }, hits: [
       { r: 320, h: 55, kind: "line", a: 20, len: 280, th: 7, col: "#ffcc33", off: [0, -8], kb: [10, 3], tilt: 2, spk: 10, sh: 3, dmg: 22 },
       { r: 720, h: 60, kind: "line", a: 160, len: 280, th: 7, col: "#7fe3ff", off: [0, 4], kb: [-10, 3], tilt: -2, spk: 10, sh: 3, dmg: 25 },
       { r: 1100, h: 65, kind: "line", a: 0, len: 340, th: 10, col: "#ffffff", off: [0, 12], kb: [18, 0], tilt: 3, spk: 14, sh: 4, dmg: 30 },
       { r: 1840, h: 0, kind: "spin", th: 11, col: "#ffcc33", off: [0, 0], kb: [0, -14], tilt: 4, spk: 20, sh: 5, dmg: 41, pre: "ring", lift: 22 },
-      { r: 1990, h: 120, kind: "none", col: "#ffcc33", off: [0, 0], kb: [0, -12], tilt: 6, spk: 28, sh: 9, dmg: 96, heavy: true }] }
+      { r: 1990, h: 120, kind: "none", cutAngle: 0, col: "#ffcc33", off: [0, 0], kb: [0, -12], tilt: 6, spk: 28, sh: 9, dmg: 96, heavy: true }] }
   ];
   COMBOS.forEach(c => { let acc = 0; c.hits.forEach((h, i) => { h.e = h.r - acc; h.i = i; acc += h.h; }); c.last = c.hits[c.hits.length - 1]; c.endRaw = c.last.r + c.last.h; });
+  /* 每套路只有一份切線幾何：angle 是畫面座標的刀痕方向，at 是相對怪物中心的通過點。後段所有效果共用 p／d／n。 */
+  function cutGeom(combo, center, W, H) {
+    const a = rad(combo.cut.angle), p = [center[0] + combo.cut.at[0], center[1] + combo.cut.at[1]], d = [Math.cos(a), Math.sin(a)], n = [-d[1], d[0]];
+    const corners = [[0, 0], [W, 0], [W, H], [0, H]];
+    const span = Math.max(...corners.map(q => Math.abs((q[0] - p[0]) * d[0] + (q[1] - p[1]) * d[1]))) + 8;
+    return { angle: combo.cut.angle, p, d, n, span };
+  }
+  function drawCutLine(g2, cut, grow, width, paint) {   // 半解析度畫布；span 由四角投影算出，任何角度都會穿出畫面兩側
+    const half = cut.span * clamp01(grow), steps = Math.max(1, Math.ceil(half));
+    for (let i = -steps; i <= steps; i++) {
+      const s = half * i / steps, x = Math.round((cut.p[0] + cut.d[0] * s) / 2), y = Math.round((cut.p[1] + cut.d[1] * s) / 2);
+      paint(x, y, width);
+    }
+  }
   /* 把「含停頓的時間」換成「動畫時間」：命中停頓期間動畫時間不前進（火花、刀痕、擊退全部凍結） */
   function teOf(combo, t) {
     let acc = 0;
@@ -200,7 +213,6 @@
   /* ---------- 建立斬擊場景（播放前一次做完） ---------- */
   function buildKill(ctx, opts, L) {
     const W = ctx.W, H = ctx.H, reduced = ctx.reduced, ic = ctx.ic, combo = ctx.combo;
-    const th = rad(TILT), nn = [Math.cos(th), Math.sin(th)];
     const tpl = snapshot(opts.app, ctx.rect);
     const monEl = opts.monEl, img = monEl && monEl.querySelector("img"), m = img ? monEl.getBoundingClientRect() : null, MC = root.HuntMon && root.HuntMon.cells(opts.variant || 0);
     ctx.finalPose = pose(combo, 1e9, 1e9);
@@ -224,6 +236,8 @@
       }
       ctx.chips = ctx.chips.filter(Boolean);
     } else { ctx.cm = [W / 2, H * .4]; ctx.eyes = []; ctx.chips = []; ctx.cp = 4; ctx.eyeCol = "#ffe36b"; }
+    ctx.cut = cutGeom(combo, ctx.cm, W, H);
+    const nn = ctx.cut.n, cutP = ctx.cut.p;
     // 連斬字樣與傷害數字
     const sc = (opts.sceneEl || opts.app).getBoundingClientRect(), hits = q(L, "hfx-hits");
     hits.innerHTML = '<div class="hfx-cmb" style="right:' + Math.round(ctx.rect.right - sc.right + 12) + 'px;top:' + Math.round(sc.top - ctx.rect.top + 8) + 'px"><span class="cl">' + (opts.comboText || "連斬") + '</span><span class="cn">×1</span></div>' +
@@ -240,16 +254,16 @@
     ctx.hf = [0, 1].map(() => { const h = document.createElement("div"); h.className = "hfx-hf"; h.style.transformOrigin = (W / 2) + "px " + (H / 2) + "px"; cut.appendChild(h); return h; });
     const rectP = [[0, 0], [W, 0], [W, H], [0, H]]; ctx.tones = [];
     [-1, 1].forEach((side, i) => {
-      const poly = clipPlane(rectP, [ic[0] - nn[0] * side * OV, ic[1] - nn[1] * side * OV], [nn[0] * side, nn[1] * side]);
+      const poly = clipPlane(rectP, [cutP[0] - nn[0] * side * OV, cutP[1] - nn[1] * side * OV], [nn[0] * side, nn[1] * side]);
       const el = document.createElement("div"); el.className = "hfx-hp";
       el.style.clipPath = "polygon(" + poly.map(p => p[0].toFixed(1) + "px " + p[1].toFixed(1) + "px").join(",") + ")";
-      const keep = r => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].some(p => side * ((p[0] - ic[0]) * nn[0] + (p[1] - ic[1]) * nn[1]) >= -2);
+      const keep = r => [[r.x, r.y], [r.x + r.w, r.y], [r.x + r.w, r.y + r.h], [r.x, r.y + r.h]].some(p => side * ((p[0] - cutP[0]) * nn[0] + (p[1] - cutP[1]) * nn[1]) >= -2);
       el.appendChild(build(tpl, keep));
       const tone = document.createElement("div"); tone.className = "hfx-tone-in"; el.appendChild(tone); ctx.tones.push(tone);
       ctx.hf[i].appendChild(el);
     });
     // 22 片玻璃（碎裂瞬間才顯示）：每片只複製和自己範圍有重疊的元素
-    const polys = makeShards(W, H, ic, K, radii, 11, Math.atan2(-Math.cos(th), Math.sin(th)));
+    const polys = makeShards(W, H, cutP, K, radii, 11, rad(ctx.cut.angle));
     ctx.shards = [];
     polys.forEach((s, i) => {
       const Pp = s.p, xs = Pp.map(p => p[0]), ys = Pp.map(p => p[1]);
@@ -266,16 +280,17 @@
       svg.setAttribute("class", "hfx-ol"); svg.setAttribute("width", bw); svg.setAttribute("height", bh);
       const pg = document.createElementNS(ns, "polygon"); pg.setAttribute("points", ex.map(p => (p[0] - bx).toFixed(1) + "," + (p[1] - by).toFixed(1)).join(" "));
       pg.setAttribute("fill", "none"); pg.setAttribute("stroke", "#07070b"); pg.setAttribute("stroke-width", "4"); svg.appendChild(pg); el.appendChild(svg);
-      ctx.hf[((gx - ic[0]) * nn[0] + (gy - ic[1]) * nn[1]) < 0 ? 0 : 1].appendChild(el);
-      let dx = gx - ic[0], dy = gy - ic[1]; const d = Math.hypot(dx, dy);
+      const side = ((gx - cutP[0]) * nn[0] + (gy - cutP[1]) * nn[1]) < 0 ? -1 : 1;
+      ctx.hf[side < 0 ? 0 : 1].appendChild(el);
+      let dx = gx - cutP[0], dy = gy - cutP[1]; const d = Math.hypot(dx, dy);
       if (d < 1) { const a = rnd(i + 5) * 6.28; dx = Math.cos(a); dy = Math.sin(a); } else { dx /= d; dy /= d; }
       const sp = ([520, 470, 430, 600][s.ring] || 480) * (.8 + rnd(i * 3.3) * .45);
-      ctx.shards.push({ el, vx: dx * sp, vy: dy * sp - 140, w: (rnd(i * 7.7) - .5) * 2 * 520, tf: "", op: "", on: false });
+      ctx.shards.push({ el, vx: dx * sp + nn[0] * side * 150, vy: dy * sp + nn[1] * side * 150 - 140, w: (rnd(i * 7.7) - .5) * 2 * 520, tf: "", op: "", on: false });
     });
-    ctx.stats = { shards: ctx.shards.length, nodes: cut.querySelectorAll("*").length + vic.querySelectorAll("*").length + hits.querySelectorAll("*").length + 6, combo: combo.id };
+    ctx.stats = { shards: ctx.shards.length, nodes: cut.querySelectorAll("*").length + vic.querySelectorAll("*").length + hits.querySelectorAll("*").length + 6, combo: combo.id, cutAngle: ctx.cut.angle };
     // 後層的碎屑（緩緩上飄的小光點）
     ctx.deb = []; const nd = reduced ? 12 : 30;
-    for (let i = 0; i < nd; i++) ctx.deb.push({ x: W / 2 + (rnd(i * 2.1) - .5) * 150, y: rnd(i * 3.7) * H, v: 30 + rnd(i * 5.1) * 70, s: 1 + Math.floor(rnd(i * 6.3) * 2), c: GOLDS[Math.floor(rnd(i * 9.1) * 4)], ph: rnd(i * 4.4) });
+    for (let i = 0; i < nd; i++) ctx.deb.push({ x: cutP[0] + (rnd(i * 2.1) - .5) * 150, y: rnd(i * 3.7) * H, v: 30 + rnd(i * 5.1) * 70, s: 1 + Math.floor(rnd(i * 6.3) * 2), c: toneCol(ctx.tone, GOLDS[Math.floor(rnd(i * 9.1) * 4)]), ph: rnd(i * 4.4) });
   }
 
   /* ---------- 每一格的畫面（t＝演出時間 ms，已除掉減少特效的時間縮放） ---------- */
@@ -345,10 +360,10 @@
     setS(pre, "display", !split && t >= T.blackAt && to > 0 ? "block" : "none"); setS(pre, "opacity", f2(to));
     ctx.tones.forEach(e => setS(e, "opacity", f2(burst ? 0 : to)));
     setS(q(L, "hfx-tone"), "opacity", f2(burst ? to : 0));
-    const nrm = [Math.cos(rad(TILT)), Math.sin(rad(TILT))];
-    const side0 = (x, y) => ((x - ic[0]) * nrm[0] + (y - ic[1]) * nrm[1]) < 0 ? 0 : 1;
-    const hfT = (i, p) => { const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, o = i ? [14, 32, 1.8] : [-14, -32, -1.8], a = reduced ? 0 : rad(o[2] * f), cx = W / 2, cy = H / 2, dx = p[0] - cx, dy = p[1] - cy;
-      return [cx + Math.cos(a) * dx - Math.sin(a) * dy + o[0] * f * k, cy + Math.sin(a) * dx + Math.cos(a) * dy + o[1] * f * k]; };
+    const cut = ctx.cut, nrm = cut.n;
+    const side0 = (x, y) => ((x - cut.p[0]) * nrm[0] + (y - cut.p[1]) * nrm[1]) < 0 ? 0 : 1;
+    const hfT = (i, p) => { const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, side = i ? 1 : -1, dist = 35 * f * k;
+      return [p[0] + nrm[0] * side * dist, p[1] + nrm[1] * side * dist]; };
     if (t >= T.blackAt && !burst) {   // 發光的眼睛（疊在反黑之上；斬開後跟著兩半移動）
       const gp = seg(t, T.blackAt, T.lineAt), fr0 = rad(pz[2]), cs = Math.cos(fr0), sn = Math.sin(fr0);
       ctx.eyes.forEach(e => {
@@ -360,39 +375,43 @@
         if (gp > .35) { g2.fillStyle = "#ffffff"; g2.fillRect(Math.round(x / 2) - 1, Math.round(y / 2) - 1, 2, 2); }
       });
     }
-    if (t >= T.gatherAt && t < T.lineAt) {   // 正在聚集的光：沿著待會要切的那條斜線，從中心長出來、越來越亮；光點從四周聚過來
-      const gp = seg(t, T.gatherAt, T.lineAt), f = Math.pow(gp, 1.5) * .5, cx2 = ic[0] / 2, cy2 = ic[1] / 2, tn = Math.tan(rad(TILT)), y0 = Math.round(cy2 - f * cy2), y1 = Math.round(cy2 + f * (H / 2 - cy2));
+    if (t >= T.gatherAt && t < T.lineAt) {   // 正在聚集的光：光點聚到同一條切線，線從通過點向畫面兩側長出來
+      const gp = seg(t, T.gatherAt, T.lineAt), f = Math.pow(gp, 1.5) * .5;
       const col = gp < .35 ? "#a8741a" : gp < .7 ? "#ffcc33" : "#ffffff", wd = gp < .5 ? 1 : 2;
-      g2.fillStyle = col; for (let y = y0; y < y1; y++) g2.fillRect(Math.round(cx2 + (cy2 - y) * tn) - (wd >> 1), y, wd, 1);
+      g2.fillStyle = toneCol(ctx.tone, col); drawCutLine(g2, cut, f, wd, (x, y, w) => g2.fillRect(x - (w >> 1), y - (w >> 1), w, w));
       for (let i = 0; i < (reduced ? 10 : 24); i++) {
-        const p = (gp * 1.3 + rnd(i * 1.9)) % 1, a = rnd(i * 2.7) * 6.28, R0 = 150 + rnd(i * 3.1) * 230, k = p * p;
-        g2.fillStyle = i % 3 ? "#ffcc33" : "#ffffff"; g2.fillRect(Math.round((ic[0] + Math.cos(a) * R0 * (1 - k)) / 2), Math.round((ic[1] + Math.sin(a) * R0 * (1 - k) * 1.3) / 2), p > .8 ? 1 : 2, p > .8 ? 1 : 2);
+        const p = (gp * 1.3 + rnd(i * 1.9)) % 1, k = p * p, along = (rnd(i * 2.7) - .5) * cut.span * 1.5, side = rnd(i * 3.1) < .5 ? -1 : 1, away = 150 + rnd(i * 4.3) * 230;
+        const x = cut.p[0] + cut.d[0] * along + (cut.n[0] * side * away + cut.d[0] * (rnd(i * 5.7) - .5) * 80) * (1 - k);
+        const y = cut.p[1] + cut.d[1] * along + (cut.n[1] * side * away + cut.d[1] * (rnd(i * 5.7) - .5) * 80) * (1 - k);
+        g2.fillStyle = toneCol(ctx.tone, i % 3 ? "#ffcc33" : "#ffffff"); g2.fillRect(Math.round(x / 2), Math.round(y / 2), p > .8 ? 1 : 2, p > .8 ? 1 : 2);
       }
     }
     /* ===== 三、斬開（2900）：沿用丙 ===== */
-    if (t >= T.lineAt && t < T.splitAt) {   // 一條貫穿整個畫面、略微傾斜的亮線（紅綠藍錯開）
-      const gr = [.5, .75, 1][Math.min(2, Math.floor((t - T.lineAt) / 20))], cx2 = ic[0] / 2, cy2 = ic[1] / 2, tn = Math.tan(rad(TILT)), y0 = Math.round(cy2 - gr * cy2), y1 = Math.round(cy2 + gr * (H / 2 - cy2));
-      for (let y = y0; y < y1; y++) {
-        const x = Math.round(cx2 + (cy2 - y) * tn);
-        if (!reduced) { g2.globalCompositeOperation = "lighter"; g2.fillStyle = "#ff2a2a"; g2.fillRect(x - 4, y, 3, 1); g2.fillStyle = "#2aff2a"; g2.fillRect(x - 3, y, 4, 1); g2.fillStyle = "#2a6aff"; g2.fillRect(x - 1, y, 4, 1); g2.globalCompositeOperation = "source-over"; }
-        g2.fillStyle = reduced ? "#ffe0a0" : "#ffffff"; g2.fillRect(x - 1, y, 2, 1);
-      }
+    if (t >= T.lineAt && t < T.splitAt) {   // 一條依套路方向、任意角度都貫穿整個畫面的亮線（紅綠藍錯開）
+      const gr = [.5, .75, 1][Math.min(2, Math.floor((t - T.lineAt) / 20))];
+      drawCutLine(g2, cut, gr, 2, (x, y) => {
+        if (!reduced) { const lo = ctx.tone === "hell" ? ["#ff2a2a", "#ff9a1f", "#ffd9c0"] : ctx.tone === "heaven" ? ["#ffe0a0", "#fffbe8", "#7fe3ff"] : ["#ff2a2a", "#2aff2a", "#2a6aff"];
+          g2.globalCompositeOperation = "lighter"; g2.fillStyle = lo[0]; g2.fillRect(x - 3, y - 1, 3, 2); g2.fillStyle = lo[1]; g2.fillRect(x - 1, y - 1, 3, 2); g2.fillStyle = lo[2]; g2.fillRect(x + 1, y - 1, 3, 2); g2.globalCompositeOperation = "source-over"; }
+        g2.fillStyle = reduced ? toneCol(ctx.tone, "#ffe0a0") : toneCol(ctx.tone, "#ffffff"); g2.fillRect(x - 1, y - 1, 2, 2);
+      });
     }
     if (t >= T.splitAt && t < T.burstAt) {   // 縫裡迸出的火花
-      const tn = rad(TILT), dU = [Math.sin(tn), -Math.cos(tn)], n2 = [Math.cos(tn), Math.sin(tn)], st = Math.floor(t / 50);
+      const dU = cut.d, n2 = cut.n, st = Math.floor(t / 50);
       for (let i = 0; i < (reduced ? 8 : 22); i++) {
         const p = (rnd(i * 3.3 + st) - .5) * H * 1.1, o = (rnd(i * 5.1 + st) - .5) * 40;
-        g2.fillStyle = GOLDS[Math.floor(rnd(i * 7.7 + st) * 4)]; g2.fillRect(Math.round((ic[0] + dU[0] * p + n2[0] * o) / 2), Math.round((ic[1] + dU[1] * p + n2[1] * o) / 2), 1 + (i % 2), 1 + (i % 2));
+        g2.fillStyle = toneCol(ctx.tone, GOLDS[Math.floor(rnd(i * 7.7 + st) * 4)]); g2.fillRect(Math.round((cut.p[0] + dU[0] * p + n2[0] * o) / 2), Math.round((cut.p[1] + dU[1] * p + n2[1] * o) / 2), 1 + (i % 2), 1 + (i % 2));
       }
     }
     setS(world, "display", split ? "block" : "none");
     ctx.hf.forEach((h, i) => {
-      const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, o = i ? [14, 32, 1.8] : [-14, -32, -1.8];
-      setS(h, "transform", "translate3d(" + Math.round(o[0] * f * k) + "px," + Math.round(o[1] * f * k) + "px,0) rotate(" + (reduced ? 0 : o[2] * f) + "deg)");
+      const f = t < T.splitAt ? 0 : t < T.splitAt + 33 ? .5 : 1, k = reduced ? .55 : 1, side = i ? 1 : -1, dist = 35 * f * k;
+      setS(h, "transform", "translate3d(" + Math.round(nrm[0] * side * dist) + "px," + Math.round(nrm[1] * side * dist) + "px,0)");
     });
     ctx.hp.forEach(h => setS(h, "display", burst ? "none" : "block"));
     if (split && !burst) {   // 光柱：切開的瞬間就從縫裡透出（紅綠藍色差、略傾斜）
-      setS(pil, "width", (reduced ? 34 : 40) + "px"); setS(pil, "marginLeft", (reduced ? -17 : -20) + "px"); setS(pil, "transform", "rotate(" + TILT + "deg)"); setS(pil, "opacity", "1");
+      const pw = reduced ? 34 : 40;
+      setS(pil, "left", cut.p[0] + "px"); setS(pil, "top", (cut.p[1] - cut.span) + "px"); setS(pil, "bottom", "auto"); setS(pil, "height", (cut.span * 2) + "px");
+      setS(pil, "width", pw + "px"); setS(pil, "marginLeft", (-pw / 2) + "px"); setS(pil, "transformOrigin", "50% 50%"); setS(pil, "transform", "rotate(" + (cut.angle - 90) + "deg)"); setS(pil, "opacity", "1");
       if (pil.classList.contains("rgb") !== !reduced) pil.classList.toggle("rgb", !reduced);
     }
     if (burst) {
@@ -407,7 +426,7 @@
       });
       const pw = 44 + (reduced ? -4 : (Math.floor(u / 133) % 2) * 4), fo = step6(1 - seg(t, T.fadeAt, T.fadeEnd));
       if (pil.classList.contains("rgb")) pil.classList.remove("rgb");
-      setS(pil, "transform", "rotate(" + [TILT, TILT / 2, 0][Math.min(2, Math.floor(u / 33))] + "deg)");
+      setS(pil, "transform", "rotate(" + (cut.angle - 90) + "deg)");
       setS(pil, "width", pw + "px"); setS(pil, "marginLeft", (-pw / 2) + "px"); setS(pil, "opacity", String(fo));
       if (u > 80) ctx.deb.forEach(d => { if (Math.floor((t / 100 + d.ph * 10)) % 5 === 0) return; const y = ((d.y - d.v * u / 1000) % H + H) % H; g2.fillStyle = d.c; g2.fillRect(Math.round(d.x / 2), Math.round(y / 2), d.s, d.s); });
       const a = u / 1000;   // 怪物崩成碎塊
@@ -506,5 +525,5 @@
   const stats = () => (S && S.ctx.stats) || null;
   const playing = () => !!S;
 
-  root.HuntFx = { play, abort, seek, release: abort, playing, stats, COMBOS, T };
+  root.HuntFx = { play, abort, seek, release: abort, playing, stats, COMBOS, cutGeom, T };
 })(typeof window !== "undefined" ? window : globalThis);

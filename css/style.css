@@ -946,6 +946,8 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hfx-back .pil { position: absolute; top: -30px; bottom: -30px; left: 50%; width: 0; opacity: 0;
   background: linear-gradient(90deg, transparent 0 8%, rgba(255,204,51,.28) 8% 22%, #ffe0a0 22% 36%, #ffffff 36% 64%, #ffe0a0 64% 78%, rgba(255,204,51,.28) 78% 92%, transparent 92% 100%); }
 .hfx-back .pil.rgb { background: linear-gradient(90deg, transparent 0 14%, #ff2a2a 14% 26%, #ffcc33 26% 38%, #ffffff 38% 62%, #7fe3ff 62% 74%, #2a6aff 74% 86%, transparent 86% 100%); }
+#huntFx[data-realm="heaven"] .hfx-back .pil { background: linear-gradient(90deg, transparent 0 10%, rgba(255,224,160,.25) 10% 24%, #ffe9a8 24% 40%, #fffbe8 40% 62%, #ffffff 62% 72%, #7fe3ff 72% 88%, transparent 88% 100%); }
+#huntFx[data-realm="hell"] .hfx-back .pil { background: linear-gradient(90deg, transparent 0 10%, rgba(255,42,42,.3) 10% 24%, #ff2a2a 24% 40%, #ff7a2a 40% 62%, #ffd9c0 62% 76%, #ff4a2a 76% 90%, transparent 90% 100%); }
 .hfx-cut, .hfx-hf, .hfx-hp { position: absolute; inset: 0; }
 .hfx-hf { will-change: transform; }
 .hfx-shd { position: absolute; overflow: hidden; }

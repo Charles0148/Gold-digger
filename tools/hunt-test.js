@@ -10,6 +10,7 @@ const fs = require("fs");
 const ROOT = path.join(__dirname, "..");
 const C = require(path.join(ROOT, "js/config.js"));
 const MH = require(path.join(ROOT, "js/mine-hunt.js"));
+require(path.join(ROOT, "js/hunt-fx.js"));
 const H = C.hunt, ST = H.stamina, ID = H.mine.id;
 
 /* 回合戰鬥（第 15 節才測）：第 1～14 節測的是「一輪定勝負」的狀態機本身，先把每隻怪的輪數壓成 1 輪（等同舊版／舊存檔的戰鬥），第 15 節再還原成 config 的厚重輪數 */
@@ -36,6 +37,9 @@ ok(ST.perStep === 1 && ST.countryCost === 2 && ST.valuePer === 6 && ST.intro ===
 ok(H.walk.guarantee === 30 && H.lower.count === 3 && H.lower.win === 0.895 && H.lower.gold === 10 && H.dragon.win === 0.755 && H.dragon.gold === 83 && H.realm.heaven.cont === 0.83 && H.realm.heaven.gold === 44 && H.realm.hell.cont === 0.895 && H.realm.hell.gold === 65, "第三階段重新校準：下位 89.5/10、巨龍 75.5/83、天堂 83/44、地獄 89.5/65");
 ok(H.mine.id === "m7" && H.mine.devOnly === true && H.mine.boardEligible === false && H.mine.toolsBrokenEligible === false, "m7 devOnly、不進委託板、不算用壞");
 ok(!C.mines.some(m => m.id === "m7"), "m7 不在 config.mines（不會被委託板／圖鑑／模擬器誤算）");
+{ const FX = globalThis.HuntFx, cuts = FX.COMBOS.map(c => c.cut), W = 390, HH = 844;
+  const full = FX.COMBOS.every(c => { const g = FX.cutGeom(c, [W / 2, HH * .46], W, HH); return [-1, 1].every(s => { const x = g.p[0] + g.d[0] * g.span * s, y = g.p[1] + g.d[1] * g.span * s; return x < 0 || x > W || y < 0 || y > HH; }); });
+  ok(cuts.map(c => c.angle).join() === "-55,28,0" && new Set(cuts.map(c => c.angle)).size === 3 && FX.COMBOS.every(c => c.cut.angle === c.last.cutAngle && Array.isArray(c.cut.at) && c.cut.at.length === 2 && c.cut.source) && full, "三套路切線角度不同、來自最後一刀，390 寬時兩端都穿出畫面"); }
 
 console.log("=== 2. fixHuntSave：舊存檔補欄位、壞資料收斂 ===");
 {
