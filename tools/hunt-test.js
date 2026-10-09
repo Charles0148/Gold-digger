@@ -653,5 +653,56 @@ console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量�
   ok(Math.abs(dr / N - .7817) < .015 && Math.abs(rl / N - .6634) < .015, `設定三 ${N.toLocaleString()} 趟真實狀態機：見到巨龍 ${(dr / N * 100).toFixed(2)}%（hunt7 設定三 78.17%）、進狹間 ${(rl / N * 100).toFixed(2)}%（66.34%）、同伴 ${(comp / N * 100).toFixed(2)}%`);
 }
 
+console.log("=== 20. 新流程第 3 階段：狹間拉鋸、一輪 20／10、52%、三輪完走、完走回憶、80% 再一輪、中途倒下（真實狀態機對照 hunt7） ===");
+{
+  const cyc = (sv) => { const r = R(sv); const ks = ["hp", "atk", "luck"]; while (r.attr.free > 0) { const k = ks[(r.attr.hp + r.attr.atk + r.attr.luck) % 3]; MH.allocate(sv, H, { [k]: 1 }); } };
+  const toAT = (sv, setting) => { let g = 0; while (R(sv).phase !== "hunt" && g++ < 5000) { const r = R(sv);
+      if (r.event) { if (r.event.goblin) cyc(sv); MH.advanceEntrance(sv, H, "next"); continue; }
+      if (r.phase === "walk") { MH.step(sv, H, { setting }); continue; }
+      if (r.phase === "dev") { MH.advanceEntrance(sv, H, r.dev.stage === "fail" ? "next" : "enter"); continue; }
+      const c = r.country; if (c.stage === "intro") MH.enterCountry(sv, H); else if (c.stage === "task") MH.pickCountry(sv, H, 0);
+      else if (c.stage === "goblin") { cyc(sv); MH.advanceEntrance(sv, H, "next"); } else if (c.stage === "warn" || c.stage === "enter") MH.advanceEntrance(sv, H, "enter"); else MH.advanceEntrance(sv, H, "next"); } };
+  const prep = (sv) => { const r = R(sv), m = r.mon, ratio = () => r.hp / r.maxHp, has = id => (r.routeItems[id] || 0) > 0;
+    if (ratio() < .58 && has("salve")) MH.useRouteItem(sv, H, "salve");
+    if (ratio() < .32 && has("dew")) MH.useRouteItem(sv, H, "dew");
+    if ((m.type === "brutal" || m.type === "dragon") && has("net")) MH.useRouteItem(sv, H, "net");
+    else if (m.type === "tank" && has("whet")) MH.useRouteItem(sv, H, "whet");
+    else if (has("charm") && ratio() < .72) MH.useRouteItem(sv, H, "charm"); };
+  const playAll = (sv, seen) => { let g = 0; while (g++ < 100000) { const r = R(sv);
+      if (r.phase === "done") return;
+      if (r.story) { seen[r.story.kind] = (seen[r.story.kind] || 0) + 1; if (r.story.kind === "round") seen["round" + (r.realm.round + 1)] = 1; MH.atStory(sv, H); continue; }
+      if (r.anim && r.anim.kind === "judge") { MH.finishAnim(sv, H, r.anim.rid); continue; }
+      if (r.phase === "realm" && !r.mon) { const z = MH.spawn(sv, H); if (!z.ok) throw new Error("realm spawn " + z.reason); continue; }
+      if (!r.mon) { const z = MH.atStep(sv, H); if (!z.ok) throw new Error("atStep " + z.reason); continue; }
+      if (r.mon.prep) { prep(sv); MH.fight(sv, H); continue; }
+      if (r.phase === "realm") seen.realmFight = 1;
+      const z = MH.strike(sv, H, 0); if (!z.ok) throw new Error("strike " + z.reason); MH.finishAnim(sv, H, R(sv).anim.rid); }
+    throw new Error("realm guard"); };
+  const finishFight = sv => { let g = 0; while (R(sv).mon && !R(sv).mon.prep && !R(sv).anim && g++ < 50) { MH.strike(sv, H, 0); MH.finishAnim(sv, H, R(sv).anim.rid); } };
+  { const sv = fresh4(1e6, 0), r = R(sv); r.phase = "dragon"; r.rv = 4; r.mon = { prep: false, type: "dragon", pres: 2, combo: 0, win: true, entry: "hell", dmg: 0 }; r.story = null;
+    r.anim = { kind: "finish", stage: "attack", outcome: "win", rid: ++r.rid, combo: 1, finisher: MH.FINISHER_POOLS[1][0], tier: 1, fake: false, revive: false };
+    MH.finishAnim(sv, H, r.anim.rid); ok(r.story && r.story.kind === "collapse" && r.story.entry === "hell" && r.clips.some(c => c.k === "dragon"), "巨龍倒下：先演時間線崩解與天堂地獄拉鋸，結果早已決定（地獄），擊倒片段已記錄");
+    const snap = J(sv); MH.fix(snap, H); ok(R(snap).story && R(snap).story.kind === "collapse" && R(snap).story.entry === "hell", "拉鋸中重整：落點不變");
+    MH.atStory(sv, H); ok(r.phase === "realm" && r.realm.type === "hell" && r.anim.kind === "judge", "拉鋸結束 → 判定演出落到地獄");
+    MH.finishAnim(sv, H, r.anim.rid); ok(r.story && r.story.kind === "king" && !r.mon, "落地後先聽地獄之王開場，不先生怪");
+    MH.atStory(sv, H); ok(r.mon && r.mon.prep && ["balanced", "tank", "brutal", "evasive"].includes(r.mon.type), "開場後才遇到狹間怪物，戰前一樣能準備");
+    r.realm.n = H.realm.hell.cap - 1; r.realm.round = 3; MH.fight(sv, H); r.mon.win = true; finishFight(sv);
+    ok(r.story && r.story.kind === "recap", "第 3 輪打滿 → 完走回憶");
+    MH.atStory(sv, H); ok(r.story && (r.story.kind === "loop" || r.story.kind === "end"), "回憶後抽 80% 再一輪");
+  }
+  { const sv = fresh4(1e6, 0), r = R(sv); r.phase = "realm"; r.realm = { type: "heaven", n: 3, round: 1, total: 3, loop: 0 }; MH.spawn(sv, H); MH.fight(sv, H); r.mon.win = false; r.mon.fx.revive = false; r.mon.fx.fake = false;
+    finishFight(sv); ok(r.story && r.story.kind === "fade" && r.phase === "realm" && sv.coins === 0, "狹間中途倒下：先演「時間的力量……」，還沒入帳");
+    const before = r.gold; MH.atStory(sv, H); ok(r.phase === "done" && r.last.why === "down" && sv.coins === before, "淡出後才結算入帳"); }
+  const N = 20000; const seen = {}; let realm = 0, r2 = 0, r3 = 0, comp = 0, gold = 0, spent = 0;
+  for (let i = 0; i < N; i++) { const sv = fresh4(1e7, 0), r = R(sv); r.seed = (i * 2654435761) >>> 0; r.seedE = (i * 40503 + 17) >>> 0; r.seedP = (i * 69069 + 3) >>> 0; r.seedRev = (i * 1103515245 + 12345) >>> 0;
+    const st0 = sv.huntMeta.stamina; toAT(sv, 3); const s1 = {}; playAll(sv, s1);
+    realm += !!s1.collapse; r2 += !!s1.round2; r3 += !!s1.round3; comp += !!s1.recap; gold += sv.coins; spent += st0 - sv.huntMeta.stamina; }
+  const rtp = gold / (spent * H.stamina.valuePer);
+  ok(Math.abs(realm / N - .6634) < .015 && Math.abs(r2 / N - .1793) < .015 && Math.abs(r3 / N - .0484) < .01 && Math.abs(comp / N - .0270) < .008,
+    `設定三 ${N.toLocaleString()} 趟：狹間 ${(realm / N * 100).toFixed(2)}%／第 2 輪 ${(r2 / N * 100).toFixed(2)}%／第 3 輪 ${(r3 / N * 100).toFixed(2)}%／完走 ${(comp / N * 100).toFixed(2)}%（hunt7 66.34／17.93／4.84／2.70）`);
+  ok(Math.abs(rtp - 1.2002) < .05, `設定三整體回報 ${(rtp * 100).toFixed(2)}%（hunt7 120.02%，2 萬趟抽樣誤差較大）`);
+  console.log(`  狀態機實測｜狹間 ${(realm / N * 100).toFixed(2)}%｜第 2 輪 ${(r2 / N * 100).toFixed(2)}%｜第 3 輪 ${(r3 / N * 100).toFixed(2)}%｜完走 ${(comp / N * 100).toFixed(2)}%｜回報 ${(rtp * 100).toFixed(2)}%`);
+}
+
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);

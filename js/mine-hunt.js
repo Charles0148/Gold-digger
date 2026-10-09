@@ -65,7 +65,7 @@
       rv: 4, seedI: newSeed(rng), nI: 0, seedFx: newSeed(rng), nFx: 0, seedRev: newSeed(rng), nRev: 0, seedE: newSeed(rng), nE: 0,
       attr: attr0(), items: {}, itemOffer: null, awaiting: null, pendingEntry: null,
       segmentSteps: 0, setting: 1, countryCount: 0, totalSuccess: 0, visited: [], answers: {}, lastCountry: null, entry: null,
-      routeItems: {}, event: null, warnedUnspent: false, maxHp: 100, companion: false, atStep: 0, story: null, atEvent: null };
+      routeItems: {}, event: null, warnedUnspent: false, maxHp: 100, companion: false, atStep: 0, story: null, atEvent: null, clips: [] };
   }
   const mineId = H => (H.mine || {}).id || "m7";
 
@@ -127,7 +127,9 @@
     if (r.event !== null && r.event !== undefined && !isObj(r.event)) r.event = null;
     r.companion = r.companion === true; r.atStep = int(r.atStep, 0, 99);
     r.maxHp = int(r.maxHp || 100, 1, 100000); r.hp = Math.max(1, Math.min(r.maxHp, Number.isFinite(Number(r.hp)) ? Number(r.hp) : r.maxHp));
-    if (!(isObj(r.story) && ["open", "dragon"].includes(r.story.kind))) r.story = null;
+    if (!(isObj(r.story) && ["open", "dragon", "collapse", "king", "round", "stop", "recap", "loop", "end", "fade"].includes(r.story.kind))) r.story = null;
+    if (r.story && r.story.kind === "collapse" && !KINDS.includes(r.story.entry)) r.story = null;
+    r.clips = Array.isArray(r.clips) ? r.clips.filter(c => isObj(c) && ["lower", "dragon", "heaven", "hell"].includes(c.k) && Number.isInteger(c.i) && Number.isInteger(c.c) && c.c >= 0 && c.c <= 2).slice(-200) : [];
     if (r.atEvent !== null && r.atEvent !== undefined && !isObj(r.atEvent)) r.atEvent = null;
   }
 
@@ -232,14 +234,14 @@
     const hasMon = r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm";
     if (hasMon) {
       if (r.mon !== null && r.rv === 4 && isObj(r.mon) && r.mon.prep === true) {   // 新流程：戰前準備中，勝負還沒抽
-        if (!(Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2 && typeof r.mon.type === "string" && r.phase !== "realm" && !r.anim)) return false;
+        if (!(Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2 && typeof r.mon.type === "string" && !r.anim)) return false;
         r.mon.bonus = Math.max(0, Math.min(1, Number(r.mon.bonus) || 0)); r.mon.bound = r.mon.bound === true; r.mon.bonusUsed = r.mon.bonusUsed === true;
         if (!(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
       } else if (r.mon !== null) {
         if (!(isObj(r.mon) && typeof r.mon.win === "boolean" && Number.isInteger(r.mon.pres) && r.mon.pres >= 0 && r.mon.pres <= 2)) return false;
         if (!(Number.isInteger(r.mon.combo) && r.mon.combo >= 0 && r.mon.combo <= 2)) r.mon.combo = 0;
         if (r.phase === "dragon" && (r.mon.pres !== 2 || !KINDS.includes(r.mon.entry))) return false;
-        if (r.phase === "realm" && (r.mon.win !== true || typeof r.mon.cont !== "boolean")) return false;
+        if (r.phase === "realm" && r.rv !== 4 && (r.mon.win !== true || typeof r.mon.cont !== "boolean")) return false;
         // 回合劇本：壞了就丟掉（變成「只有 1 輪」的舊戰鬥），勝負還在 mon.win，不作廢整趟
         if (r.mon.sc !== undefined) {
           if (scOk(r.mon.sc, r.mon.win) && Number.isInteger(r.mon.t) && r.mon.t >= 0 && r.mon.t < r.mon.sc.R) { /* 保留 */ }
@@ -250,6 +252,7 @@
       }
     } else if (r.mon !== null) return false;
     if (r.phase === "realm" && !r.realm) return false;
+    if (r.realm) r.realm.loop = int(r.realm.loop, 0, 1e6);
     if (r.phase === "ember" && (!r.realm || !r.ember)) return false;
     if (r.anim !== null) {
       if (!isObj(r.anim) || !Number.isInteger(r.anim.rid)) return false;
@@ -601,8 +604,10 @@
     const r = peek(sv, H), M = sv.huntMeta;
     if (!r || (r.phase !== "hunt" && r.phase !== "dragon" && r.phase !== "realm") || r.mon || r.anim || r.awaiting) return { ok: false, reason: "state" };
     if (r.rv === 4 && r.phase !== "realm") return { ok: false, reason: "walk" };   // 新流程：下位與巨龍由 atStep 走路遇到
+    if (r.rv === 4 && r.story) return { ok: false, reason: "story" };
     if (M.stamina < H.stamina.perStep) return { ok: false, reason: "hungry", need: H.stamina.perStep - M.stamina };
     M.stamina -= H.stamina.perStep;
+    if (r.rv === 4) { atSpawn(r, H); return { ok: true, ev: "mon", pres: r.mon.pres }; }   // 新流程狹間：每隻付 1 體力，戰前一樣能用道具
     if (r.phase === "dragon") {   // 勝負、入口天堂各 1 抽；呈現不抽（固定三選一，套路＝玩家選的）
       let win = draw(r) < chance(r, H, "dragon"), entry = draw(r) < H.realm.entryHeaven ? "heaven" : "hell";
       const f = takeForce(r, ["win", "entry", "rounds", "fakeRevive", "revive", "chargeTier"]);
@@ -661,14 +666,24 @@
     const r = peek(sv, H);
     if (!r || !r.anim || r.anim.rid !== rid || r.anim.kind !== "finish" || r.anim.stage !== "pending") return { ok: false, reason: "state" };
     if (r.anim.fake || r.anim.revive) { r.anim.stage = "revive"; return { ok: true, ev: "revive" }; }
+    if (r.rv === 4 && r.phase === "realm") { r.anim = null; r.mon = null; r.after = null; r.story = { kind: "fade" }; return { ok: true, ev: "fade" }; }   // 狹間中途倒下：時間的力量把我們帶走
     settle(sv, H, "down");
     return { ok: true, ev: "done" };
   }
 
   function applyWin(r, H) {
     r.kills++;
+    if (r.rv === 4 && r.phase === "realm") {   // 新流程狹間：血量延續；打滿一輪（天堂 20／地獄 10）後抽 52%，第 3 輪打滿＝完走
+      const A = H.at, RL = r.realm, cap = H.realm[RL.type].cap;
+      r.hp = Math.max(1, r.hp - (Number(r.mon.dmg) || 0)); r.hp = Math.min(r.maxHp, r.hp + r.maxHp * A.victoryHeal);
+      RL.n++; RL.total++; r.gold = int(r.gold + A.gold[RL.type], 0, GOLD_MAX);
+      if (r.anim) r.clips = r.clips.concat([{ k: RL.type, i: RL.total - 1, c: int(r.anim.combo, 0, 2), r: RL.round }]).slice(-200);
+      r.after = RL.n < cap ? "rspawn" : RL.round >= 3 ? "complete" : drawE(r) < A.realm.continueRound ? "rnext" : "rstop";
+      return 0;
+    }
     if (r.rv === 4 && (r.phase === "hunt" || r.phase === "dragon")) {   // 新流程：打倒怪物不給能力點；血量照預算的傷害扣，再回最大血量 16%
       const A = H.at, dragon = r.phase === "dragon";
+      if (r.anim) r.clips = r.clips.concat([{ k: dragon ? "dragon" : "lower", i: r.kills - 1, c: int(r.anim.combo, 0, 2) }]).slice(-200);
       r.hp = Math.max(1, r.hp - (Number(r.mon.dmg) || 0)); r.hp = Math.min(r.maxHp, r.hp + r.maxHp * A.victoryHeal);
       r.gold = int(r.gold + A.gold[dragon ? "dragon" : "lower"], 0, GOLD_MAX); r.atStep = 0; r.atEvent = null;
       if (dragon) r.after = "judge";
@@ -720,6 +735,7 @@
     if (!r || !r.anim || r.anim.rid !== rid) return { ok: false, reason: "state" };
     if (r.phase === "done" || !PHASES.includes(r.phase)) return { ok: false, reason: "state" };
     if (r.after === "round" && r.anim.kind === "round" && r.mon) { r.anim = null; r.after = null; r.mon.t++; return { ok: true, ev: "round" }; }   // 這一輪播完 → 回到等待選招
+    if (r.rv === 4 && r.anim.kind === "judge") { r.anim = null; r.after = null; r.story = { kind: "king" }; return { ok: true, ev: "king" }; }   // 新流程：落地後先聽國王開場
     if (r.anim.kind === "finish") {
       const resolvesWin = (r.anim.stage === "attack" && r.anim.outcome === "win" && !r.anim.fake) || r.anim.stage === "revive";
       if (!resolvesWin || !r.mon) return { ok: false, reason: "state" };
@@ -730,6 +746,10 @@
     r.anim = null; r.mon = null; r.after = null;
     if (after === "spawn" || after === "rspawn") { if (gained) { r.awaiting = after; return { ok: true, ev: "attr" }; } return spawn(sv, H); }
     if (after === "walk") return { ok: true, ev: "walk" };
+    if (r.rv === 4 && after === "judge") { r.story = { kind: "collapse", entry }; return { ok: true, ev: "collapse" }; }   // 巨龍倒下：時間線崩解、天堂與地獄拉鋸
+    if (after === "rnext") { r.story = { kind: "round" }; return { ok: true, ev: "round" }; }
+    if (after === "rstop") { r.story = { kind: "stop" }; return { ok: true, ev: "stop" }; }
+    if (after === "complete") { r.story = { kind: "recap" }; return { ok: true, ev: "recap" }; }
     if (after === "full" && r.rv === 4) { r.phase = "dragon"; return { ok: true, ev: "dragon" }; }   // 新流程：巨龍也要走路找，遇到時才揭露兇手
     if (after === "full") { r.phase = "dragon"; if (gained) { r.awaiting = "full"; return { ok: true, ev: "attr" }; } return spawn(sv, H); }   // 舊行程沒有能力點，仍照原流程直接接巨龍
     if (after === "judge") {
@@ -764,15 +784,16 @@
   function typeDef(H, type) { const A = H.at; return type === "dragon" ? A.dragon : A.types[type] || A.types.balanced; }
   function winChance(r, H) {
     const A = H.at, m = r.mon, t = typeDef(H, m.type), dragon = m.type === "dragon", s = r.attr;
-    let p = (dragon ? t.base : t.lower) + s.atk * t.atk + s.luck * t.luck + s.hp * t.hp + (r.companion ? A.companion.bonus : 0) + (m.bonus || 0);
+    let p = (dragon ? t.base : r.phase === "realm" ? t[r.realm.type] : t.lower) + s.atk * t.atk + s.luck * t.luck + s.hp * t.hp + (r.companion ? A.companion.bonus : 0) + (m.bonus || 0);
     p -= hpPenalty(r.hp / r.maxHp);
     return Math.max(A.floor, Math.min(dragon ? A.cap.dragon : A.cap.lower, p));
   }
   function atSpawn(r, H) {
     const A = H.at; r.atStep = 0;
     if (r.phase === "dragon") { r.mon = { prep: true, type: "dragon", pres: 2, combo: 0, bonus: 0, bound: false, bonusUsed: false }; r.story = { kind: "dragon" }; return; }
-    const keys = Object.keys(A.types), total = keys.reduce((n, k) => n + A.types[k].weight[0], 0);
-    let x = drawE(r) * total, type = keys[keys.length - 1]; for (const k of keys) { x -= A.types[k].weight[0]; if (x < 0) { type = k; break; } }
+    const zi = r.phase === "realm" ? (r.realm.type === "heaven" ? 1 : 2) : 0;   // 下位／天堂／地獄的怪物種類占比不同
+    const keys = Object.keys(A.types), total = keys.reduce((n, k) => n + A.types[k].weight[zi], 0);
+    let x = drawE(r) * total, type = keys[keys.length - 1]; for (const k of keys) { x -= A.types[k].weight[zi]; if (x < 0) { type = k; break; } }
     const uP = drawP(r), P = H.present, pres = presOf(H, uP), combo = Math.min(2, Math.floor((uP % P[0]) / P[0] * 3));
     r.mon = { prep: true, type, pres, combo, bonus: 0, bound: false, bonusUsed: false };
   }
@@ -790,9 +811,22 @@
     if (meet) { atSpawn(r, H); return { ok: true, ev: "mon" }; }
     return { ok: true, ev: "walk" };
   }
+  function rv4Realm(r, type, loop) {
+    r.rid++; const total = r.realm ? r.realm.total : 0;
+    r.realm = { type, n: 0, round: 1, total, loop }; r.phase = "realm"; r.ember = null; r.mon = null;
+    r.anim = { kind: "judge", type, first: loop === 0, rid: r.rid }; r.after = "rspawn";
+  }
   function atStory(sv, H) {
     const r = peek(sv, H); if (!r || r.rv !== 4 || !r.story) return { ok: false, reason: "state" };
-    r.story = null; return { ok: true };
+    const st = r.story, A = H.at; r.story = null;
+    if (st.kind === "collapse") { rv4Realm(r, st.entry, 0); return { ok: true, ev: "judge" }; }
+    if (st.kind === "king") return spawn(sv, H);
+    if (st.kind === "round") { r.realm.round++; r.realm.n = 0; return spawn(sv, H); }
+    if (st.kind === "stop" || st.kind === "end") { settle(sv, H, "realm"); return { ok: true, ev: "done" }; }
+    if (st.kind === "fade") { settle(sv, H, "down"); return { ok: true, ev: "done" }; }
+    if (st.kind === "recap") { r.story = { kind: drawE(r) < A.realm.continueLoop ? "loop" : "end" }; return { ok: true, ev: r.story.kind }; }
+    if (st.kind === "loop") { rv4Realm(r, drawE(r) < H.realm.entryHeaven ? "heaven" : "hell", int(r.realm.loop + 1, 0, 1e6)); return { ok: true, ev: "judge" }; }
+    return { ok: true };
   }
   /* 戰前使用道具：回血類直接回；加成類（星運符／縛影網／破甲砥石）一場只能用一個 */
   function useRouteItem(sv, H, id) {
@@ -831,7 +865,7 @@
     m.dmg = rolled * (1 - Math.min(A.dmgReduceCap, r.attr.hp * A.dmgReducePer)) * (m.bound ? A.items.net.bound : 1);
     m.win = win; m.prep = false;
     const hp0 = Math.max(1, Math.round(r.hp / r.maxHp * H.battle.hpMax));
-    m.sc = makeScript(H, dragon ? "dragon" : "lower", win, (mix(r.seedB, r.nB) * 4294967296) >>> 0, hp0, f.rounds); m.t = 0; r.nB = int(r.nB + 1, 0, 1e9);
+    m.sc = makeScript(H, dragon ? "dragon" : r.phase === "realm" ? r.realm.type : "lower", win, (mix(r.seedB, r.nB) * 4294967296) >>> 0, hp0, f.rounds); m.t = 0; r.nB = int(r.nB + 1, 0, 1e9);
     if (win) fitDamage(m.sc, Math.round(m.dmg / r.maxHp * H.battle.hpMax));
     addFinishRolls(r, H, f);
     return { ok: true, win };
