@@ -1057,3 +1057,90 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hunt-num { position: absolute; z-index: 3; font-size: 15px; color: #e8e8e8; text-shadow: 1px 1px 0 #000, -1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000; pointer-events: none; white-space: nowrap; }
 .hunt-num.sub { color: var(--sub); }
 .hunt-slash { position: absolute; z-index: 2; height: 3px; background: #fff; pointer-events: none; transform-origin: left center; }
+
+/* ===== 轉生之間 B：資訊優先（只在 isHunt 畫面套用）===== */
+#scr-mine.hunt-b { padding: 8px 10px 10px; gap: 8px; }
+#scr-mine.hunt-b #toolInfo, #scr-mine.hunt-b #huntData { display: none !important; }
+#scr-mine.hunt-b #controls { margin-top: auto; }
+#scr-mine.hunt-b #controls > .px-btn { flex: 1; min-width: 0; font-size: 15px; }
+.hunt-card { flex: none; min-height: 106px; display: grid; grid-template-columns: 62px 1fr; gap: 10px; padding: 8px 10px 8px 8px; background: #202026; cursor: pointer; position: relative; }
+.hunt-card.compact { display: block; min-height: 44px; padding: 6px 10px; }
+.hunt-portrait { background: #101014; border: 3px solid #000; box-shadow: inset 2px 2px 0 rgba(255,255,255,.1); display: flex; align-items: flex-end; justify-content: center; padding: 4px 0 2px; }
+.hunt-portrait img { width: auto; height: 50px; image-rendering: pixelated; }
+.hunt-card-info { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.hunt-card-row { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; }
+.hunt-card-row .key { width: 52px; flex: none; color: var(--sub); white-space: nowrap; }
+.hunt-card-row.fairy .key, .hunt-card-line .fairy { color: #7fe3ff; }
+.hunt-card-row .value { margin-left: auto; color: var(--text); font-size: 14px; white-space: nowrap; }
+.hunt-card-hp { flex: 1; min-width: 0; height: 16px; display: flex; gap: 2px; }
+.hunt-card-hp i { flex: 1; background: #3a3a42; border: 1px solid #14141a; }
+.hunt-card-hp i.on { background: #55dd66; }
+.hunt-card-hp.low i.on { background: var(--gold); }
+.hunt-card-bar { flex: 1; min-width: 0; height: 12px; border: 2px solid #000; background: #000; }
+.hunt-card-bar i { display: block; height: 100%; }
+.hunt-card-small { display: flex; gap: 6px; }
+.hunt-card-small span { flex: 1; padding: 2px 4px; border: 2px solid #000; background: rgba(0,0,0,.4); color: var(--sub); text-align: center; font-size: 13px; white-space: nowrap; }
+.hunt-card-small b { color: var(--gold); font-weight: normal; }
+.hunt-card-fold { position: absolute; right: 12px; top: 0; color: var(--sub); font-size: 12px; }
+.hunt-card-line { display: flex; align-items: center; gap: 6px; min-height: 28px; font-size: 13px; white-space: nowrap; }
+.hunt-card-line .hunt-card-hp { flex: none; width: 72px; height: 14px; }
+.hunt-card-line b { font-weight: normal; font-size: 13px; }
+.hunt-card-line .gold { color: var(--gold); margin-left: auto; }
+.hunt-card-line .fold { color: var(--sub); }
+.hunt-card-companion { color: #bfeaff; font-size: 12px; line-height: 16px; white-space: nowrap; }
+.hunt-card.compact .hunt-card-companion { margin-top: 2px; padding-top: 2px; border-top: 1px solid #35434a; text-align: center; }
+.hunt-tabs { flex: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.hunt-tabs .px-btn { min-height: 44px; position: relative; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 16px; }
+.hunt-tabs .px-btn.on { color: var(--gold-lt); background: #3d3a22; border-color: var(--gold); box-shadow: inset 3px 3px 0 rgba(255,224,160,.35), inset -3px -3px 0 rgba(0,0,0,.45); }
+.hunt-tabs .hb-dot { right: 8px; top: 6px; }
+.hunt-tabs .hb-ic { width: 24px; height: 24px; }
+.hunt-bag-count { color: var(--gold-lt); background: #101014; border: 1px solid #000; padding: 0 4px; font-size: 12px; }
+#scr-mine.hunt-b #scene { flex: 1 1 150px; min-height: 150px; }
+#scr-mine.hunt-b #mineBar { padding: 4px 10px; min-height: 29px; font-size: 13px; }
+#scr-mine.hunt-b #sceneStage { padding: 5px 8px; }
+#scr-mine.hunt-b #sceneBig { font-size: 2em; }
+#scr-mine.hunt-b #sceneSub { color: var(--gold-lt); font-size: 14px; margin-top: 2px; }
+#scr-mine.hunt-b #sceneSub:empty { display: none; }
+#scr-mine.hunt-b .hunt-hp { display: none !important; }
+#scr-mine.hunt-b #textbox { min-height: 152px; padding: 38px 12px 10px; display: flex; flex-direction: column; overflow: hidden; cursor: pointer; }
+#scr-mine.hunt-b #textbox .tb-tag { display: flex; align-items: center; inset: 0 0 auto 0; top: 0; min-height: 28px; padding: 4px 10px; background: #1a1a20; border-bottom: 2px solid #000; color: var(--sub); font-size: 14px; animation: none; }
+#scr-mine.hunt-b #textbox .tb-tag::before { content: ""; width: 10px; height: 10px; margin-right: 8px; background: currentColor; transform: rotate(45deg); }
+#scr-mine.hunt-b #textbox .tb-tag[data-speaker="小精靈"] { color: var(--cyan); }
+#scr-mine.hunt-b #textbox .tb-tag[data-speaker="哥布林"] { color: var(--green); }
+#scr-mine.hunt-b #textbox .tb-tag[data-speaker="地獄之王"] { color: var(--orange); }
+#scr-mine.hunt-b #tbLines { flex: 1; font-size: max(13px, calc(var(--rd) * 1em)); text-align: left; }
+#scr-mine.hunt-b #tbChoice { margin: 8px -2px 0; padding-top: 8px; border-top: 2px dashed #3a3a46; display: grid; grid-template-columns: 1fr; gap: 6px; }
+#scr-mine.hunt-b #tbChoice.hidden { display: none; }
+#scr-mine.hunt-b #tbChoice .px-btn { min-height: 46px; padding: 5px 10px; font-size: 16px; line-height: 1.3; white-space: normal; }
+#scr-mine.hunt-b #tbChoice:has(.px-btn:nth-child(2):last-child) { grid-template-columns: 1fr 1fr; }
+#scr-mine.hunt-b #tbChoice:has(.px-btn:nth-child(3):last-child) { grid-template-columns: repeat(3, 1fr); }
+#scr-mine.hunt-b #tbTap { position: static; align-self: flex-end; min-height: 16px; margin-top: 3px; font-size: 12px; animation: none; }
+.hunt-page { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 10px; border-color: #5a9bb0; background: #14171d; text-align: left; }
+.hunt-page-head { display: flex; align-items: center; gap: 10px; }
+.hunt-page-head .px-btn { min-height: 44px; padding: 2px 10px; font-size: 14px; }
+.hunt-page-head b { margin-left: auto; color: var(--cyan); font-weight: normal; font-size: 20px; }
+.hunt-page-sub { margin: 6px 0; color: var(--sub); font-size: 13px; line-height: 1.5; }
+.hunt-page-points { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: 2px solid #2c4a55; background: rgba(127,227,255,.08); font-size: 14px; }
+.hunt-page-points > b { color: var(--gold); font-size: 24px; font-weight: normal; }
+.hunt-page-points .ha-pips { margin: 0 0 0 auto; }
+.hunt-page-scroll { flex: 1; min-height: 0; overflow-y: auto; }
+.hunt-page-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 8px; align-items: center; padding: 7px 0; border-bottom: 1px solid #3a4655; }
+.hunt-page-row .ha-am b { font-size: 15px; }
+.hunt-page-row .ha-am .sub, .hunt-page-row .ha-fx { font-size: 12px; }
+.hunt-page-row.dead { opacity: .65; }
+.hunt-page-note, .hunt-page-keep, .hunt-page-empty { margin: 7px 0; color: #bfe9f5; font-size: 13px; line-height: 1.5; }
+.hunt-page-actions { margin-top: auto; display: grid; grid-template-columns: 1fr; gap: 6px; }
+.hunt-page-actions .px-btn { min-height: 48px; font-size: 16px; white-space: normal; }
+.hunt-bag-row { display: grid; grid-template-columns: 36px 1fr auto; gap: 9px; align-items: center; padding: 8px 0; border-bottom: 1px solid #3a4655; }
+.hunt-bag-row b { display: block; font-size: 15px; font-weight: normal; }
+.hunt-bag-row span { display: block; color: var(--sub); font-size: 12px; line-height: 1.4; }
+.hunt-bag-row .px-btn { min-width: 64px; min-height: 44px; }
+.hunt-bag-gem { width: 24px; height: 24px; margin-left: 4px; background: #bfeaff; border: 4px solid #4f9eb5; transform: rotate(45deg); box-shadow: 0 0 0 2px #0d0d10; }
+#scr-mine.hunt-b:has(.hunt-page:not(.hidden)) #controls { pointer-events: none; opacity: .55; }
+#app:has(#scr-mine.hunt-b) #huntFx.charge .hfx-charge { top: var(--hunt-charge-top, 0px); }
+@media (max-height: 700px) {
+  .hunt-card:not(.compact) { min-height: 88px; grid-template-columns: 48px 1fr; padding-top: 6px; padding-bottom: 6px; }
+  .hunt-portrait img { height: 40px; }
+  #scr-mine.hunt-b #scene { min-height: 128px; flex-basis: 128px; }
+  #scr-mine.hunt-b #textbox { min-height: 132px; }
+}

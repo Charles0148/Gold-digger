@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", pg: { key: "", i: 0 }, pgMore: false, attrDraft: { hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", pg: { key: "", i: 0 }, pgMore: false, attrDraft: { hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null, page: "", cardFold: null, cardPhase: "" };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -113,7 +113,7 @@
     ui.stage = { leaveOk: false };
     render();   // 把按鈕鎖起來、血條畫到這一輪開始前
     const monEl = document.querySelector("#sceneBig .hunt-mon"), hero = battleEls().hero, st = $("sceneStage"), L = roundLines(r, t), mv = (dx) => (red ? [] : [{ transform: "translateX(0)" }, { transform: `translateX(${dx}px)` }, { transform: "translateX(0)" }]);
-    A.setTextbox([L[0]], 0, { tap: " " });
+    paintText([L[0]], " ", [], "", "戰鬥");
     // 玩家出招
     if (x[0]) {
       const slash = document.createElement("div"); slash.className = "hunt-slash"; const mr = monEl ? monEl.getBoundingClientRect() : null, sr = st.getBoundingClientRect();
@@ -126,7 +126,7 @@
     }
     // 怪物反擊
     if (x[2] !== null) later(pMs, () => {
-      A.setTextbox(L, 0, { tap: " " });
+      paintText(L, " ", [], "", "戰鬥");
       if (x[2] === 1) {
         if (monEl) monEl.animate(red ? [{ opacity: 1 }, { opacity: .6 }, { opacity: 1 }] : [{ transform: "translateX(0)" }, { transform: "translateX(-16px)" }, { transform: "translateX(0)" }], { duration: mMs * .6, easing: "steps(4)" });
         hero.animate([{ opacity: 1 }, { opacity: .25 }, { opacity: 1 }, { opacity: .25 }, { opacity: 1 }], { duration: mMs * .9, delay: mMs * .1, easing: "steps(1)" });
@@ -144,8 +144,12 @@
   /* ---------- 畫面 ---------- */
   function chrome(on) {   // 每次 renderMine 都會呼叫：切換「冒險之地」專用的資訊列、按鈕
     if (!on) itemStop();
+    $("scr-mine").classList.toggle("hunt-b", on);
     $("mbData").classList.toggle("hidden", on);
     $("huntData").classList.toggle("hidden", !on);
+    $("huntCard").classList.toggle("hidden", !on);
+    $("huntTabs").classList.toggle("hidden", !on);
+    if (!on) { $("huntPage").classList.add("hidden"); ui.page = ""; ui.cardFold = null; }
     $("btnFeed").classList.toggle("hidden", !on);
     $("btnFeed").textContent = T().feedBtn;
   }
@@ -157,8 +161,12 @@
   };
 
   /* 敘述框文字與選項（render 與道具演出的逐格更新共用）。choice.hidden＝只佔位、看不見也按不到（演出中保留按鈕的高度，版面不跳） */
-  function paintText(lines, tap, choices) {
+  function paintText(lines, tap, choices, speaker, fallback) {
     A.setTextbox(lines, 0, { tap: tap || " " });   // 有選項時不顯示「▼ 點擊」
+    const tag = $("tbTag"), name = speaker || fallback || "旅途";
+    tag.textContent = name; tag.classList.remove("hidden");
+    tag.dataset.speaker = speaker || "";
+    $("textbox").classList.toggle("has-hunt-choices", !!choices.length);
     const box = $("tbChoice");
     if (choices.length) {
       box.classList.remove("hidden");
@@ -188,6 +196,19 @@
     return sayAll(x.dragon.map(([w, z]) => (w === "{who}" ? who : [w, z])), r, h);
   }
   const ITEM_ORDER = ["salve", "dew", "charm", "net", "whet"];
+  function speakerFor(r, phase) {
+    if (r.rv !== 4) return phase;
+    if (r.event) return r.event.goblin ? "哥布林" : "旅途";
+    if (r.phase === "dev") return "小精靈";
+    if (r.phase === "country" && r.country) {
+      const c = countryOf(H(), r.country.id), st = r.country.stage;
+      if (st === "intro" || st === "fail") return "小精靈";
+      if (st === "goblin" || st === "warn") return "哥布林";
+      return c ? c.ruler : phase;
+    }
+    if (r.story && r.story.kind === "king") return r.realm && r.realm.type === "hell" ? "地獄之王" : "天堂之王";
+    return phase;
+  }
   /* 完走回憶：沒能進洞的國度只播答對的片段；最後讓玩家進洞的國王出來道謝；直接進洞的版本另寫 */
   function recapLines(r, h) {
     const x = h.texts.at, out = sayAll(x.recapOpen, r, h);
@@ -353,7 +374,7 @@
       else { lines = [t.countryReply[r.country.pick], A.colored(r.country.ok ? t.countryOk : t.countryFail, r.country.ok ? "#55ff55" : sub())]; tap = t.countryNext; }
     } else if (atView(r) && !r.anim && !stalled) {
       const x = t.at, dragon = r.phase === "dragon";
-      subTxt = (r.phase === "realm" ? t.realmName[r.realm.type] + "　" : "") + `血量 ${Math.ceil(r.hp)}／${r.maxHp}`;
+      subTxt = r.mon ? curName(r) : "";
       if (r.story) {
         bigHtml = r.story.kind === "dragon" ? monHtml(HM.DRAGON, " dragon") : A.colored("· ·", sub());
         lines = storyLines(r, h); tap = "▼ 點擊繼續";
@@ -390,7 +411,7 @@
       const dragon = r.phase === "dragon", realm = r.phase === "realm", variant = curVariant(r), nm = curName(r);
       const judging = realm && r.anim && r.anim.kind === "judge";
       bigHtml = r.mon ? monHtml(variant, monCls(r)) : A.colored("…", sub());
-      subTxt = dragon ? "" : realm ? (r.mon || r.anim ? nm : "") : `${nm}　第 ${r.rv === 4 ? r.kills + 1 : Math.min(r.kills + 1, h.lower.count)} 隻`;   // 狹間不顯示「第 N 隻」
+      subTxt = r.rv === 4 && r.mon ? `${nm}　第 ${Math.max(1, (r.mon.t | 0) + 1)} 回合` : dragon ? "" : realm ? (r.mon || r.anim ? nm : "") : `${nm}　第 ${Math.min(r.kills + 1, h.lower.count)} 隻`;
       if (stalled) {   // 演出後的結果寫入失敗，已回到操作前：不自動重播，讓玩家按「再試一次」
         lines = [A.colored(t.saveFail, "#ffcc33")]; tap = ""; choices = [{ c: "retry", label: t.retry, gold: true }];
       } else if (judging) {
@@ -440,12 +461,11 @@
     showBattle(r);
     $("scene").classList.toggle("realm-heaven", tint === "heaven"); $("scene").classList.toggle("realm-hell", tint === "hell");
     big.innerHTML = bigHtml; subEl.textContent = subTxt;
-    paintText(lines, tap, choices);
+    paintText(lines, tap, choices, speakerFor(r, PH[r.phase] || ""), PH[r.phase] || "旅途");
     huntHud(r);
+    renderHuntPage(r);
     A.renderHud();
-    maybeFx();
-    maybeStage();
-    maybeStoryScene();
+    if (!ui.page) { maybeFx(); maybeStage(); maybeStoryScene(); }
     maybeIntro();
   }
 
@@ -489,7 +509,9 @@
       const a = r2.anim, fx = H().fx, t = T();
       if (a.kind === "finish" && a.stage === "pending") return;
       if (a.kind === "finish" && a.stage === "charge") {
-        return FX.playCharge({ app: $("app"), tier: a.tier, reduced: reduced(), auto: !!A.save().auto, autoMs: H().finisher.autoReleaseMs, autoModeMs: H().finisher.autoModeReleaseMs,
+        const app = $("app"), ar = app.getBoundingClientRect(), tr = $("huntTabs").getBoundingClientRect();
+        app.style.setProperty("--hunt-charge-top", Math.max(0, Math.round(tr.bottom - ar.top + 4)) + "px");
+        return FX.playCharge({ app, tier: a.tier, reduced: reduced(), auto: !!A.save().auto, autoMs: H().finisher.autoReleaseMs, autoModeMs: H().finisher.autoModeReleaseMs,
           onDone: () => { const res = A.commit(() => MH.releaseCharge(SV(), H(), rid)); if (res && res.failed) { ui.stalled = 0; A.stopAuto(); A.toast(T().saveFail, 2400); } if (A.onMine()) render(); } });
       }
       if (a.kind === "finish" && a.stage === "revive") {
@@ -621,9 +643,28 @@
     if (ui.earnKey !== String(r.seed)) { ui.earnKey = String(r.seed); ui.earn = earned; }   // 第一次看到這一趟（含重新整理）只記基準，不重播提示
     else if (earned > ui.earn) { tipBar(earned - ui.earn); ui.earn = earned; }
     else ui.earn = earned;
-    const dot = $("huntDot"), bag = $("huntBagIc"), held = heldId(r);
+    const dot = $("huntDot"), bag = $("huntBagIc"), held = heldId(r), st = SV().huntMeta.stamina;
     if (dot) dot.classList.toggle("hidden", !(r.attr && r.attr.free > 0));
     if (bag) { const d = held && MH.itemDef(H(), held); bag.src = d ? IA.uri(held, 1, true, qualOf(d)) : IA.slot(); bag.alt = d ? d.name : ""; }
+    const bagN = r.rv === 4 ? Object.values(r.routeItems || {}).reduce((n, x) => n + (x | 0), 0) : (held ? 1 : 0), count = $("huntBagCount");
+    count.textContent = "×" + num(bagN); count.classList.toggle("hidden", bagN < 1);
+    const fight = (r.phase === "hunt" && r.mon && !r.mon.prep) || r.phase === "dragon" || r.phase === "realm";
+    if (ui.cardPhase !== r.phase) { ui.cardPhase = r.phase; ui.cardFold = null; }
+    const compact = ui.cardFold === null ? fight : ui.cardFold, hp = Math.max(0, Math.ceil(r.hp === undefined ? 100 : r.hp)), maxHp = Math.max(1, Math.ceil(r.maxHp || 100));
+    const hpN = Math.max(0, Math.min(10, Math.ceil(hp / maxHp * 10))), hpCells = '<i class="on"></i>'.repeat(hpN) + '<i></i>'.repeat(10 - hpN);
+    const ref = Math.max(1, H().stamina.barRef || 100), pct = Math.min(100, st / ref * 100), staminaColor = st > 30 ? "#55ff55" : st > 8 ? "#ffcc33" : "#ff5555";
+    const card = $("huntCard");
+    const companion = r.companion ? '<div class="hunt-card-companion">✦ 同伴：受傷的小精靈</div>' : "";
+    card.classList.toggle("compact", compact); card.classList.toggle("has-companion", !!r.companion); card.setAttribute("aria-expanded", compact ? "false" : "true");
+    card.innerHTML = compact
+      ? `<div class="hunt-card-line"><span>血量</span><span class="hunt-card-hp${hp <= maxHp * .4 ? " low" : ""}">${hpCells}</span><b>${num(hp)}／${num(maxHp)}</b><span class="fairy">小精靈 ${num(st)} 步</span><span class="gold">${num(r.gold)}</span><span class="fold">▼</span></div>${companion}`
+      : `<div class="hunt-portrait"><img src="${HM.uri(HM.HERO)}" alt="旅人"></div><div class="hunt-card-info">
+          <div class="hunt-card-row"><span class="key">血量</span><span class="hunt-card-hp${hp <= maxHp * .4 ? " low" : ""}">${hpCells}</span><span class="value">${num(hp)}／${num(maxHp)}</span></div>
+          <div class="hunt-card-row fairy"><span class="key">小精靈</span><span class="hunt-card-bar"><i style="width:${pct}%;background:${staminaColor}"></i></span><span class="value">${num(st)} 步</span></div>
+          <div class="hunt-card-small"><span>本輪金幣 <b>${num(r.gold)}</b></span><span>去過國度 <b>${num(SV().huntMeta.visits)}</b> 次</span></div>
+          ${companion}</div><span class="hunt-card-fold">▲ 點卡片收起</span>`;
+    $("huntTabAbility").classList.toggle("on", ui.page === "ability");
+    $("huntTabBag").classList.toggle("on", ui.page === "bag");
   }
 
   /* ---------- 操作 ---------- */
@@ -665,42 +706,47 @@
     if (!d) return `<div class="ha-bag"><div class="ha-tx"><b>${x.bagTitle}</b><br><span class="sub">${x.bagNone}</span></div></div>`;
     return `<div class="ha-bag"><img class="hi-ic" src="${IA.uri(id, 2, true, qualOf(d))}" alt=""><div class="ha-tx"><b>${x.bagTitle}｜${d.name}</b> <span class="q">${x.quality[d.quality]}</span><br><span class="sub">${d.text}</span></div></div>`;
   }
+  const ROUTE_DESC = { salve:"恢復一部分血量", dew:"讓傷勢完全恢復", charm:"讓腳步變得更輕", net:"暫時束縛眼前的怪物", whet:"磨亮劍刃，對付厚甲怪物" };
   function attrPanel(reset) {
-    A.stopAuto();
-    if (reset) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = ""; }
-    const r = RUN(), a = r.attr, safe = MH.attrSafe(r), x = T().item;
-    const keys = r.rv === 4 ? MH.ATTRS : MH.LEGACY_ATTRS, used = keys.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
-    const word = lv => (lv <= 0 ? "尚未投入" : lv <= 2 ? "稍微提升" : lv <= 5 ? "提升" : "明顯提升");   // 不顯示任何百分比
-    let pips = ""; for (let i = 0; i < Math.min(a.free, 12); i++) pips += `<i class="${i < remain ? "" : "u"}"></i>`; if (a.free > 12) pips += '<span class="sub">…</span>';
-    const rows = keys.map(k => {
-      const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d;
-      const fxt = !active ? x.dead : d ? `${word(a[k])} → ${word(level)}` : word(a[k]);
-      return `<div class="ha-row${active ? "" : " dead"}"><img class="ha-ic" src="${IA.uri(k, 2, false)}" alt=""><div class="ha-am"><b>${ANAME[k]}</b><span class="sub">${ADESC[k]}</span><span class="sub">已確認 ${num(a[k])}${d ? "　這次 +" + d : ""}</span><span class="ha-fx${active ? "" : " off"}">${fxt}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`;
-    }).join("");
-    modalNote(`<div class="ha"><div class="ha-title">本趟能力</div><div class="sub ha-sub">${x.panelSub}</div><div>可分配點數：<b class="ha-n">${num(Math.max(0, remain))}</b></div><div class="ha-pips">${pips}</div>${rows}${bagBlock(r)}${safe ? "" : `<div class="sub" style="margin-top:8px">${x.viewOnly}</div>`}${ui.attrNote ? `<div class="ha-note">${ui.attrNote}</div>` : ""}</div>`,
-      [{ id: "haCommit", label: "確認投入", gold: true }, { id: "haClose", label: "關閉" }]);
-    $("haCommit").disabled = used <= 0 || used > a.free || !safe;
-    keys.forEach(k => {
-      $("haMinus-" + k).onclick = () => { ui.attrDraft[k] = Math.max(0, ui.attrDraft[k] - 1); attrPanel(false); };
-      $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; ui.attrNote = ""; attrPanel(false); };
-    });
-    $("haClose").onclick = () => { $("modal").classList.add("hidden"); };
-    $("haCommit").onclick = () => {
-      const draft = Object.assign({}, ui.attrDraft);
-      modalNote(`<div class="ha"><div class="ha-ask">投入後，這一趟不能重新分配。</div><div class="sub" style="margin:10px 0 4px">要確認投入這些能力點嗎？</div></div>`, [{ id: "haYes", label: "確認投入", gold: true }, { id: "haNo", label: "返回" }]);
-      $("haNo").onclick = () => attrPanel(false);
-      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = x.panelDone; attrPanel(false); } else if (!res.failed) attrPanel(false); };   // 成功後面板留著顯示「已投入」，－全灰、不能退回
-    };
+    A.stopAuto(); ui.page = "ability";
+    if (reset) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt:0, dragon:0, realm:0 }; ui.attrNote = ""; }
+    render();
   }
-  function bagPanel() {
-    const r = RUN(), x = T().item, has = !!heldId(r);
-    modalNote(`<div class="ha"><div class="ha-title">${x.bagTitle}</div><div class="sub ha-sub">${x.bagNote}</div>${bagBlock(r)}<div class="sub" style="margin-top:8px">${has ? x.bagKeep : x.bagHint}</div></div>`, [{ id: "hbClose", label: "關閉" }]);
-    $("hbClose").onclick = () => { $("modal").classList.add("hidden"); };
+  function bagPanel() { A.stopAuto(); ui.page = "bag"; render(); }
+  function closePage() { ui.page = ""; render(); }
+  function keepAndContinue() {
+    const r = RUN(); ui.page = "";
+    if (r.awaiting) { doContinue(); return; }
+    if ((r.event && r.event.goblin) || (r.phase === "country" && r.country && r.country.stage === "goblin")) { doEntrance("next"); return; }
+    render();
+  }
+  function renderAbilityPage(r, page) {
+    const a = r.attr, safe = MH.attrSafe(r), x = T().item, keys = r.rv === 4 ? MH.ATTRS : MH.LEGACY_ATTRS;
+    const used = keys.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
+    const word = lv => (lv <= 0 ? "尚未投入" : lv <= 2 ? "稍微提升" : lv <= 5 ? "提升" : "明顯提升");
+    let pips = ""; for (let i = 0; i < Math.min(a.free, 12); i++) pips += `<i class="${i < remain ? "" : "u"}"></i>`; if (a.free > 12) pips += '<span class="sub">…</span>';
+    const rows = keys.map(k => { const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d, fxt = !active ? x.dead : d ? `${word(a[k])} → ${word(level)}` : word(a[k]); return `<div class="hunt-page-row${active ? "" : " dead"}"><img class="ha-ic" src="${IA.uri(k, 2, false)}" alt=""><div class="ha-am"><b>${ANAME[k]}</b><span class="sub">${ADESC[k]}</span><span class="ha-fx${active ? "" : " off"}">${fxt}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`; }).join("");
+    page.innerHTML = `<div class="hunt-page-head"><button class="px-btn" data-hunt="pageclose">◀ 返回旅途</button><b>本趟能力</b></div><div class="hunt-page-sub">這一趟結束後會消失。投入後不能重新分配。</div><div class="hunt-page-points"><span>可分配點數</span><b>${num(Math.max(0, remain))}</b><span class="ha-pips">${pips}</span></div><div class="hunt-page-scroll">${rows}${safe ? "" : `<div class="sub hunt-page-note">${x.viewOnly}</div>`}${ui.attrNote ? `<div class="ha-note">${ui.attrNote}</div>` : ""}</div><div class="hunt-page-keep">沒投入的點數會先保留，之後想分配隨時可以回來。</div><div class="hunt-page-actions"><button class="px-btn gold" id="haCommit">確定分配</button><button class="px-btn" data-hunt="pagekeep">先保留，繼續前進</button></div>`;
+    $("haCommit").disabled = used <= 0 || used > a.free || !safe;
+    keys.forEach(k => { $("haMinus-" + k).onclick = () => { ui.attrDraft[k] = Math.max(0, ui.attrDraft[k] - 1); render(); }; $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; ui.attrNote = ""; render(); }; });
+    $("haCommit").onclick = () => { const draft = Object.assign({}, ui.attrDraft); modalNote(`<div class="ha"><div class="ha-ask">投入後，這一趟不能重新分配。</div><div class="sub" style="margin:10px 0 4px">要確認投入這些能力點嗎？</div></div>`, [{ id:"haYes", label:"確定分配", gold:true }, { id:"haNo", label:"返回" }]); $("haNo").onclick = () => $("modal").classList.add("hidden"); $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); $("modal").classList.add("hidden"); if (res.ok) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt:0, dragon:0, realm:0 }; ui.attrNote = x.panelDone; render(); } }; };
+  }
+  function renderBagPage(r, page) {
+    const prep = r.rv === 4 && atView(r) && r.mon && r.mon.prep, defs = (H().entrance || {}).items || [], counts = r.routeItems || {};
+    const rows = defs.map(d => { const n = counts[d.id] | 0; return `<div class="hunt-bag-row"><span class="hunt-bag-gem"></span><div><b>${d.name} ×${n}</b><span>${ROUTE_DESC[d.id] || "旅途中取得的道具"}</span></div>${prep && n > 0 ? `<button class="px-btn gold" data-hunt="atuse:${d.id}">使用</button>` : ""}</div>`; }).join("");
+    page.innerHTML = `<div class="hunt-page-head"><button class="px-btn" data-hunt="pageclose">◀ ${prep ? "返回戰前" : "返回旅途"}</button><b>行囊</b></div><div class="hunt-page-sub">${prep ? "這一戰最多用一件輔助道具。" : "旅途中取得的道具會留到這一趟結束。"}</div><div class="hunt-page-scroll">${rows || '<div class="hunt-page-empty">目前是空的</div>'}${ui.itemMsg ? `<div class="ha-note">${ui.itemMsg}</div>` : ""}</div><div class="hunt-page-actions"><button class="px-btn" data-hunt="pageclose">返回</button></div>`;
+  }
+  function renderHuntPage(r) {
+    const page = $("huntPage"), open = !!ui.page;
+    page.classList.toggle("hidden", !open); $("scene").classList.toggle("hidden", open); $("textbox").classList.toggle("hidden", open);
+    if (!open) { page.innerHTML = ""; return; }
+    if (ui.page === "ability") renderAbilityPage(r, page); else renderBagPage(r, page);
   }
 
   /* 點敘述框（textbox）：依目前階段做「主要動作」。有選項的地方只能按按鈕 */
   function tap() {
     const sv = SV(), r = RUN();
+    if (ui.page) return;
     if (r.anim || FX.playing() || ui.stage) return;
     if (ui.pgMore) { ui.pg.i++; render(); return; }
     if (r.rv === 4 && r.event) { doEntrance("next"); return; }
@@ -718,7 +764,10 @@
   }
   function onBtn(code) {
     const [k, v, x] = String(code).split(":");
-    if (k === "feed") openFeed();
+    if (k === "card") { const r = RUN(), fight = (r.phase === "hunt" && r.mon && !r.mon.prep) || r.phase === "dragon" || r.phase === "realm", current = ui.cardFold === null ? fight : ui.cardFold; ui.cardFold = !current; huntHud(r); }
+    else if (k === "pageclose") closePage();
+    else if (k === "pagekeep") keepAndContinue();
+    else if (k === "feed") openFeed();
     else if (k === "panel") attrPanel(true);
     else if (k === "bag") bagPanel();
     else if (k === "continue") doContinue();
@@ -730,7 +779,7 @@
     else if (k === "atobs") { ui.observed = true; render(); }
     else if (k === "atitems") { const r = RUN(); if (ITEM_ORDER.some(id => (r.routeItems[id] || 0) > 0)) ui.itemList = true; else ui.itemMsg = T().at.noItem; render(); }
     else if (k === "atback") { ui.itemList = false; render(); }
-    else if (k === "atuse") { const res = act(() => MH.useRouteItem(SV(), H(), v)); const x = T().at; ui.itemMsg = res.ok ? x.itemUsed[v] : (x.itemNo[res.reason] || ""); ui.itemList = false; render(); }
+    else if (k === "atuse") { const res = act(() => MH.useRouteItem(SV(), H(), v)); const tx = T().at; ui.itemMsg = res.ok ? tx.itemUsed[v] : (tx.itemNo[res.reason] || ""); ui.itemList = false; render(); }
     else if (k === "atfight") { ui.itemList = false; act(() => MH.fight(SV(), H())); }
     else if (k === "strike") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doStrike(+v); }
     else if (k === "ignite") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doIgnite(); }
@@ -757,6 +806,7 @@
   }
   function auto() {
     const sv = SV(), h = H(), r = RUN();
+    if (ui.page) return { wait: 400 };
     if (FX.playing() || r.anim || ui.stage) return { wait: 300 };
     if (A.modalOpen()) return { wait: 400 };
     if (MH.halted(sv, h)) { A.toast("體力用完了，餵鎬子才能繼續走", 2400); return { stop: true }; }
@@ -900,7 +950,7 @@
     const c = A.commit(() => { res = MH.leave(SV(), H()); return res; });   // 金幣入帳＋刪本輪紀錄＝一次原子寫入
     if (c && c.failed) return { failed: true };
     abortFx();
-    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ui.preKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false; ui.earnKey = "";
+    ui.flash = null; ui.introKey = ui.scaleKey = ui.turnKey = ui.preKey = ""; ui.stalled = 0; ui.devSeen = ui.resSeen = ui.doneSeen = false; ui.earnKey = ""; ui.page = ""; ui.cardFold = null;
     return res;
   }
   function dropRun() { delete SV().huntRuns[H().mine.id]; A.persist(); }   // 離開畫面時被重畫建回來的空紀錄，再清一次

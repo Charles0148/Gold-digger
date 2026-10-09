@@ -26,6 +26,12 @@
 
     <!-- ===== 挖礦 ===== -->
     <section class="screen active" id="scr-mine">
+      <div id="huntCard" class="px-box hunt-card hidden" data-hunt="card" role="button" tabindex="0" aria-label="旅人狀態卡"></div>
+      <div id="huntTabs" class="hunt-tabs hidden">
+        <button class="px-btn" id="huntTabAbility" data-hunt="panel">本趟能力<i class="hb-dot hidden" id="huntDot"></i></button>
+        <button class="px-btn" id="huntTabBag" data-hunt="bag">行囊<span id="huntBagCount" class="hunt-bag-count hidden"></span><img id="huntBagIc" class="hb-ic" alt=""></button>
+      </div>
+      <div id="huntPage" class="px-box hunt-page hidden" aria-live="polite"></div>
       <!-- v0.10.13：礦坑名稱／階段／統計整合進場景上方的固定資訊區 -->
       <div id="scene" class="px-box" data-edit="scene" data-label="場景區">
         <div id="mineBar" class="scene-info" data-edit="mineBar" data-label="礦坑資訊列">
@@ -42,8 +48,6 @@
             <span>可走 <b id="hbStep">0</b> 步</span>
             <span>本輪金幣 <b id="hbGold">0</b></span>
             <span>去過國度 <b id="hbVisit">0</b> 次</span>
-            <div class="hb-btns"><button class="px-btn small hb-abi" data-hunt="panel">本趟能力<i class="hb-dot hidden" id="huntDot"></i></button>
-            <button class="px-btn small hb-bag" data-hunt="bag">行囊<img id="huntBagIc" class="hb-ic" alt=""></button></div>
           </div>
         </div>
         <div id="veinBanner" class="vein-banner hidden" data-edit="veinBanner" data-label="礦脈看板">
