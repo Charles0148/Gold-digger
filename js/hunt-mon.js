@@ -7,7 +7,9 @@
 (function (root) {
   "use strict";
   const ART = root.HuntMonArt || (typeof require !== "undefined" ? require("./hunt-mon-art.js") : null);
+  const EXTRA = root.HuntRealmExtra || [];
   if (!ART || !ART.list || ART.list.length !== 14) throw new Error("HuntMonArt 未載入或怪物數量錯誤");
+  if (EXTRA.length !== 9) throw new Error("狹間新怪物資料未載入或數量錯誤");
 
   const emptyGrid = (w, h) => Array.from({ length: h }, () => Array(w).fill("."));
   const hex2 = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
@@ -65,29 +67,40 @@
   }
   function art(i) {
     if (cache[i]) return cache[i];
+    if (i >= 14 && i <= 22) {
+      const E = EXTRA[i - 14], B = art(E.base);
+      return cache[i] = Object.assign({}, B, { sprite: E.sprite, name: E.name, kind: E.kind, type: E.type, extra: true });
+    }
     const A = ART.list[i], cell = Array.from({ length: A.h }, () => Array(A.w).fill(null)), eyeSet = new Set(A.eyes.map(e => e.join(",")));
     for (let y = 0; y < A.h; y++) for (let x = 0; x < A.w; x++) { const n = A.rows[y].charCodeAt(x) - 0x100; if (n >= 0) cell[y][x] = ART.palette[n]; }
     const svg = svgText(A.w, A.h, cell);
     return cache[i] = { w: A.w, h: A.h, cell, cells: cell.flatMap((r, y) => r.flatMap((col, x) => col ? [{ x, y, col, k: eyeSet.has(x + "," + y) ? "e" : "a" }] : [])), eyes: A.eyes, eye: A.eye, sprite: A.sprite, name: A.name, kind: A.kind, svg, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) };
   }
   function hero() {
-    if (cache[14]) return cache[14];
+    if (cache[23]) return cache[23];
     const C = toCells(heroGrid(), PALHERO), cell = Array.from({ length: C.h }, () => Array(C.w).fill(null)), eyes = [];
     C.cells.forEach(c => { cell[c.y][c.x] = c.col; if (c.k === "e") eyes.push([c.x, c.y]); });
     const svg = svgText(C.w, C.h, cell);
-    return cache[14] = Object.assign(C, { cell, eyes, eye: PALHERO.eye, svg, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) });
+    return cache[23] = Object.assign(C, { cell, eyes, eye: PALHERO.eye, svg, uri: "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svg) });
   }
-  const get = i => { const n = (((i | 0) % 15) + 15) % 15; return n === 14 ? hero() : art(n); };
+  const get = i => { const n = (((i | 0) % 24) + 24) % 24; return n === 23 ? hero() : art(n); };
   function image(i) {
-    if (typeof root.Image === "undefined" || i < 0 || i > 13) return null;
-    if (!images[i]) { const im = new root.Image(); im.decoding = "async"; im.src = ART.list[i].sprite; images[i] = im; }
+    if (typeof root.Image === "undefined" || i < 0 || i > 22) return null;
+    if (!images[i]) { const im = new root.Image(); im.decoding = "async"; im.src = i < 14 ? ART.list[i].sprite : EXTRA[i - 14].sprite; images[i] = im; }
     return images[i];
   }
-  for (let i = 0; i < 14; i++) image(i);   // 巨龍登場前完成解碼，演出只移動預載圖片層
+  for (let i = 0; i < 23; i++) image(i);   // 巨龍與狹間怪登場前完成解碼
 
   const dragonData = () => { const C = get(12); return { C, plates: [], eye: C.eye }; };
   const api = {
-    count: 6, total: 15, realm: { heaven: [6, 7, 8], hell: [9, 10, 11] }, DRAGON: 12, DRAGON_BROKEN: 13, HERO: 14,
+    count: 6, total: 24,
+    realm: { heaven: [6, 7, 8, 14, 15, 16, 17, 18, 19], hell: [9, 10, 11, 20, 21, 22] },
+    realmByType: {
+      heaven: { balanced: [6, 8, 19], tank: [14, 15], brutal: [16, 17], evasive: [7, 18] },
+      hell: { balanced: [11], tank: [20], brutal: [9, 21], evasive: [10, 22] }
+    },
+    lowerByType: { balanced: [4], tank: [3, 5], brutal: [1], evasive: [0, 2] },
+    DRAGON: 12, DRAGON_BROKEN: 13, HERO: 23,
     get, uri: i => get(i).uri, sprite: i => get(i).sprite || get(i).uri, cells: i => get(i), image,
     kit: { Grid, toCells, dragonData, plateCol: c => c.col, mix }
   };

@@ -932,7 +932,7 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 .hunt-mon.mw { filter: brightness(0) invert(1); }   /* 受擊色：只在怪物身上（白剪影 66ms；最後一刀金色；減少特效只是變亮） */
 .hunt-mon.mg { filter: brightness(0) invert(1) sepia(1) saturate(7) hue-rotate(-8deg) brightness(1.15); }
 .hunt-mon.mh { filter: brightness(1.7); }
-.hunt-mon img { display: block; width: 400%; max-width: none; height: 100%; image-rendering: pixelated; animation: huntIdle 1s steps(1,end) infinite; will-change: transform; }
+.hunt-mon img { display: block; width: 400%; max-width: none; height: 100%; image-rendering: pixelated; animation: huntIdle 1s steps(1,end) infinite; animation-delay: var(--hunt-idle-delay,0ms); will-change: transform; }
 @keyframes huntBob { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes huntIdle { 0%,24.99% { transform: translateX(0); } 25%,49.99% { transform: translateX(-25%); } 50%,74.99% { transform: translateX(-50%); } 75%,100% { transform: translateX(-75%); } }
 .hunt-mon.reduced, .hunt-mon.reduced img { animation: none; }
@@ -1032,6 +1032,11 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 #huntScene .hs-dragon.reduced img { animation: none; transform: translateX(0); }
 #huntScene .hs-dragon i { display: none; position: absolute; z-index: 2; left: calc(50% - 8px); top: 48%; width: 16px; height: 16px; background: #9f99e6; border: 4px solid #4a4484; image-rendering: pixelated; }
 #huntScene .hs-tx { z-index: 3; }
+#huntScene .hs-caption { position:absolute; z-index:4; left:14px; right:14px; bottom:18px; min-height:72px; padding:12px 14px 28px; border:3px solid #6a6498; background:rgba(8,7,18,.94); color:#f4f0ff; font-size:15px; line-height:1.55; box-shadow:0 0 0 3px #11101f; }
+#huntScene .hs-caption::after { content:"▼"; position:absolute; right:12px; bottom:6px; color:#ffe0a0; animation:hsHint 1.6s ease-in-out infinite; }
+#huntScene .hs-caption.auto::after { display:none; }
+@keyframes hsHint { 0%,100% { opacity:.4 } 50% { opacity:1 } }
+@media (prefers-reduced-motion: reduce) { #huntScene .hs-caption::after { animation:none; opacity:.8; } }
 #huntScene .hs-leave { position: absolute; right: 10px; top: 10px; min-height: 40px; padding: 6px 12px; opacity: .85; }
 #huntFx[data-realm="heaven"] .hv-t { color: #fff4c8; }
 #huntFx[data-realm="hell"] .hv-t { color: #ff8a4a; }

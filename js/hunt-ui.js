@@ -48,10 +48,10 @@
   /* 第二階段（2026-10-08）：狹間怪天堂 3 種（曦羽梟、輝環水母、曦角鹿）、地獄 3 種（焰鬃犬、裂角魔影、熔瞳）；駭骨巨龍（12）、破鱗後的巨龍（13，擊殺演出用）。圖在 js/hunt-mon.js */
   const realmIdx = r => ((((r.seed >>> 0) + r.realm.total - (r.anim && r.anim.kind === "kill" ? 1 : 0)) % 3) + 3) % 3;
   const isLast = r => !r.mon || !r.mon.sc || r.mon.t >= r.mon.sc.R - 1;   // 這是最後一輪（沒有劇本的舊戰鬥視為 1 輪）
-  const curVariant = r => (r.phase === "dragon" ? ((r.anim && (r.anim.kind === "kill" || (r.anim.kind === "finish" && r.anim.outcome === "win"))) || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
-  const curName = r => (r.phase === "dragon" ? T().dragonName : r.phase === "realm" ? T().realmMonNames[r.realm.type][realmIdx(r)] : monName(variantOf(r)));
+  const curVariant = r => (r.phase === "dragon" ? ((r.anim && (r.anim.kind === "kill" || (r.anim.kind === "finish" && r.anim.outcome === "win"))) || (r.mon && r.mon.win && isLast(r) && !r.anim) ? HM.DRAGON_BROKEN : HM.DRAGON) : r.rv === 4 && r.mon && Number.isInteger(r.mon.sprite) ? r.mon.sprite : r.phase === "realm" ? HM.realm[r.realm.type][realmIdx(r)] : variantOf(r));
+  const curName = r => { if (r.phase === "dragon") return T().dragonName; const v = curVariant(r); if (r.phase === "realm") { const i = HM.realm[r.realm.type].indexOf(v); return T().realmMonNames[r.realm.type][i < 0 ? 0 : i]; } return monName(v); };
   const monCls = r => (r.phase === "dragon" ? " dragon" : r.phase === "realm" ? " " + r.realm.type : "");
-  const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}${reduced() ? " reduced" : ""}"><img src="${HM.sprite(v)}" alt=""></div>`;
+  const monHtml = (v, cls) => `<div class="hunt-mon${cls || ""}${reduced() ? " reduced" : ""}" style="--hunt-idle-delay:-${(v * 137) % 1000}ms"><img src="${HM.sprite(v)}" alt=""></div>`;
   const akey = r => r.seed + ":" + (r.anim ? r.anim.rid : 0);
   const SC = root.HuntScene;
   const later = (ms, f) => {
@@ -209,6 +209,7 @@
   }
   function clipSprite(r, c) {
     if (c.k === "dragon") return HM.DRAGON_BROKEN;
+    if (Number.isInteger(c.sprite)) return c.sprite;
     if (c.k === "lower") return (((r.seed >>> 0) % HM.count) + c.i) % HM.count;
     return HM.realm[c.k][((((r.seed >>> 0) + c.i) % 3) + 3) % 3];
   }
@@ -241,6 +242,30 @@
     if (r.story.kind === "fade") playFade(() => act(() => MH.atStory(SV(), H())));
     else if (r.story.kind === "recap") playMontage(r, () => act(() => MH.atStory(SV(), H())));
     else act(() => MH.atStory(SV(), H()));
+  }
+  function maybeStoryScene() {
+    const r = RUN(), h = H();
+    if (!r || ui.stage || FX.playing() || !A.onMine()) return;
+    if (r.story && r.story.kind === "collapse") {
+      const rows = h.texts.at.collapse, step = r.story.step | 0, key = `collapse:${r.seed}:${r.rid}:${step}`;
+      if (ui.collapseKey === key) return;
+      ui.collapseKey = key;
+      if (step < 11) {
+        ui.stage = { leaveOk: false, story: true };
+        const caption = sayAll([rows[step]], r, h)[0];
+        SC.hold({ app: $("app"), id: "collapse", key, reduced: reduced(), out: r.story.entry, step, caption, onAdvance: () => { ui.stage = null; act(() => MH.collapseStep(SV(), H())); } });
+      } else {
+        const captions = sayAll(rows.slice(11), r, h);
+        playScene({ id: "collapse", ms: 2600, out: r.story.entry, captions }, () => act(() => MH.atStory(SV(), H())));
+      }
+      return;
+    }
+    if (r.phase === "done" && r.rv === 4 && r.last && r.last.wake) {
+      const key = `wake:${r.seed}:${r.last.why}:${r.last.kills}`;
+      if (ui.wakeKey === key) return;
+      ui.wakeKey = key;
+      playScene({ id: "wake", hold: true, captionAfter: h.texts.at.wake[0] }, () => act(() => MH.wakeDone(SV(), H())));
+    }
   }
   const atView = r => r.rv === 4 && (((r.phase === "hunt" || r.phase === "dragon") && !!(r.story || !r.mon || r.mon.prep)) || (r.phase === "realm" && !!(r.story || (r.mon && r.mon.prep))));
   function rewardLine(rw, h) { return !rw ? "" : rw.kind === "point" ? `獲得能力點 +${rw.n}。` : rw.kind === "item" ? `獲得${routeItemName(h, rw.id)}。` : ""; }   // 空箱：前面的台詞已經說了，不再補一句
@@ -331,7 +356,9 @@
       subTxt = (r.phase === "realm" ? t.realmName[r.realm.type] + "　" : "") + `血量 ${Math.ceil(r.hp)}／${r.maxHp}`;
       if (r.story) {
         bigHtml = r.story.kind === "dragon" ? monHtml(HM.DRAGON, " dragon") : A.colored("· ·", sub());
-        lines = storyLines(r, h); tap = "▼ 點擊繼續"; page("st" + r.story.kind + r.rid + r.kills);
+        lines = storyLines(r, h); tap = "▼ 點擊繼續";
+        if (r.story.kind === "collapse") { lines = lines.slice(r.story.step | 0, (r.story.step | 0) + 1); tap = " "; }
+        else page("st" + r.story.kind + r.rid + r.kills);
       } else if (!r.mon) {
         bigHtml = A.colored("…", sub());
         if (halted) hungry();
@@ -418,6 +445,7 @@
     A.renderHud();
     maybeFx();
     maybeStage();
+    maybeStoryScene();
     maybeIntro();
   }
 

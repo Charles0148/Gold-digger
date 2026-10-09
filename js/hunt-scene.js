@@ -9,8 +9,9 @@
 (function (root) {
   "use strict";
   const AW = 98, AH = 211;
-  const NATIVE = { intro: 3000, brk: 2500, heaven: 6000, hell: 8000, ember: 8000, tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600 };
-  let L = null, A = null, g = null, X = null, tx = null, D = null, DI = null, RED = false, S = null, TX = {}, TR = { realm: "heaven", res: "cont", line: "", gold: 0, ok: true };
+  const NATIVE = { intro: 3000, brk: 2500, heaven: 6000, hell: 8000, ember: 8000, tunnel: 2400, buddy: 2400, glyph: 2200, roar: 2000, fx: 2600, collapse: 2600, wake: 3400 };
+  const RED_MS = { collapse: 2600, wake: 1700 };
+  let L = null, A = null, g = null, X = null, tx = null, D = null, DI = null, CAP = null, RED = false, S = null, TX = {}, TR = { realm: "heaven", res: "cont", line: "", gold: 0, ok: true };
   const kit = () => root.HuntMon.kit;
   const clamp = (v, a = 0, b = 1) => Math.min(b, Math.max(a, v));
   const ssub = (t, a, b) => clamp((t - a) / (b - a));
@@ -262,15 +263,78 @@
     }
     trText(t, d, th);
   }
-  const FN = { intro: sIntro, brk: sBreak, heaven: sHeaven, hell: sHell, ember: t => sIgnite(t, TR.ok), tunnel: sTunnel, buddy: sBuddy, glyph: sGlyph, roar: sRoar, fx: sFx };
+
+  /* ===== rv4 拉鋸 B：7×7 方塊占領。前 11 句由 hold() 停格等點擊，最後兩句才播 2.6 秒。 ===== */
+  function collapseTime(t) {
+    if (!TR.preview) return 21700 + t / NATIVE.collapse * 1600;   // 撞擊 → 漩渦 → 落點 → 收暗
+    const p = [900, 2800, 5000, 7200, 9000, 10800, 12800, 15100, 17400, 19000, 20700];
+    return p[Math.max(0, Math.min(10, TR.step | 0))] + (RED ? 0 : Math.sin(t * .0015) * 90);
+  }
+  function sCollapse(t) {
+    begin(); const Tm = collapseTime(t), reveal = !TR.preview, q = reveal ? ssub(t, 0, 900) : 0;
+    const tug = RED || Tm < 14600 ? 0 : Math.sin((Tm - 14600) / 760 * Math.PI) * Math.min(30, 8 + (Tm - 14600) / 260);
+    const boundary = 105 + tug, appH = sm(ssub(Tm, 8200, 11200)), appF = sm(ssub(Tm, 8800, 11800));
+    px(0, 0, AW, AH, "#090817");
+    for (let by = 0; by < AH; by += 7) for (let bx = 0; bx < AW; bx += 7) {
+      const cy = by + 3, n = rn((bx / 7 | 0) * 61 + (by / 7 | 0), 77), edge = boundary + (n - .5) * 12;
+      let col = "#211d42";
+      if (cy < edge && appH > Math.abs(cy - 105) / 120 + n * .22) col = cy > edge - 9 && ((bx / 7 + by / 7) & 1) ? "#b78b38" : "#e2bd62";
+      if (cy > edge && appF > Math.abs(cy - 105) / 120 + n * .22) col = cy < edge + 9 && ((bx / 7 + by / 7) & 1) ? "#8d2517" : "#c43b1d";
+      px(bx, by, 6, 6, col); px(bx, by, 6, 1, mix(col, "#fff2c0", .12));
+    }
+    const shrink = Math.max(0, Math.min(4, Math.floor(ssub(Tm, 14600, 21400) * 5)));
+    for (let row = 0; row < 3; row++) for (let col = shrink; col < 11 - shrink; col++) {
+      if (row === 2 && (col < 3 || col > 7)) continue;
+      px(11 + col * 7, boundary + row * 7, 6, 6, row ? "#494382" : "#6962a4");
+    }
+    if (!reveal || t < 650) {
+      px(45, boundary - 18, 8, 17, "#182749"); px(47, boundary - 22, 4, 5, "#e8c878");
+      glow(69, boundary - 12, 7, "#ffe9a8", .22); disc(69, boundary - 12, 3, "#ffe9a8");
+    }
+    if (reveal) {
+      const vr = sm(ssub(t, 520, 1750)), win = TR.out === "hell" ? "#ff7a2a" : "#fff2c0", cy = 105 + (TR.out === "hell" ? 1 : -1) * 34 * ssub(t, 1200, 2100);
+      for (let i = 0; i < NP(34); i++) { const a = i * .63 + t * .004, rr = (5 + i * .82) * (1 - .45 * ssub(t, 1300, 2200)); const sz = Math.max(1, 5 - (i / 9 | 0)); px(49 + Math.cos(a) * rr - sz / 2, cy + Math.sin(a) * rr * .8 - sz / 2, sz, sz, mix("#cbbcff", win, ssub(t, 1050, 1800)), .9 * vr); }
+      if (!RED && q > 0 && q < 1) for (let x = 0; x < AW; x++) px(x, boundary, 1, 2, x & 1 ? "#fff2c0" : "#ff7a2a", 1 - q);
+      px(0, 0, AW, AH, "#000", ssub(t, 2050, 2600));
+    } else px(0, 0, AW, AH, "#000", 1 - ssub(Tm, 0, 900));
+  }
+
+  /* ===== 睜眼 A：細光、杏仁形眼縫、馬賽克對焦；播完保留入口畫面等點擊。 ===== */
+  function entrance(t, still) {
+    bands(["#0b0a1a", "#15132b", "#211d40"], 0, 151); px(0, 151, AW, 60, "#111026");
+    for (let y = 8; y < 150; y += 9) { px(0, y, AW, 1, "#080714", .7); for (let x = (y & 1) ? 0 : 6; x < AW; x += 13) px(x, y, 1, 8, "#080714", .5); }
+    px(21, 55, 58, 9, "#4a4584"); px(24, 63, 9, 89, "#3a3560"); px(65, 63, 9, 89, "#3a3560");
+    for (let y = 64; y < 151; y++) { const k = 1 - Math.abs(y - 105) / 50; px(33, y, 32, 1, mix("#6a4f2a", "#fff2c0", Math.max(0, k))); }
+    for (let i = 0; i < 4; i++) { const y = 151 + i * 15, x = 17 - i * 5; px(x, y, AW - x * 2, 14, "#2a2652"); px(x, y, AW - x * 2, 1, "#5a5090"); }
+    for (const bx of [12, 86]) { const h = still ? 5 : 3 + Math.floor(rn(Math.floor(t / 260), bx) * 5); px(bx - 3, 137 - h, 6, h, "#ff9a1f"); px(bx - 1, 137 - h - 2, 2, h + 1, "#ffcf70"); }
+    glow(78, 151, 7, "#ffe9a8", .2); disc(78, 151, 3, "#ffe9a8"); px(77, 151, 1, 1, "#2a2250");
+  }
+  function pixelate(m) {
+    if (m <= 1) return; const im = g.getImageData(0, 0, AW, AH), d = im.data;
+    for (let y = 0; y < AH; y += m) for (let x = 0; x < AW; x += m) { const i = (y * AW + x) * 4, rr = d[i], gg = d[i + 1], bb = d[i + 2]; for (let yy = y; yy < Math.min(AH, y + m); yy++) for (let xx = x; xx < Math.min(AW, x + m); xx++) { const j = (yy * AW + xx) * 4; d[j] = rr; d[j + 1] = gg; d[j + 2] = bb; } }
+    g.putImageData(im, 0, 0);
+  }
+  function sWake(t) {
+    begin(); const d = RED ? RED_MS.wake : NATIVE.wake, held = t >= d, u = Math.min(t, d);
+    entrance(u, RED || held); if (!held && !RED) pixelate(u < 1700 ? 12 : u < 2100 ? 6 : u < 2500 ? 3 : 1);
+    if (!held) {
+      if (RED) { const a = sm(ssub(u, 250, 1450)); px(0, 0, AW, AH, "#000", 1 - a); px(27, 105, 44, 1, "#f4dfa0", (1 - a) * .8); }
+      else {
+        const Hh = u < 800 ? 1 : u < 1250 ? 2 + (u - 800) / 65 : u < 1800 ? Math.max(2, 9 - (u - 1250) / 80) : 3 + (u - 1800) / 8;
+        const rx = u < 800 ? Math.max(1, (u - 300) / 10) : Math.min(150, 24 + (u - 800) / 18), bri = .35 + .65 * sm(ssub(u, 800, 3000));
+        for (let y = 0; y < AH; y++) for (let x = 0; x < AW; x++) { const e = Math.pow((x - 49) / rx, 2) + Math.pow((y - 105) / Math.max(.5, Hh), 2); if (e > 1) px(x, y, 1, 1, "#000"); else if (bri < 1) px(x, y, 1, 1, "#000", 1 - bri); }
+      }
+    } else { const a = .7 + .3 * Math.sin((t - d) * .0039); for (let r = 0; r < 3; r++) px(88 + r, 199 + r, 5 - r * 2, 1, "#ffe9a8", a); }
+  }
+  const FN = { intro: sIntro, brk: sBreak, heaven: sHeaven, hell: sHell, ember: t => sIgnite(t, TR.ok), tunnel: sTunnel, buddy: sBuddy, glyph: sGlyph, roar: sRoar, fx: sFx, collapse: sCollapse, wake: sWake };
 
   /* ===== 圖層與播放 ===== */
   function ensure(app) {
     if (L && L.parentNode === app) return L;
     L = document.createElement("div"); L.id = "huntScene"; L.setAttribute("aria-hidden", "true");
-    L.innerHTML = '<div class="hs-box"><canvas class="hs-art"></canvas><div class="hs-dragon"><span><img alt=""></span><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><canvas class="hs-tx"></canvas></div><button class="px-btn hs-leave" type="button"></button>';
+    L.innerHTML = '<div class="hs-box"><canvas class="hs-art"></canvas><div class="hs-dragon"><span><img alt=""></span><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div><canvas class="hs-tx"></canvas><div class="hs-caption"></div></div><button class="px-btn hs-leave" type="button"></button>';
     app.appendChild(L);
-    A = L.querySelector(".hs-art"); X = L.querySelector(".hs-tx"); D = L.querySelector(".hs-dragon"); DI = D.querySelector("img");
+    A = L.querySelector(".hs-art"); X = L.querySelector(".hs-tx"); D = L.querySelector(".hs-dragon"); DI = D.querySelector("img"); CAP = L.querySelector(".hs-caption");
     A.width = AW; A.height = AH; X.width = 780; X.height = 1688;
     g = A.getContext("2d", { willReadFrequently: true }); g.imageSmoothingEnabled = false; tx = X.getContext("2d");
     return L;
@@ -282,34 +346,48 @@
   function setup(o) {
     const app = o.app; ensure(app); fit(app);
     RED = !!o.reduced; TX = o.texts || {};
-    TR = { realm: o.realm || "heaven", res: o.res || "cont", line: o.line || "", gold: o.gold || 0, ok: o.ok !== false };
+    TR = { realm: o.realm || "heaven", res: o.res || "cont", line: o.line || "", gold: o.gold || 0, ok: o.ok !== false,
+      out: o.out === "hell" ? "hell" : "heaven", preview: !!o.preview, step: o.step | 0 };
     L.style.zIndex = o.leaveOk ? "55" : "72";   // 轉場時蓋在確認視窗（z 60）底下，離開鈕才按得到確認
     const btn = L.querySelector(".hs-leave"); btn.style.display = o.leaveOk ? "block" : "none"; btn.textContent = o.leaveText || "離開"; btn.onclick = o.leaveOk ? (() => { if (o.onLeave) o.onLeave(); }) : null;
+    CAP.innerHTML = o.caption || ""; CAP.style.display = o.caption ? "block" : "none"; CAP.classList.toggle("auto", !!o.captions); L.onclick = null;
     L.classList.add("on");
     return { font: getComputedStyle(document.body).fontFamily || "monospace" };
   }
   function cleanup() {
     if (!S) return;
-    cancelAnimationFrame(S.raf); L.classList.remove("on"); A.style.transform = ""; if (D) D.style.display = "none";
+    cancelAnimationFrame(S.raf); L.classList.remove("on"); L.onclick = null; A.style.transform = ""; if (D) D.style.display = "none"; if (CAP) { CAP.style.display = "none"; CAP.textContent = ""; }
     g.setTransform(1, 0, 0, 1, 0, 0); g.clearRect(0, 0, AW, AH); tx.setTransform(1, 0, 0, 1, 0, 0); tx.clearRect(0, 0, 780, 1688); S = null;
   }
   /* o: { app, id: intro|brk|heaven|hell|ember|tunnel|buddy|glyph|roar|fx, ms(目標長度；和原長不同時等比例伸縮), reduced, realm("heaven"|"hell"，場景色調), line(場景句子), ok(點燃成敗), gold(失敗時顯示的金幣), texts, leaveOk, onLeave, onDone } */
   function play(o) {
     if (S) cleanup();
     const font = setup(o).font; clearTimeout(fadeT); L.classList.remove("out");
-    const nat = NATIVE[o.id], f = RED ? .85 : 1, ms = (o.ms || nat) * f;
-    S = { id: o.id, font, onDone: o.onDone, start: 0, raf: 0, ms, k: nat / (o.ms || nat) / f, nat };
+    const nat = NATIVE[o.id], ms = RED && RED_MS[o.id] ? RED_MS[o.id] : (o.ms || nat) * (RED ? .85 : 1);
+    S = { id: o.id, font, onDone: o.onDone, start: 0, raf: 0, ms, k: nat / ms, nat, hold: !!o.hold, held: false, captions: o.captions || null, captionAfter: o.captionAfter || "" };
     S.start = performance.now();
     const frame = now => {
       if (!S) return;
       const u = now - S.start;
-      if (u >= S.ms) return finish();
-      try { FN[S.id](Math.max(0, Math.min(S.nat, u * S.k))); }
+      if (u >= S.ms && !S.hold) return finish();
+      if (u >= S.ms && S.hold && !S.held) { S.held = true; if (S.captionAfter) { CAP.innerHTML = S.captionAfter; CAP.style.display = "block"; } L.onclick = () => { if (S && S.held) finish(); }; }
+      if (S.captions) { CAP.innerHTML = S.captions[u < 900 ? 0 : 1] || ""; CAP.style.display = "block"; }
+      try { FN[S.id](S.held ? S.nat + (u - S.ms) : Math.max(0, Math.min(S.nat, u * S.k))); }
       catch (e) { console.error("演出出錯：" + (e && e.message)); return finish(); }   // 出錯也要收尾，不能把畫面卡住
       S.raf = requestAnimationFrame(frame);
     };
     try { FN[S.id](0); } catch (e) { console.error("演出出錯：" + (e && e.message)); cleanup(); if (o.onDone) o.onDone(); return; }
     S.raf = requestAnimationFrame(frame);
+  }
+  /* 點擊推進用的停格背景；只改演出畫面，不碰遊戲存檔。 */
+  function hold(o) {
+    if (S && S.previewKey === o.key) return;
+    if (S) cleanup();
+    const font = setup(Object.assign({}, o, { preview: true })).font;
+    S = { id: o.id, font, onDone: null, start: performance.now(), raf: 0, nat: NATIVE[o.id], previewKey: o.key };
+    L.onclick = () => { const cb = o.onAdvance; cleanup(); if (cb) cb(); };
+    const frame = now => { if (!S || S.previewKey !== o.key) return; try { FN[o.id](now - S.start); } catch (e) { console.error("演出出錯：" + (e && e.message)); } S.raf = requestAnimationFrame(frame); };
+    FN[o.id](0); S.raf = requestAnimationFrame(frame);
   }
   /* 播完：圖層漸漸淡出（0.4 秒），不是硬切回遊戲畫面（天堂判定結尾很亮，硬切會有一次亮度突變）。onDone 立刻呼叫，底下的畫面同時更新 */
   let fadeT = 0;
@@ -323,5 +401,5 @@
   /* 測試用：停在原長的第 t 毫秒擷取畫面 */
   function seek(o, t) { if (!S || !S.manual) { o.onDone = null; play(o); cancelAnimationFrame(S.raf); S.manual = true; } else S.font = setup(o).font; FN[o.id](t); }
   const playing = () => !!S;
-  root.HuntScene = { play, abort, seek, release: abort, playing, NATIVE };
+  root.HuntScene = { play, hold, abort, seek, release: abort, playing, NATIVE };
 })(typeof window !== "undefined" ? window : globalThis);

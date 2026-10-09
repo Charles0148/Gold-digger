@@ -257,7 +257,7 @@ console.log("=== 11. 開發者設定、種子、雜湊 ===");
   ok(R(sv).phase === "dev" && R(sv).dev.kind === "map" && R(sv).country.ok === false, "devSet 跳到發展");
 }
 
-console.log("=== 12. 怪物（精美版 14 隻＋角色）===");
+console.log("=== 12. 怪物（精美版 23 隻＋角色）===");
 {
   const HM = require(path.join(ROOT, "js/hunt-mon.js"));
   const HA = require(path.join(ROOT, "js/hunt-mon-art.js"));
@@ -265,10 +265,12 @@ console.log("=== 12. 怪物（精美版 14 隻＋角色）===");
   const uris = new Set(); let good = true;
   for (let i = 0; i < 6; i++) { const m = HM.get(i); uris.add(m.uri); if (!(m.w > 8 && m.h > 8 && m.cell.length === m.h && m.cell.flat().some(Boolean) && m.svg.includes("<svg"))) good = false; }
   ok(good && uris.size === 6, "每種都畫得出來（有像素格、有 SVG），6 種圖各不相同");
-  ok(HM.total === 15 && HM.get(15) === HM.get(0) && HM.get(-1) === HM.get(14), "變體編號循環（6 種下位怪＋6 種狹間怪＋巨龍 2 種＋角色 共 15）");
+  ok(HM.total === 24 && HM.get(24) === HM.get(0) && HM.get(-1) === HM.get(23), "變體編號循環（6 種下位怪＋15 種狹間怪＋巨龍 2 種＋角色 共 24）");
   const rm = [...HM.realm.heaven, ...HM.realm.hell].concat([HM.DRAGON, HM.DRAGON_BROKEN]);
-  ok(rm.every(i => { const m = HM.get(i); return m.w > 8 && m.h > 8 && m.eyes.length > 0 && m.cell.flat().some(Boolean); }) && new Set(rm.map(i => HM.get(i).uri)).size === 8, "狹間 6 種新怪＋巨龍 2 種都畫得出來、各不相同、有眼睛可供擊殺演出使用");
-  ok(C.hunt.texts.realmMonNames.heaven.length === 3 && C.hunt.texts.realmMonNames.hell.length === 3, "狹間怪名稱天堂 3／地獄 3");
+  ok(rm.every(i => { const m = HM.get(i); return m.w > 8 && m.h > 8 && m.eyes.length > 0 && m.cell.flat().some(Boolean); }) && new Set(rm.map(i => HM.get(i).sprite)).size === 17, "狹間 15 種怪＋巨龍 2 種都有四格圖與擊殺演出輪廓，圖檔各不相同");
+  ok(C.hunt.texts.realmMonNames.heaven.length === 9 && C.hunt.texts.realmMonNames.hell.length === 6, "狹間怪名稱天堂 9／地獄 6");
+  const extraDims = Array.from({length:9}, (_,i) => { const b=fs.readFileSync(path.join(ROOT, `assets/hunt-mon/m${14+i}.png`)); return [b.readUInt32BE(16),b.readUInt32BE(20)]; });
+  ok(extraDims.every(d => d[0] === 192 && d[1] === 48), "新增 9 隻皆為 48×48、橫排四格 PNG");
   const dims = HA.list.map((m, i) => { const b = fs.readFileSync(path.join(ROOT, m.sprite)); return [m.w, m.h, b.readUInt32BE(16), b.readUInt32BE(20), HM.get(i).eyes.length]; });
   ok(dims.slice(0, 6).every(d => d[0] === 40 && d[1] === 40 && d[2] === 160 && d[3] === 40 && d[4] > 0) && dims.slice(6, 12).every(d => d[0] === 48 && d[1] === 48 && d[2] === 192 && d[3] === 48 && d[4] > 0), "下位 40×40、狹間 48×48：PNG 都是橫排四格且有反黑眼睛座標");
   ok(dims.slice(12).every(d => d[0] === 128 && d[1] === 108 && d[2] === 512 && d[3] === 108 && d[4] > 0) && /駭骨巨龍/.test(HA.list[12].name) && /破鱗後/.test(HA.list[13].name), "巨龍 v2／破鱗後 v2 為 128×108、橫排四格且有反黑眼睛座標");
@@ -618,6 +620,7 @@ console.log("=== 18. 新流程第 1 階段：七國、直洞、保底、能力�
 
 console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量、巨龍階梯（真實狀態機對照 hunt7） ===");
 {
+  const HM = require(path.join(ROOT, "js/hunt-mon.js"));
   const cyc = (sv) => { const r = R(sv); const ks = ["hp", "atk", "luck"]; while (r.attr.free > 0) { const k = ks[(r.attr.hp + r.attr.atk + r.attr.luck) % 3]; MH.allocate(sv, H, { [k]: 1 }); } };
   const toAT = (sv, setting) => { let g = 0; while (R(sv).phase !== "hunt" && g++ < 5000) { const r = R(sv);
       if (r.event) { if (r.event.goblin) cyc(sv); MH.advanceEntrance(sv, H, "next"); continue; }
@@ -634,7 +637,7 @@ console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量�
   const playAT = (sv) => { let g = 0, dragon = false; while (g++ < 20000) { const r = R(sv);
       if (r.phase === "dragon") dragon = true;
       if (r.phase === "realm" || r.phase === "done") return { dragon, realm: r.phase === "realm", kills: r.kills, gold: r.gold };
-      if (r.story) { MH.atStory(sv, H); continue; }
+      if (r.story) { if (r.story.kind === "collapse") while (r.story.step < 11) MH.collapseStep(sv, H); MH.atStory(sv, H); continue; }
       if (!r.mon) { const z = MH.atStep(sv, H); if (!z.ok) throw new Error("atStep " + z.reason); continue; }
       if (r.mon.prep) { prep(sv); MH.fight(sv, H); continue; }
       const z = MH.strike(sv, H, 0); if (!z.ok) throw new Error("strike " + z.reason); MH.finishAnim(sv, H, R(sv).anim.rid); }
@@ -642,7 +645,8 @@ console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量�
   { const sv = fresh4(5000), r = R(sv); toAT(sv, 3); ok(r.story && r.story.kind === "open" && r.maxHp === 100 + r.attr.hp * 7 + (r.companion ? 8 : 0) && r.hp === r.maxHp, "進 AT：先演受傷小精靈，最大血量＝100＋血量點×7（＋同伴 8）");
     ok(r.companion === (r.totalSuccess >= 5), `累積成功 ${r.totalSuccess} 題 → 同伴 ${r.companion}`);
     MH.atStory(sv, H); let steps = 0; while (!R(sv).mon) { MH.atStep(sv, H); steps++; } ok(R(sv).mon.prep && typeof R(sv).mon.win === "undefined" && steps <= 26, `第 ${steps} 步遇怪；遇怪時還沒抽勝負`);
-    const snap = J(sv); MH.fix(snap, H); ok(R(snap).mon.prep === true && R(snap).mon.type === R(sv).mon.type, "戰前準備中重整：怪物種類保留、仍未抽勝負");
+    ok(HM.lowerByType[r.mon.type].includes(r.mon.sprite), "下位怪類型與暫定外觀一致");
+    const snap = J(sv); MH.fix(snap, H); ok(R(snap).mon.prep === true && R(snap).mon.type === R(sv).mon.type && R(snap).mon.sprite === r.mon.sprite, "戰前準備中重整：怪物種類與外觀保留、仍未抽勝負");
     r.routeItems.charm = 1; r.routeItems.net = 1; const p0 = MH.winChance(r, H); MH.useRouteItem(sv, H, "charm"); const p1 = MH.winChance(r, H);
     ok(Math.abs(p1 - Math.min(.975, p0 + .075)) < 1e-9, "星運符：本場勝率 +7.5 點（不超過上限）"); ok(MH.useRouteItem(sv, H, "net").reason === "once" && r.routeItems.net === 1, "加成道具一場只能用一個，沒用掉不扣");
     MH.fight(sv, H); ok(R(sv).mon.prep === false && typeof R(sv).mon.win === "boolean" && MH.useRouteItem(sv, H, "net").reason === "state", "按開始戰鬥後勝負抽定，不能再用道具"); }
@@ -655,6 +659,7 @@ console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量�
 
 console.log("=== 20. 新流程第 3 階段：狹間拉鋸、一輪 20／10、52%、三輪完走、完走回憶、80% 再一輪、中途倒下（真實狀態機對照 hunt7） ===");
 {
+  const HM = require(path.join(ROOT, "js/hunt-mon.js"));
   const cyc = (sv) => { const r = R(sv); const ks = ["hp", "atk", "luck"]; while (r.attr.free > 0) { const k = ks[(r.attr.hp + r.attr.atk + r.attr.luck) % 3]; MH.allocate(sv, H, { [k]: 1 }); } };
   const toAT = (sv, setting) => { let g = 0; while (R(sv).phase !== "hunt" && g++ < 5000) { const r = R(sv);
       if (r.event) { if (r.event.goblin) cyc(sv); MH.advanceEntrance(sv, H, "next"); continue; }
@@ -670,7 +675,7 @@ console.log("=== 20. 新流程第 3 階段：狹間拉鋸、一輪 20／10、52%
     else if (has("charm") && ratio() < .72) MH.useRouteItem(sv, H, "charm"); };
   const playAll = (sv, seen) => { let g = 0; while (g++ < 100000) { const r = R(sv);
       if (r.phase === "done") return;
-      if (r.story) { seen[r.story.kind] = (seen[r.story.kind] || 0) + 1; if (r.story.kind === "round") seen["round" + (r.realm.round + 1)] = 1; MH.atStory(sv, H); continue; }
+      if (r.story) { seen[r.story.kind] = (seen[r.story.kind] || 0) + 1; if (r.story.kind === "round") seen["round" + (r.realm.round + 1)] = 1; if (r.story.kind === "collapse") while (r.story.step < 11) MH.collapseStep(sv, H); MH.atStory(sv, H); continue; }
       if (r.anim && r.anim.kind === "judge") { MH.finishAnim(sv, H, r.anim.rid); continue; }
       if (r.phase === "realm" && !r.mon) { const z = MH.spawn(sv, H); if (!z.ok) throw new Error("realm spawn " + z.reason); continue; }
       if (!r.mon) { const z = MH.atStep(sv, H); if (!z.ok) throw new Error("atStep " + z.reason); continue; }
@@ -683,16 +688,20 @@ console.log("=== 20. 新流程第 3 階段：狹間拉鋸、一輪 20／10、52%
     r.anim = { kind: "finish", stage: "attack", outcome: "win", rid: ++r.rid, combo: 1, finisher: MH.FINISHER_POOLS[1][0], tier: 1, fake: false, revive: false };
     MH.finishAnim(sv, H, r.anim.rid); ok(r.story && r.story.kind === "collapse" && r.story.entry === "hell" && r.clips.some(c => c.k === "dragon"), "巨龍倒下：先演時間線崩解與天堂地獄拉鋸，結果早已決定（地獄），擊倒片段已記錄");
     const snap = J(sv); MH.fix(snap, H); ok(R(snap).story && R(snap).story.kind === "collapse" && R(snap).story.entry === "hell", "拉鋸中重整：落點不變");
-    MH.atStory(sv, H); ok(r.phase === "realm" && r.realm.type === "hell" && r.anim.kind === "judge", "拉鋸結束 → 判定演出落到地獄");
-    MH.finishAnim(sv, H, r.anim.rid); ok(r.story && r.story.kind === "king" && !r.mon, "落地後先聽地獄之王開場，不先生怪");
-    MH.atStory(sv, H); ok(r.mon && r.mon.prep && ["balanced", "tank", "brutal", "evasive"].includes(r.mon.type), "開場後才遇到狹間怪物，戰前一樣能準備");
+    ok(!MH.atStory(sv, H).ok, "拉鋸前 11 句未點完不能跳過");
+    for (let i=0;i<11;i++) MH.collapseStep(sv,H);
+    ok(r.story.step === 11 && !MH.collapseStep(sv,H).ok, "拉鋸前 11 句逐次推進，最後兩句交給自動演出");
+    MH.atStory(sv, H); ok(r.phase === "realm" && r.realm.type === "hell" && !r.anim && r.story.kind === "king", "拉鋸落地後直接接地獄之王開場，不再播舊判定動畫");
+    MH.atStory(sv, H); ok(r.mon && r.mon.prep && ["balanced", "tank", "brutal", "evasive"].includes(r.mon.type) && HM.realmByType.hell[r.mon.type].includes(r.mon.sprite), "開場後才遇到狹間怪物，類型與外觀一致");
+    const realmSnap=J(sv); MH.fix(realmSnap,H); ok(R(realmSnap).mon.sprite===r.mon.sprite,"狹間怪重整後外觀不重抽");
     r.realm.n = H.realm.hell.cap - 1; r.realm.round = 3; MH.fight(sv, H); r.mon.win = true; finishFight(sv);
     ok(r.story && r.story.kind === "recap", "第 3 輪打滿 → 完走回憶");
     MH.atStory(sv, H); ok(r.story && (r.story.kind === "loop" || r.story.kind === "end"), "回憶後抽 80% 再一輪");
   }
   { const sv = fresh4(1e6, 0), r = R(sv); r.phase = "realm"; r.realm = { type: "heaven", n: 3, round: 1, total: 3, loop: 0 }; MH.spawn(sv, H); MH.fight(sv, H); r.mon.win = false; r.mon.fx.revive = false; r.mon.fx.fake = false;
     finishFight(sv); ok(r.story && r.story.kind === "fade" && r.phase === "realm" && sv.coins === 0, "狹間中途倒下：先演「時間的力量……」，還沒入帳");
-    const before = r.gold; MH.atStory(sv, H); ok(r.phase === "done" && r.last.why === "down" && sv.coins === before, "淡出後才結算入帳"); }
+    const before = r.gold; MH.atStory(sv, H); ok(r.phase === "done" && r.last.why === "down" && r.last.wake && sv.coins === before, "淡出後才結算入帳，先停在睜眼演出");
+    const doneSnap=J(sv); MH.fix(doneSnap,H); ok(R(doneSnap).last.wake && MH.wakeDone(doneSnap,H).ok && !R(doneSnap).last.wake,"睜眼中重整仍待播；玩家點擊後才顯示結算"); }
   const N = 20000; const seen = {}; let realm = 0, r2 = 0, r3 = 0, comp = 0, gold = 0, spent = 0;
   for (let i = 0; i < N; i++) { const sv = fresh4(1e7, 0), r = R(sv); r.seed = (i * 2654435761) >>> 0; r.seedE = (i * 40503 + 17) >>> 0; r.seedP = (i * 69069 + 3) >>> 0; r.seedRev = (i * 1103515245 + 12345) >>> 0;
     const st0 = sv.huntMeta.stamina; toAT(sv, 3); const s1 = {}; playAll(sv, s1);
