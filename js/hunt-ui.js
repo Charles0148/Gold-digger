@@ -243,7 +243,7 @@
     else act(() => MH.atStory(SV(), H()));
   }
   const atView = r => r.rv === 4 && (((r.phase === "hunt" || r.phase === "dragon") && !!(r.story || !r.mon || r.mon.prep)) || (r.phase === "realm" && !!(r.story || (r.mon && r.mon.prep))));
-  function rewardLine(rw, h) { return !rw ? "" : rw.kind === "point" ? `獲得能力點 +${rw.n}` : rw.kind === "item" ? `獲得${routeItemName(h, rw.id)}。` : "箱子裡是空的。"; }
+  function rewardLine(rw, h) { return !rw ? "" : rw.kind === "point" ? `獲得能力點 +${rw.n}。` : rw.kind === "item" ? `獲得${routeItemName(h, rw.id)}。` : ""; }   // 空箱：前面的台詞已經說了，不再補一句
   function failLine(task, pick, answer) { const i = pick === 0 ? answer - 1 : pick === 1 ? (answer === 0 ? 2 : 3) : answer === 0 ? 4 : 5; return task[3][i]; }
 
   function render() {
@@ -298,7 +298,7 @@
       else if (r.country.stage === "task") { lines = [q[0]]; choices = q[1].map((z,i)=>({c:"cpick:"+i,label:z})); }
       else if (r.country.stage === "result") { const rec=(r.answers[c.id]||[]).slice(-1)[0]; lines=[r.country.ok?q[2][r.country.pick]:failLine(q,r.country.pick,r.country.answer)]; if(rec&&rec.reward) lines.push(A.colored(rewardLine(rec.reward,h),"#7fe3ff")); tap="▼ 點擊繼續"; }
       else if (r.country.stage === "farewell") { lines=say(c.ruler, c.bye.slice(0,-1)).concat(say("小精靈", c.bye.slice(-1))); tap="▼ 點擊離開國度"; }
-      else if (r.country.stage === "chest") { lines = r.country.chest ? who(x, r.country.chest.kind === "empty" ? "chestEmpty" : r.country.chest.kind === "point" ? "chestPoint" : "chestItem").concat([rewardLine(r.country.chest,h)]) : ["這次沒有發現國度寶箱。"]; tap="▼ 點擊繼續"; }
+      else if (r.country.stage === "chest") { lines = r.country.chest ? who(x, r.country.chest.kind === "empty" ? "chestEmpty" : r.country.chest.kind === "point" ? "chestPoint" : "chestItem").concat([rewardLine(r.country.chest,h)]).filter(Boolean) : []; tap="▼ 點擊繼續"; }
       else if (r.country.stage === "goblin") { lines=who(x, "countryGoblin").concat([A.colored(rewardLine(r.country.gift,h), "#7fe3ff")]); choices=[{c:"panel",label:"分配能力點",gold:true},{c:"entrance:next",label:"暫時保留／繼續"}]; }
       else if (r.country.stage === "cave") { lines=r.country.guaranteed?who(x, "guarantee"):["國境外的岩壁傳來低沉回音。","一道通往深處的洞口出現在眼前。"]; tap="▼ 點擊靠近洞口"; }
       else if (r.country.stage === "fail") { lines=who(x, "caveFail"); tap="▼ 點擊回到平地"; }
@@ -338,7 +338,7 @@
         else {
           const e = r.atEvent;
           if (e && e.mushroom !== undefined) lines.push(...x.mushroom.map((z, i) => (i === 0 ? A.colored("小精靈：", "#7fe3ff") + z : z)));
-          if (e && e.chest) lines.push(...who(t.entrance, e.chest.kind === "empty" ? "chestEmpty" : e.chest.kind === "point" ? "chestPoint" : "chestItem"), rewardLine(e.chest, h));
+          if (e && e.chest) lines.push(...who(t.entrance, e.chest.kind === "empty" ? "chestEmpty" : e.chest.kind === "point" ? "chestPoint" : "chestItem"), ...[rewardLine(e.chest, h)].filter(Boolean));
           if (!lines.length) lines.push(dragon ? x.dragonSeek : x.find[r.atStep % x.find.length]);
           if (r.hp / r.maxHp < .5) lines.push(A.colored(x.lowHp[r.atStep % x.lowHp.length], "#ffcc33"));
           tap = "▼ 點擊前進"; page("w" + r.nE);
