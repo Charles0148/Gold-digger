@@ -264,39 +264,50 @@
     trText(t, d, th);
   }
 
-  /* ===== rv4 拉鋸 B：7×7 方塊占領。前 11 句由 hold() 停格等點擊，最後兩句才播 2.6 秒。 ===== */
+  /* ===== rv4 拉鋸 B：天堂／地獄上下兩片互推。前 11 句由 hold() 停格等點擊，最後兩句才播 2.6 秒。 ===== */
   function collapseTime(t) {
-    if (!TR.preview) return 21700 + t / NATIVE.collapse * 1600;   // 撞擊 → 漩渦 → 落點 → 收暗
-    const p = [900, 2800, 5000, 7200, 9000, 10800, 12800, 15100, 17400, 19000, 20700];
-    return p[Math.max(0, Math.min(10, TR.step | 0))] + (RED ? 0 : Math.sin(t * .0015) * 90);
+    if (!TR.preview) return 20000 + t;   // 兩片撞合 → 同步角力 → 勝方推到底 → 收暗
+    const p = [700, 2300, 4100, 5900, 7700, 9500, 11300, 13100, 14900, 16700, 18500];
+    return p[Math.max(0, Math.min(10, TR.step | 0))] + (RED ? 0 : t % 1800);
+  }
+  function collapseHeaven(yb, t, k) {
+    lightRegion(yb, .72 + .2 * k, t);
+    const sunA = .22 + .18 * k, sy = Math.min(55, Math.max(20, yb * .34));
+    glow(49, sy, 15, "#fff2c0", sunA); disc(49, sy, 5, "#fff6d0", .72 + .18 * k);
+    for (let i = 0; i < NP(18); i++) { const y = 5 + (rn(i, 8) * Math.max(8, yb - 10) + t * (.002 + rn(i, 9) * .002)) % Math.max(8, yb - 8); px(3 + rn(i) * 92, y, 1, 1, i % 3 ? "#fff8e0" : "#f0c861", .38 + .28 * k); }
+  }
+  function collapseHell(yb, t, k) {
+    fireRegion(yb, .7 + .25 * k, t);
+    for (let i = 0; i < NP(22); i++) { const span = Math.max(8, AH - yb - 5), u = (rn(i, 3) * span + t * (.004 + rn(i, 4) * .004)) % span; px(3 + rn(i) * 92, AH - 4 - u, 1, 1, i % 3 ? "#ff7a2a" : "#ffb347", (.3 + .45 * k) * (1 - u / span)); }
   }
   function sCollapse(t) {
-    begin(); const Tm = collapseTime(t), reveal = !TR.preview, q = reveal ? ssub(t, 0, 900) : 0;
-    const tug = RED || Tm < 14600 ? 0 : Math.sin((Tm - 14600) / 760 * Math.PI) * Math.min(30, 8 + (Tm - 14600) / 260);
-    const boundary = 105 + tug, appH = sm(ssub(Tm, 8200, 11200)), appF = sm(ssub(Tm, 8800, 11800));
-    px(0, 0, AW, AH, "#090817");
-    for (let by = 0; by < AH; by += 7) for (let bx = 0; bx < AW; bx += 7) {
-      const cy = by + 3, n = rn((bx / 7 | 0) * 61 + (by / 7 | 0), 77), edge = boundary + (n - .5) * 12;
-      let col = "#211d42";
-      if (cy < edge && appH > Math.abs(cy - 105) / 120 + n * .22) col = cy > edge - 9 && ((bx / 7 + by / 7) & 1) ? "#b78b38" : "#e2bd62";
-      if (cy > edge && appF > Math.abs(cy - 105) / 120 + n * .22) col = cy < edge + 9 && ((bx / 7 + by / 7) & 1) ? "#8d2517" : "#c43b1d";
-      px(bx, by, 6, 6, col); px(bx, by, 6, 1, mix(col, "#fff2c0", .12));
-    }
-    const shrink = Math.max(0, Math.min(4, Math.floor(ssub(Tm, 14600, 21400) * 5)));
-    for (let row = 0; row < 3; row++) for (let col = shrink; col < 11 - shrink; col++) {
-      if (row === 2 && (col < 3 || col > 7)) continue;
-      px(11 + col * 7, boundary + row * 7, 6, 6, row ? "#494382" : "#6962a4");
-    }
-    if (!reveal || t < 650) {
-      px(45, boundary - 18, 8, 17, "#182749"); px(47, boundary - 22, 4, 5, "#e8c878");
-      glow(69, boundary - 12, 7, "#ffe9a8", .22); disc(69, boundary - 12, 3, "#ffe9a8");
-    }
+    begin(); const Tm = collapseTime(t), reveal = !TR.preview;
+    const appear = sm(ssub(Tm, 0, 4200)), pressure = sm(ssub(Tm, 7200, 11800));
+    const wave = RED ? 0 : Math.sin((Tm - 7200) * Math.PI / 900) * (3 + pressure * 11);   // 1.8 秒一個來回
+    let boundary = 105 + (Tm < 7200 ? 0 : wave);
+    let gap = reveal && !RED ? Math.round(8 * (1 - sm(ssub(t, 0, 520)))) : 0;
     if (reveal) {
-      const vr = sm(ssub(t, 520, 1750)), win = TR.out === "hell" ? "#ff7a2a" : "#fff2c0", cy = 105 + (TR.out === "hell" ? 1 : -1) * 34 * ssub(t, 1200, 2100);
-      for (let i = 0; i < NP(34); i++) { const a = i * .63 + t * .004, rr = (5 + i * .82) * (1 - .45 * ssub(t, 1300, 2200)); const sz = Math.max(1, 5 - (i / 9 | 0)); px(49 + Math.cos(a) * rr - sz / 2, cy + Math.sin(a) * rr * .8 - sz / 2, sz, sz, mix("#cbbcff", win, ssub(t, 1050, 1800)), .9 * vr); }
-      if (!RED && q > 0 && q < 1) for (let x = 0; x < AW; x++) px(x, boundary, 1, 2, x & 1 ? "#fff2c0" : "#ff7a2a", 1 - q);
-      px(0, 0, AW, AH, "#000", ssub(t, 2050, 2600));
-    } else px(0, 0, AW, AH, "#000", 1 - ssub(Tm, 0, 900));
+      const winPush = sm(ssub(t, 1200, 2220));
+      if (RED) {
+        boundary = 105; gap = 0;   // 減少特效：只以顏色淡入交代落點，不移動畫面
+      } else if (winPush > 0) boundary = lerp(boundary, TR.out === "heaven" ? AH + 8 : -8, winPush);
+    }
+    px(0, 0, AW, AH, "#090817");
+    const topEdge = clamp(boundary - gap / 2, 0, AH), bottomEdge = clamp(boundary + gap / 2, 0, AH);
+    collapseHeaven(topEdge, Tm, appear); collapseHell(bottomEdge, Tm, appear);
+    if (gap > 0) px(0, topEdge, AW, Math.max(1, bottomEdge - topEdge), "#17132d");
+    else {
+      px(0, boundary - 2, AW, 1, mix("#f0c861", "#7a1410", .35), .7);
+      px(0, boundary - 1, AW, 2, mix("#fff2c0", "#ff7a2a", .5), .74);
+      px(0, boundary + 1, AW, 1, mix("#f0c861", "#a8200f", .7), .7);
+    }
+    if (reveal && RED) {
+      const winFade = sm(ssub(t, 1200, 2220)), winCol = TR.out === "heaven" ? "#f6d878" : "#a8200f";
+      px(0, 0, AW, AH, winCol, winFade * .82);
+    }
+    const fadeIn = TR.preview ? 1 - ssub(Tm, 0, 900) : 0;
+    if (fadeIn > 0) px(0, 0, AW, AH, "#000", fadeIn);
+    if (reveal) px(0, 0, AW, AH, "#000", ssub(t, 2070, 2600));
   }
 
   /* ===== 睜眼 A：細光、杏仁形眼縫、馬賽克對焦；播完保留入口畫面等點擊。 ===== */

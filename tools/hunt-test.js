@@ -658,6 +658,11 @@ console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量�
 }
 
 console.log("=== 20. 新流程第 3 階段：狹間拉鋸、一輪 20／10、52%、三輪完走、完走回憶、80% 再一輪、中途倒下（真實狀態機對照 hunt7） ===");
+{ const sceneSrc = fs.readFileSync(path.join(ROOT, "js/hunt-scene.js"), "utf8"), collapseSrc = sceneSrc.slice(sceneSrc.indexOf("function collapseTime"), sceneSrc.indexOf("/* ===== 睜眼 A"));
+  ok(/function collapseHeaven[\s\S]*lightRegion/.test(collapseSrc) && /function collapseHell[\s\S]*fireRegion/.test(collapseSrc), "拉鋸畫面沿用天堂與地獄判定場景的元素與配色");
+  ok(!/7×7 方塊占領|for \(let by|wingShape|漩渦/.test(collapseSrc), "拉鋸畫面沒有方塊翻色、勇者／小精靈／碎片或漩渦");
+  ok(/Math\.PI \/ 900/.test(collapseSrc) && /if \(RED\) \{\s*boundary = 105/.test(collapseSrc), "交界完整來回為 1.8 秒；減少特效固定交界、只做淡入淡出");
+  ok(/ssub\(t, 1200, 2220\)/.test(collapseSrc) && /ssub\(t, 2070, 2600\)/.test(collapseSrc), "2.6 秒自動段先同畫面角力，揭曉後推到底並收暗"); }
 {
   const HM = require(path.join(ROOT, "js/hunt-mon.js"));
   const cyc = (sv) => { const r = R(sv); const ks = ["hp", "atk", "luck"]; while (r.attr.free > 0) { const k = ks[(r.attr.hp + r.attr.atk + r.attr.luck) % 3]; MH.allocate(sv, H, { [k]: 1 }); } };
