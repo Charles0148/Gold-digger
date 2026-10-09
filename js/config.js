@@ -594,7 +594,7 @@
     ],
 
     /* ---------- 進入礦坑的密碼（存的是雜湊，不是密碼本身） ---------- */
-    locks: {},   // 2026-10-03 擁有者：前輩台（m6）解鎖，大家都可以玩（原本 m6 有密碼）
+    locks: { m7: "ik9bd4" },   // 2026-10-03 擁有者：前輩台（m6）解鎖。2026-10-10 擁有者：轉生之間（m7）上線但上鎖（只存雜湊，不存密碼本身）
 
     /* ---------- 第二台機台：三位前輩的考驗（獨立引擎） ---------- */
     machine2: {
@@ -1068,7 +1068,7 @@
        遊戲一律讀程式內建值（game.js 的 HC()），編輯器存的設定檔改不動。畫面文字不得顯示任何機率。 */
     hunt: {
       enabled: true,
-      mine: { id: "m7", name: "轉生之間", tier: 3, mult: 1, unlock: 0, runPolicy: "adventure", devOnly: true,
+      mine: { id: "m7", name: "轉生之間", tier: 3, mult: 1, unlock: 0, runPolicy: "adventure", devOnly: false,
               scopeEligible: true, boardEligible: false, toolsBrokenEligible: false },
       /* 體力：每走一步一律 1；國度進入 2。1 體力＝6 金幣的鎬子價值（valuePer）。
          餵食：體力＝無條件捨去(Σ 剩餘耐久×原價÷標準耐久÷valuePer)，多把先加總再捨去；鑽頭沒有原價，照耐久比例換（滿耐久＝drillTotal）。 */

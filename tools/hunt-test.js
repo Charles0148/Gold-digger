@@ -50,7 +50,7 @@ function seedWhere(country, stamina = 500, setting = 3) {
 console.log("=== 1. 設定值 ===");
 ok(ST.perStep === 1 && ST.countryCost === 2 && ST.valuePer === 6 && ST.intro === 18 && ST.drillTotal === 1380, "每步 1／國度 2／1 體力＝6 金幣／初見禮 18／鑽頭 1380");
 ok(H.walk.guarantee === 30 && H.lower.count === 3 && H.lower.win === 0.895 && H.lower.gold === 10 && H.dragon.win === 0.755 && H.dragon.gold === 83 && H.realm.heaven.cont === 0.83 && H.realm.heaven.gold === 44 && H.realm.hell.cont === 0.895 && H.realm.hell.gold === 65, "第三階段重新校準：下位 89.5/10、巨龍 75.5/83、天堂 83/44、地獄 89.5/65");
-ok(H.mine.id === "m7" && H.mine.devOnly === true && H.mine.boardEligible === false && H.mine.toolsBrokenEligible === false, "m7 devOnly、不進委託板、不算用壞");
+ok(H.mine.id === "m7" && H.mine.devOnly === false && (C.locks || {}).m7 === "ik9bd4" && H.mine.boardEligible === false && H.mine.toolsBrokenEligible === false, "m7 上線但上鎖（密碼雜湊）、不進委託板、不算用壞");
 ok(!C.mines.some(m => m.id === "m7"), "m7 不在 config.mines（不會被委託板／圖鑑／模擬器誤算）");
 { const FX = globalThis.HuntFx, cuts = FX.COMBOS.map(c => c.cut), W = 390, HH = 844;
   const full = FX.COMBOS.every(c => { const g = FX.cutGeom(c, [W / 2, HH * .46], W, HH); return [-1, 1].every(s => { const x = g.p[0] + g.d[0] * g.span * s, y = g.p[1] + g.d[1] * g.span * s; return x < 0 || x > W || y < 0 || y > HH; }); });
