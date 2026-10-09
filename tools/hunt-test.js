@@ -22,7 +22,8 @@ const J = o => JSON.parse(JSON.stringify(o));
 const defOf = id => C.tools.find(t => t.id === id);
 /* 既有第 1～15 節固定跑第二階段相容行程；第三階段另在後段用 fresh3 驗證，避免把舊回歸的期望值偷偷改掉。 */
 const fresh = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H).rv = 2; return sv; };
-const fresh3 = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H); return sv; };
+const fresh3 = (stamina = 0, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv, H).rv = 3; return sv; };
+const fresh4 = (stamina = 500, coins = 300) => { const sv = { v: 1, coins, tools: [], equipped: null }; MH.fix(sv, H); sv.huntMeta.stamina = stamina; MH.run(sv,H); return sv; };
 const R = sv => MH.peek(sv, H);
 /* 舊回歸多數只關心「整段演出完成後」的狀態；新終結技拆成蓄力／出招／暫待／復活，這個測試包裝器把整段跑完。
    新流程各停點與未入帳保證另在第 16 節逐步驗證。 */
@@ -571,6 +572,48 @@ console.log("=== 17. 終結技／蓄力／假復活／暫待結算 ===");
   ok(/S\.hold = 0; msg\.textContent = "放開了，重新凝聚"/.test(fxSrc) && /S\.auto && S\.peak >= autoModeMs/.test(fxSrc) && /autoModeMs: H\(\)\.finisher\.autoModeReleaseMs/.test(uiSrc) && H.finisher.autoModeReleaseMs === 250 && H.finisher.autoReleaseMs === 3000, "未到頂放開從頭蓄；自動模式 250ms 放手；手動頂住約 3 秒自動斬下");
   ok(FX.T.burstAt - FX.T.blackAt > 1000, "全螢幕反黑進出間隔超過 1 秒，沒有新增全螢幕閃白");
   ok(!/中獎|賠率|押注/.test(JSON.stringify({ finisher: H.finisher, revive: H.revive, pending: [H.texts.pendingTitle,H.texts.pendingGold,H.texts.pendingBody] })), "新玩家文字不含賭博用語");
+}
+
+console.log("=== 18. 新流程第 1 階段：七國、直洞、保底、能力點、重整 ===");
+{
+  ok(H.countries.length === 7 && H.countries.map(x => x.tasks.length).join() === "5,3,4,2,6,3,1", "七國與題數 5／3／4／2／6／3／1");
+  ok(MH.countryRate(H,"varian",1,0) === 0 && MH.countryRate(H,"varian",1,1) === .20 && MH.countryRate(H,"varian",6,1) === .25 && MH.countryRate(H,"varian",6,5) === 1, "瓦瑞安 0 題＝0%，設定固定加值與 100% 上限");
+  ok(Math.abs(MH.countryRate(H,"medali",6,3)-.50)<1e-12 && Math.abs(MH.countryRate(H,"futuro",6,1)-.55)<1e-12, "美妲莉／芙特羅設定六邊界 50%／55%");
+
+  const autoEntrance = (sv, setting) => {
+    let guard=0;
+    while (R(sv).phase !== "hunt" && guard++ < 5000) {
+      const r=R(sv);
+      if (r.event) { if (r.event.goblin && r.attr.free) MH.allocate(sv,H,{hp:r.attr.free}); MH.advanceEntrance(sv,H,"next"); continue; }
+      if (r.phase === "walk") { const z=MH.step(sv,H,{setting}); if(!z.ok) throw new Error("new walk "+z.reason); continue; }
+      if (r.phase === "dev") { if(r.dev.stage==="offer") MH.advanceEntrance(sv,H,"enter"); else if(r.dev.stage==="fail") MH.advanceEntrance(sv,H,"next"); else MH.advanceEntrance(sv,H,"enter"); continue; }
+      const c=r.country;
+      if(c.stage==="intro") MH.enterCountry(sv,H);
+      else if(c.stage==="task") MH.pickCountry(sv,H,0);
+      else if(c.stage==="goblin") { if(r.attr.free) MH.allocate(sv,H,{hp:r.attr.free}); MH.advanceEntrance(sv,H,"next"); }
+      else if(c.stage==="warn"||c.stage==="enter") MH.advanceEntrance(sv,H,"enter");
+      else MH.advanceEntrance(sv,H,"next");
+    }
+    if(guard>=5000) throw new Error("new entrance guard"); return R(sv);
+  };
+
+  { const sv=fresh4(), r=R(sv); r.segmentSteps=19; r.seedE=1; r.nE=0; const before=J(sv); MH.step(sv,H,{setting:3}); const snap=J(sv); MH.fix(snap,H); ok(R(snap).nE===r.nE && JSON.stringify(R(snap).event)===JSON.stringify(r.event) && JSON.stringify(R(snap).dev)===JSON.stringify(r.dev) && JSON.stringify(R(snap).country)===JSON.stringify(r.country), "一步的路上事件／直洞／國度結果存檔，重整不重抽"); ok(before.v===1 && sv.v===1, "新流程頂層 save.v 維持 1"); }
+  { const sv=fresh4(), r=R(sv); r.phase="country"; r.countryCount=5; r.setting=1; r.country={id:"futuro",stage:"goblin",q:0,pick:null,answer:null,ok:null,successes:0,chest:null,gift:null,enterOk:null,guaranteed:false}; r.attr.free=2;
+    ok(MH.allocate(sv,H,{hp:1}).ok && r.attr.hp===1 && r.attr.free===1, "哥布林處可分配血量／戰力／幸運，也可保留"); MH.advanceEntrance(sv,H,"next"); ok(r.country.guaranteed && r.country.enterOk, "沒進 AT 的第 5 國必進，成功 0 題也不顯示內部規則"); MH.advanceEntrance(sv,H,"next"); MH.advanceEntrance(sv,H,"enter"); ok(r.phase==="hunt" && r.attr.free===0, "第 5 國進 AT，未分配點清零"); }
+  { const sv=fresh4(), r=R(sv); r.event={kind:"route",goblin:false,chest:true,rewards:[{kind:"point",n:1}],next:null}; r.attr.free=1; ok(!MH.allocate(sv,H,{luck:1}).ok, "沒有哥布林時不能分配能力點"); MH.advanceEntrance(sv,H,"next"); ok(r.attr.free===1, "路上失敗／事件後能力點保留"); }
+  { const old={v:1,coins:0,huntRuns:{m7:{phase:"walk",seed:5,seedP:6,n:0,nP:0,since:0,kills:0,gold:0,mon:null,anim:null,after:null,rid:0,last:null}}}; MH.fix(old,H); ok(R(old).rv===2 && old.v===1 && R(old).phase==="walk", "舊 hunt 存檔修復後維持可跑，不強切新流程"); }
+
+  { const sv=fresh4(10), r=R(sv); r.phase="country"; r.country={id:"futuro",stage:"intro",q:0,pick:null,answer:null,ok:null,successes:0,chest:null,gift:null,enterOk:null,guaranteed:false};
+    ok(MH.need(sv,H)===2, "國度入口需要 2 體力"); MH.enterCountry(sv,H); ok(r.country.stage==="arrive" && MH.need(sv,H)===0 && sv.huntMeta.stamina===8, "進國度扣 2，先看國王開場（arrive）再答題");
+    MH.advanceEntrance(sv,H,"next"); ok(r.country.stage==="task", "開場看完才出題");
+    r.country.stage="farewell"; r.seedE=3; let k=0; while(k++<200){ const t=J(sv); MH.advanceEntrance(t,H,"next"); if(!R(t).country.chest){ ok(R(t).country.stage==="goblin" && R(t).country.gift, "沒有國度寶箱時直接遇到哥布林（不多一頁空白）"); break; } r.seedE=(r.seedE+1)>>>0; } }
+  { const sv=fresh4(0), r=R(sv); r.phase="dev"; r.dev={kind:"direct",ok:true,stage:"offer"}; ok(MH.need(sv,H)===0 && !MH.halted(sv,H), "直洞不另扣體力：體力 0 也能決定要不要進"); }
+  const N=20000, rows=[];
+  for(let setting=1;setting<=6;setting++) { let direct=0,countries=0,guarantee=0; for(let i=0;i<N;i++){ const sv=fresh4(10000,0),r=R(sv); r.seedE=(i*2654435761+setting*7919)>>>0; const end=autoEntrance(sv,setting); direct+=end.entry==="direct"; countries+=end.countryCount; guarantee+=end.countryCount>=5; } rows.push({direct:direct/N,countries:countries/N,guarantee:guarantee/N}); }
+  const directMin=Math.min(...rows.map(x=>x.direct)), directMax=Math.max(...rows.map(x=>x.direct));
+  ok(directMin>.055 && directMax<.080, `入口蒙地卡羅每設定 ${N.toLocaleString()} 趟：直洞占 AT ${(directMin*100).toFixed(2)}%～${(directMax*100).toFixed(2)}%`);
+  ok(rows.every(x=>x.countries>2.6&&x.countries<3.2), `平均國度 ${Math.min(...rows.map(x=>x.countries)).toFixed(2)}～${Math.max(...rows.map(x=>x.countries)).toFixed(2)}，第 5 國保底可達`);
+  console.log("  新入口統計｜"+rows.map((x,i)=>`${i+1}:${(x.direct*100).toFixed(2)}%/${x.countries.toFixed(2)}/${(x.guarantee*100).toFixed(2)}%`).join("｜"));
 }
 
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);

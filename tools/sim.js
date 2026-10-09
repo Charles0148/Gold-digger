@@ -110,6 +110,38 @@ function huntSection(runs) {
   ck(H.settings.length === 6 && dist.length === 6, "每日設定必須 6 種");
   ck(H.revive && H.revive.trueRate === 0, "真復活率目前必須維持 0；開啟前要與劇情／國度獎勵一起重校準");
 
+  // ---- 新流程 rv4 入口（真實狀態機；戰鬥段尚沿用既有流程） ----
+  {
+    const EN = Math.min(runs, 100000), rows = [];
+    const play = (sv, setting) => {
+      let guard = 0;
+      while (MH.peek(sv,H).phase !== "hunt" && guard++ < 5000) {
+        const r=MH.peek(sv,H);
+        if(r.event){ if(r.event.goblin&&r.attr.free) MH.allocate(sv,H,{hp:r.attr.free}); MH.advanceEntrance(sv,H,"next"); }
+        else if(r.phase==="walk") MH.step(sv,H,{setting});
+        else if(r.phase==="dev") MH.advanceEntrance(sv,H,r.dev.stage==="offer"?"enter":r.dev.stage==="fail"?"next":"enter");
+        else if(r.country.stage==="intro") MH.enterCountry(sv,H);
+        else if(r.country.stage==="task") MH.pickCountry(sv,H,0);
+        else if(r.country.stage==="goblin"){ if(r.attr.free) MH.allocate(sv,H,{hp:r.attr.free}); MH.advanceEntrance(sv,H,"next"); }
+        else if(r.country.stage==="warn"||r.country.stage==="enter") MH.advanceEntrance(sv,H,"enter");
+        else MH.advanceEntrance(sv,H,"next");
+      }
+      return MH.peek(sv,H);
+    };
+    for(let setting=1;setting<=6;setting++){
+      let direct=0,countries=0,guarantee=0;
+      for(let i=0;i<EN;i++){
+        const sv={v:1,coins:0,tools:[],equipped:null}; MH.fix(sv,H); sv.huntMeta.stamina=100000; const r=MH.run(sv,H); r.seedE=(i*2654435761+setting*7919)>>>0;
+        const end=play(sv,setting); direct+=end.entry==="direct"; countries+=end.countryCount; guarantee+=end.countryCount>=5;
+      }
+      rows.push({direct:direct/EN,countries:countries/EN,guarantee:guarantee/EN});
+    }
+    console.log(`  --- 新流程入口（rv4 真實狀態機，每設定 ${EN.toLocaleString()} 趟）---`);
+    console.log("  設定｜直洞占 AT｜平均國度｜第5國進入");
+    rows.forEach((x,i)=>console.log(`  ${i+1}｜${pct(x.direct,2)}｜${x.countries.toFixed(2)}｜${pct(x.guarantee,2)}`));
+    rows.forEach((x,i)=>ck(x.direct>.055&&x.direct<.080&&x.countries>2.6&&x.countries<3.2,`設定${i+1} 新入口統計超出 hunt7 容差`));
+  }
+
   // ---- ② 蒙地卡羅：真實狀態機 ----
   console.log(`  --- 蒙地卡羅（真實 js/mine-hunt.js，每輪：旅途→發展→國度→下位→巨龍→狹間→餘燼→凱旋）---`);
   console.log(`  設定｜每步發展率(排除保底)｜洞窟成功｜藏寶圖成功｜單鈕/二選一/三選一｜擊倒率｜最長連續沒發展｜完整遊戲回收率（精確）`);
@@ -120,7 +152,7 @@ function huntSection(runs) {
     const c = { steps: 0, free: 0, freeDev: 0, caveN: 0, caveOk: 0, mapN: 0, mapOk: 0, pres: [0, 0, 0], combo: [0, 0, 0], monN: 0, monWin: 0, streak: 0, maxStreak: 0, gold: 0, spent: 0, direct: 0, choice: 0, empty: 0,
       dragonN: 0, dragonWin: 0, entryN: 0, entryHeaven: 0, rmKills: 0, rmMax: { heaven: 0, hell: 0 }, rmRounds: { heaven: 0, hell: 0 }, rmFull: { heaven: 0, hell: 0 }, emberN: 0, emberOk: 0, nextN: { heaven: 0, hell: 0 }, nextHeaven: { heaven: 0, hell: 0 } };
     for (let n = 0; n < runs; n++) {
-      MH.run(sv, H);
+      MH.run(sv, H).rv = 3;   // 舊戰鬥／回收率回歸；rv4 新入口另在下方獨立統計
       const before = sv.huntMeta.stamina;
       for (let guard = 0; guard < 5000; guard++) {
         const r = MH.peek(sv, H);
@@ -189,7 +221,7 @@ function huntSection(runs) {
     const sv = { coins: 0, tools: [], equipped: null, huntMeta: MH.newMeta(), huntRuns: {} }; sv.huntMeta.stamina = ST.cap;
     let gold = 0, spent = 0;
     for (let n = 0; n < runs; n++) {
-      MH.run(sv, H); const before = sv.huntMeta.stamina;
+      MH.run(sv, H).rv = 3; const before = sv.huntMeta.stamina;
       for (let guard = 0; guard < 5000; guard++) {
         const r = MH.peek(sv, H);
         if (r.itemOffer) resolveOffer(sv, "best");

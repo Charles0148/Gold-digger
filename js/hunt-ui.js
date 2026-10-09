@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", attrDraft: { hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", pg: { key: "", i: 0 }, pgMore: false, attrDraft: { hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -165,6 +165,15 @@
       box.innerHTML = choices.map(c => `<button class="px-btn wide${c.gold ? " gold" : ""}"${c.hidden ? ' style="visibility:hidden" tabindex="-1" aria-hidden="true" disabled' : ` data-hunt="${c.c}"`}>${c.label}</button>`).join("");
     } else { box.classList.add("hidden"); box.innerHTML = ""; }
   }
+  const countryOf = (h, id) => (h.countries || []).find(x => x.id === id);
+  const routeItemName = (h, id) => (((h.entrance || {}).items || []).find(x => x.id === id) || {}).name || "旅途道具";
+  /* 入口台詞的說話者（空字串＝旁白），對應 config.hunt.texts.entrance 各段的每一句 */
+  const WHO = { direct:["小精靈","","小精靈","小精靈"], caveFail:["","小精靈","小精靈","小精靈"], guarantee:["","小精靈","","小精靈"],
+    countryGoblin:["","哥布林","哥布林"], routeGoblin:["哥布林","哥布林","哥布林"], unspent:["哥布林","哥布林"], unspentDirect:["小精靈","小精靈","小精靈"],
+    chestItem:["","小精靈"], chestPoint:["",""], chestEmpty:["","小精靈","小精靈"] };
+  const who = (x, key) => x[key].map((z, i) => WHO[key] && WHO[key][i] ? A.colored(WHO[key][i] + "：", "#7fe3ff") + z : z);
+  function rewardLine(rw, h) { return !rw ? "" : rw.kind === "point" ? `獲得能力點 +${rw.n}` : rw.kind === "item" ? `獲得${routeItemName(h, rw.id)}。` : "箱子裡是空的。"; }
+  function failLine(task, pick, answer) { const i = pick === 0 ? answer - 1 : pick === 1 ? (answer === 0 ? 2 : 3) : answer === 0 ? 4 : 5; return task[3][i]; }
 
   function render() {
     const sv = SV(), h = H(), M = sv.huntMeta, r = RUN(), t = T();
@@ -173,7 +182,7 @@
     const halted = MH.halted(sv, h), stalled = !!r.anim && ui.stalled === r.anim.rid, animating = !!r.anim && !stalled, st = M.stamina, locked = busy();
     chrome(true);
     $("mbName").textContent = h.mine.name;
-    const PH = { walk: "旅途", dev: r.dev && r.dev.kind === "map" ? "藏寶圖" : "洞窟", country: t.countryName, hunt: "狩獵", dragon: t.dragonName, realm: r.realm ? t.realmName[r.realm.type] : "", ember: "餘燼", done: "凱旋" };
+    const PH = { walk: "旅途", dev: r.dev && r.dev.kind === "map" ? "藏寶圖" : "洞窟", country: r.rv === 4 && r.country ? (countryOf(h, r.country.id) || {}).name : t.countryName, hunt: "狩獵", dragon: t.dragonName, realm: r.realm ? t.realmName[r.realm.type] : "", ember: "餘燼", done: "凱旋" };
     $("mbState").innerHTML = A.colored(PH[r.phase] || "", A.config().theme.accent) + (A.dbgSetting() ? ` <span style="color:#ff4fd8">設定${A.todaySetting(h.mine.id)}｜${r.phase}｜保底${r.since}</span>` : "");
     $("hbStep").textContent = num(st);
     $("hbGold").textContent = num(r.gold);
@@ -192,9 +201,40 @@
 
     const big = $("sceneBig"), subEl = $("sceneSub");
     let lines = [], tap = "▼ 點擊", choices = [], bigHtml = "", subTxt = "";
+    ui.pgMore = false;
+    /* 新流程入口的長對話：一次最多 3 句，點一下翻下一頁，翻完才出現選項 */
+    const page = key => { if (ui.pg.key !== key) ui.pg = { key, i: 0 }; const n = Math.ceil(lines.length / 3); ui.pgMore = ui.pg.i < n - 1; lines = lines.slice(ui.pg.i * 3, ui.pg.i * 3 + 3); if (ui.pgMore) { choices = []; tap = "▼ 點擊繼續"; } };
     const needN = MH.need(sv, h), lack = Math.max(0, needN - st);
     const hungry = () => { lines = t.hungry.map(x => A.colored(x, sub())).concat([A.colored(fill(t.hungryNeed, { n: lack }), "#ffcc33")]); tap = ""; choices = [{ c: "feed", label: t.feedBtn + "（餵鎬子）", gold: true }]; };
-    if (r.itemOffer) {   // 3C：旅途道具（直接取得／兩個相同的木箱）。畫面、時間軸、文字全在下方「旅途道具」一節；這裡只取目前這一格
+    if (r.rv === 4 && r.event) {
+      const e = r.event, x = t.entrance; lines = [];
+      if (e.goblin) lines.push(...who(x, "routeGoblin")); if (e.chest) { const cr = e.rewards[e.rewards.length - 1]; lines.push(...who(x, cr.kind === "empty" ? "chestEmpty" : cr.kind === "point" ? "chestPoint" : "chestItem")); }
+      lines.push(...e.rewards.map(z => rewardLine(z, h)).filter(Boolean)); tap = "";
+      choices = e.goblin ? [{ c:"panel", label:"分配能力點", gold:true }, { c:"entrance:next", label:"繼續前進" }] : [{ c:"entrance:next", label:"繼續前進", gold:true }];
+      page("ev" + r.nE);
+    } else if (r.rv === 4 && r.phase === "dev") {
+      const x = t.entrance; bigHtml = A.colored("洞穴", "#7fe3ff"); tap = "";
+      if (r.dev.stage === "offer") { lines = who(x, "direct"); choices = [{c:"entrance:enter",label:"走進洞穴",gold:true},{c:"entrance:stay",label:"留在平地"}]; }
+      else if (r.dev.stage === "fail") { lines = who(x, "caveFail"); choices = [{c:"entrance:next",label:"回到平地",gold:true}]; }
+      else if (r.dev.stage === "warn") { lines = who(x, "unspentDirect"); choices = [{c:"entrance:back",label:"留在平地"},{c:"entrance:enter",label:"就這樣進去",gold:true}]; }
+      else { lines = [x.directOk]; choices = [{c:"entrance:enter",label:"繼續深入",gold:true}]; }
+      page("dev" + r.dev.stage + r.nE);
+    } else if (r.rv === 4 && r.phase === "country") {
+      const c = countryOf(h, r.country.id), q = c.tasks[r.country.q], x = t.entrance; bigHtml = A.colored(c.name, "#ffe0a0"); tap = "";
+      const say = (who, a) => a.map(z => A.colored(who + "：", "#7fe3ff") + z);
+      if (r.country.stage === "intro") { lines = say("小精靈", c.intro); tap = "▼ 點擊進入國度"; }
+      else if (r.country.stage === "arrive") { lines = say(c.ruler, c.arrive); tap = "▼ 點擊繼續"; }
+      else if (r.country.stage === "task") { lines = [q[0]]; choices = q[1].map((z,i)=>({c:"cpick:"+i,label:z})); }
+      else if (r.country.stage === "result") { const rec=(r.answers[c.id]||[]).slice(-1)[0]; lines=[r.country.ok?q[2][r.country.pick]:failLine(q,r.country.pick,r.country.answer)]; if(rec&&rec.reward) lines.push(A.colored(rewardLine(rec.reward,h),"#7fe3ff")); tap="▼ 點擊繼續"; }
+      else if (r.country.stage === "farewell") { lines=say(c.ruler, c.bye.slice(0,-1)).concat(say("小精靈", c.bye.slice(-1))); tap="▼ 點擊離開國度"; }
+      else if (r.country.stage === "chest") { lines = r.country.chest ? who(x, r.country.chest.kind === "empty" ? "chestEmpty" : r.country.chest.kind === "point" ? "chestPoint" : "chestItem").concat([rewardLine(r.country.chest,h)]) : ["這次沒有發現國度寶箱。"]; tap="▼ 點擊繼續"; }
+      else if (r.country.stage === "goblin") { lines=who(x, "countryGoblin").concat([A.colored(rewardLine(r.country.gift,h), "#7fe3ff")]); choices=[{c:"panel",label:"分配能力點",gold:true},{c:"entrance:next",label:"暫時保留／繼續"}]; }
+      else if (r.country.stage === "cave") { lines=r.country.guaranteed?who(x, "guarantee"):["國境外的岩壁傳來低沉回音。","一道通往深處的洞口出現在眼前。"]; tap="▼ 點擊靠近洞口"; }
+      else if (r.country.stage === "fail") { lines=who(x, "caveFail"); tap="▼ 點擊回到平地"; }
+      else if (r.country.stage === "warn") { lines=who(x, "unspent"); choices=[{c:"entrance:back",label:"回去分配"},{c:"entrance:enter",label:"就這樣進去",gold:true}]; }
+      else { lines=[x.directOk]; choices=[{c:"entrance:enter",label:"繼續深入",gold:true}]; }
+      page("c" + r.country.id + r.country.stage + r.country.q + r.nE);
+    } else if (r.itemOffer) {   // 3C：旅途道具（直接取得／兩個相同的木箱）。畫面、時間軸、文字全在下方「旅途道具」一節；這裡只取目前這一格
       itemSync(r);
       const p = itemParts(r); lines = p.lines; choices = p.choices; tap = ""; bigHtml = ""; subTxt = "";
     } else if (r.awaiting) {
@@ -468,6 +508,7 @@
   function doEnter() { ui.devSeen = false; const res = act(() => MH.enterCountry(SV(), H())); if (!res.ok && res.reason === "hungry") A.stopAuto(); return res; }
   function doPick(i) { ui.resSeen = false; return act(() => MH.pickCountry(SV(), H(), i)); }
   function doAfterCountry() { ui.flash = null; return act(() => MH.afterCountry(SV(), H())); }
+  function doEntrance(action) { ui.flash = null; return act(() => MH.advanceEntrance(SV(), H(), action)); }
   function doStrike(i) { return act(() => MH.strike(SV(), H(), i)); }
   function doIgnite() { return act(() => MH.ignite(SV(), H())); }
   function doAgain() { ui.doneSeen = false; ui.flash = null; return act(() => MH.again(SV(), H())); }
@@ -477,22 +518,26 @@
   function doItemDone(rid) { return act(() => MH.dismissItem(SV(), H(), rid)); }
 
   /* ---------- 本趟能力面板／行囊（3C 正式樣式；邏輯與 3B 相同：草稿不存、確認後再問一次、確認後不可退） ---------- */
-  const ANAME = { hunt: "獵手本能", dragon: "破鱗技巧", realm: "遠行意志" }, ADESC = { hunt: "更容易解決旅途上的一般怪物", dragon: "更容易突破駭骨巨龍", realm: "在天堂與地獄走得更遠" };
+  const ANAME = { hp:"血量", atk:"戰力", luck:"幸運", hunt: "獵手本能", dragon: "破鱗技巧", realm: "遠行意志" }, ADESC = { hp:"讓你更耐打，能撐過更多攻擊", atk:"讓長劍更有威力", luck:"更容易避開怪物的攻擊", hunt: "更容易解決旅途上的一般怪物", dragon: "更容易突破駭骨巨龍", realm: "在天堂與地獄走得更遠" };
   /* 行囊裡看得到的道具：旅途道具演出還沒收好之前（itemOffer 還在）不顯示，免得開箱前就從行囊圖示看出結果 */
   const heldId = r => (r.itemOffer ? null : MH.ITEM_IDS.find(id => r.items && r.items[id]) || null);
   function bagBlock(r) {
+    if (r.rv === 4) {
+      const got = Object.entries(r.routeItems || {}).filter(x => x[1] > 0);
+      return `<div class="ha-bag"><div class="ha-tx"><b>旅途行囊</b><br><span class="sub">${got.length ? got.map(([id,n]) => `${routeItemName(H(),id)} ×${n}`).join("、") : "目前是空的"}</span></div></div>`;
+    }
     const id = heldId(r), d = id && MH.itemDef(H(), id), x = T().item;
     if (!d) return `<div class="ha-bag"><div class="ha-tx"><b>${x.bagTitle}</b><br><span class="sub">${x.bagNone}</span></div></div>`;
     return `<div class="ha-bag"><img class="hi-ic" src="${IA.uri(id, 2, true, qualOf(d))}" alt=""><div class="ha-tx"><b>${x.bagTitle}｜${d.name}</b> <span class="q">${x.quality[d.quality]}</span><br><span class="sub">${d.text}</span></div></div>`;
   }
   function attrPanel(reset) {
     A.stopAuto();
-    if (reset) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = ""; }
+    if (reset) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = ""; }
     const r = RUN(), a = r.attr, safe = MH.attrSafe(r), x = T().item;
-    const used = MH.ATTRS.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
+    const keys = r.rv === 4 ? MH.ATTRS : MH.LEGACY_ATTRS, used = keys.reduce((n, k) => n + ui.attrDraft[k], 0), remain = a.free - used;
     const word = lv => (lv <= 0 ? "尚未投入" : lv <= 2 ? "稍微提升" : lv <= 5 ? "提升" : "明顯提升");   // 不顯示任何百分比
     let pips = ""; for (let i = 0; i < Math.min(a.free, 12); i++) pips += `<i class="${i < remain ? "" : "u"}"></i>`; if (a.free > 12) pips += '<span class="sub">…</span>';
-    const rows = MH.ATTRS.map(k => {
+    const rows = keys.map(k => {
       const active = MH.attrActive(r, k), d = ui.attrDraft[k], level = a[k] + d;
       const fxt = !active ? x.dead : d ? `${word(a[k])} → ${word(level)}` : word(a[k]);
       return `<div class="ha-row${active ? "" : " dead"}"><img class="ha-ic" src="${IA.uri(k, 2, false)}" alt=""><div class="ha-am"><b>${ANAME[k]}</b><span class="sub">${ADESC[k]}</span><span class="sub">已確認 ${num(a[k])}${d ? "　這次 +" + d : ""}</span><span class="ha-fx${active ? "" : " off"}">${fxt}</span></div><div class="hunt-attr-step"><button class="px-btn small" id="haMinus-${k}" ${d ? "" : "disabled"}>－</button><span>${d ? "+" + d : "0"}</span><button class="px-btn small" id="haPlus-${k}" ${safe && active && remain > 0 ? "" : "disabled"}>＋</button></div></div>`;
@@ -500,7 +545,7 @@
     modalNote(`<div class="ha"><div class="ha-title">本趟能力</div><div class="sub ha-sub">${x.panelSub}</div><div>可分配點數：<b class="ha-n">${num(Math.max(0, remain))}</b></div><div class="ha-pips">${pips}</div>${rows}${bagBlock(r)}${safe ? "" : `<div class="sub" style="margin-top:8px">${x.viewOnly}</div>`}${ui.attrNote ? `<div class="ha-note">${ui.attrNote}</div>` : ""}</div>`,
       [{ id: "haCommit", label: "確認投入", gold: true }, { id: "haClose", label: "關閉" }]);
     $("haCommit").disabled = used <= 0 || used > a.free || !safe;
-    MH.ATTRS.forEach(k => {
+    keys.forEach(k => {
       $("haMinus-" + k).onclick = () => { ui.attrDraft[k] = Math.max(0, ui.attrDraft[k] - 1); attrPanel(false); };
       $("haPlus-" + k).onclick = () => { ui.attrDraft[k]++; ui.attrNote = ""; attrPanel(false); };
     });
@@ -509,7 +554,7 @@
       const draft = Object.assign({}, ui.attrDraft);
       modalNote(`<div class="ha"><div class="ha-ask">投入後，這一趟不能重新分配。</div><div class="sub" style="margin:10px 0 4px">要確認投入這些能力點嗎？</div></div>`, [{ id: "haYes", label: "確認投入", gold: true }, { id: "haNo", label: "返回" }]);
       $("haNo").onclick = () => attrPanel(false);
-      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = x.panelDone; attrPanel(false); } else if (!res.failed) attrPanel(false); };   // 成功後面板留著顯示「已投入」，－全灰、不能退回
+      $("haYes").onclick = () => { const res = act(() => MH.allocate(SV(), H(), draft)); if (res.ok) { ui.attrDraft = { hp:0, atk:0, luck:0, hunt: 0, dragon: 0, realm: 0 }; ui.attrNote = x.panelDone; attrPanel(false); } else if (!res.failed) attrPanel(false); };   // 成功後面板留著顯示「已投入」，－全灰、不能退回
     };
   }
   function bagPanel() {
@@ -522,10 +567,12 @@
   function tap() {
     const sv = SV(), r = RUN();
     if (r.anim || FX.playing() || ui.stage) return;
+    if (ui.pgMore) { ui.pg.i++; render(); return; }
+    if (r.rv === 4 && r.event) { doEntrance("next"); return; }
     if (r.itemOffer || r.awaiting) return;
     if (r.phase === "walk") { if (A.dayBlocked()) return; if (MH.halted(sv, H())) { A.toast(T().hungry[0], 1600); return; } doStep(); }
-    else if (r.phase === "dev") { if (MH.halted(sv, H())) { A.toast(T().goInHungry, 1600); return; } doEnter(); }
-    else if (r.phase === "country") { if (r.country.pick !== null) doAfterCountry(); }
+    else if (r.phase === "dev") { if (r.rv !== 4) { if (MH.halted(sv, H())) { A.toast(T().goInHungry, 1600); return; } doEnter(); } }
+    else if (r.phase === "country") { if (r.rv === 4) { if (r.country.stage === "intro") doEnter(); else if (["arrive","result","farewell","chest","cave","fail"].includes(r.country.stage)) doAfterCountry(); } else if (r.country.pick !== null) doAfterCountry(); }
     else if (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") { if (r.mon && r.mon.pres === 0) doStrike(0); }
     else if (r.phase === "ember") doIgnite();
     else if (r.phase === "done") doAgain();
@@ -540,6 +587,7 @@
     else if (k === "item") doItem(v, +x);
     else if (k === "itemdone") doItemDone(+v);
     else if (k === "cpick") doPick(+v);
+    else if (k === "entrance") doEntrance(v);
     else if (k === "strike") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doStrike(+v); }
     else if (k === "ignite") { const r = RUN(); if (!r.anim && !FX.playing() && !ui.stage) doIgnite(); }
     else if (k === "fx") setFxPref(v);
@@ -547,11 +595,28 @@
   }
 
   /* ---------- 自動模式（規格 2.7）：演出播完才繼續；二選一／三選一、國度解題、停住時不代按 ---------- */
+  /* 新流程入口的自動：要玩家決定的（哥布林、直洞要不要進、作廢提醒、答題）就停下來等；其他看完一下就自動往下 */
+  function autoEntrance(r) {
+    if (ui.pgMore) { if (!ui.resSeen) { ui.resSeen = true; return { wait: 1600 }; } ui.resSeen = false; ui.pg.i++; render(); return { wait: 400 }; }
+    const wait = res => { if (!ui.resSeen) { ui.resSeen = true; return { wait: 1200 }; } ui.resSeen = false; res(); return { wait: 400 }; };
+    if (r.event) return r.event.goblin ? { wait: 400 } : wait(() => doEntrance("next"));
+    if (r.phase === "dev") {
+      if (r.dev.stage === "fail") return wait(() => doEntrance("next"));
+      if (r.dev.stage === "enter") return wait(() => doEntrance("enter"));
+      return { wait: 400 };
+    }
+    const st = r.country.stage;
+    if (st === "intro") return wait(() => { const res = doEnter(); if (!res.ok && res.reason === "hungry") A.stopAuto(); });
+    if (["arrive", "result", "farewell", "chest", "cave", "fail"].includes(st)) return wait(doAfterCountry);
+    if (st === "enter") return wait(() => doEntrance("enter"));
+    return { wait: 400 };   // task／goblin／warn：等玩家
+  }
   function auto() {
     const sv = SV(), h = H(), r = RUN();
     if (FX.playing() || r.anim || ui.stage) return { wait: 300 };
     if (A.modalOpen()) return { wait: 400 };
     if (MH.halted(sv, h)) { A.toast("體力用完了，餵鎬子才能繼續走", 2400); return { stop: true }; }
+    if (r.rv === 4 && (r.event || r.phase === "dev" || r.phase === "country")) return autoEntrance(r);
     if (r.itemOffer) return { wait: 400 };   // 道具二選一／空箱由玩家決定；直接取得也等玩家看完
     if (r.awaiting) { doContinue(); return { wait: 400 }; }   // 取得能力點不強制停自動，未投入點數保留
     if (r.phase === "walk") { if (A.dayBlocked()) return { stop: true }; doStep(); return { wait: A.autoWait() }; }

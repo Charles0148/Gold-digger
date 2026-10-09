@@ -33,7 +33,8 @@
   const isObj = o => o && typeof o === "object" && !Array.isArray(o);
   const PHASES = ["walk", "dev", "country", "hunt", "dragon", "realm", "ember", "done"];
   const KINDS = ["heaven", "hell"];
-  const ATTRS = ["hunt", "dragon", "realm"];
+  const LEGACY_ATTRS = ["hunt", "dragon", "realm"];
+  const ATTRS = ["hp", "atk", "luck"];
   const ITEM_IDS = ["whetstone", "scale-wedge", "guide-bell", "twin-hunt", "twin-realm", "star-ember"];
   const GOLD_MAX = 1e9;
 
@@ -52,6 +53,7 @@
   const drawI = run => mix(run.seedI, run.nI++);     // 第三階段道具專用；絕不碰勝負流
   const drawFx = run => mix(run.seedFx, run.nFx++);  // 終結技／蓄力／假復活；絕不碰勝負流
   const drawRev = run => mix(run.seedRev, run.nRev++); // 真復活；絕不碰勝負流
+  const drawE = run => mix(run.seedE, run.nE++);       // 新流程入口專用；不碰既有勝負／演出流
   const newSeed = rng => Math.floor((rng || Math.random)() * 4294967296) >>> 0;
   const FINISHER_POOLS = [["pierce-rise", "meteor-pierce", "sky-rend"], ["gale-seven", "twin-moon-cross", "horizon-break"], ["moonwheel-fall", "mountain-one"]];
   const FINISHER_IDS = [].concat(...FINISHER_POOLS);
@@ -60,15 +62,17 @@
   function newRun(rng) {
     return { phase: "walk", seed: newSeed(rng), n: 0, seedP: newSeed(rng), nP: 0, since: 0, dev: null, country: null,
       kills: 0, gold: 0, mon: null, anim: null, after: null, rid: 0, last: null, realm: null, ember: null, seedB: newSeed(rng), nB: 0, hp: 100,
-      rv: 3, seedI: newSeed(rng), nI: 0, seedFx: newSeed(rng), nFx: 0, seedRev: newSeed(rng), nRev: 0,
-      attr: { free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 }, items: {}, itemOffer: null, awaiting: null, pendingEntry: null };
+      rv: 4, seedI: newSeed(rng), nI: 0, seedFx: newSeed(rng), nFx: 0, seedRev: newSeed(rng), nRev: 0, seedE: newSeed(rng), nE: 0,
+      attr: attr0(), items: {}, itemOffer: null, awaiting: null, pendingEntry: null,
+      segmentSteps: 0, setting: 1, countryCount: 0, totalSuccess: 0, visited: [], answers: {}, lastCountry: null, entry: null,
+      routeItems: {}, event: null, warnedUnspent: false };
   }
   const mineId = H => (H.mine || {}).id || "m7";
 
-  const attr0 = () => ({ free: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 });
+  const attr0 = () => ({ free: 0, hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0, earned: 0 });
   const itemMap = r => { const all = (r && r.items) || {}; for (const id of ITEM_IDS) if (all[id]) return id; return null; };
   function fixStage3(r, H) {
-    r.rv = r.rv === 3 ? 3 : 2;   // 頂層 save.v 仍為 1；缺版號＝第二階段舊行程
+    r.rv = r.rv === 4 ? 4 : r.rv === 3 ? 3 : 2;   // 頂層 save.v 仍為 1；舊行程照原版本跑完
     r.seedI = Number.isFinite(r.seedI) ? r.seedI >>> 0 : (mix(r.seed, 0x1A73C9E5) * 4294967296) >>> 0;
     r.nI = int(r.nI === undefined ? 0 : r.nI, 0, 1e9);
     r.seedFx = Number.isFinite(r.seedFx) ? r.seedFx >>> 0 : (mix(r.seedP, 0x46A17C2D) * 4294967296) >>> 0;
@@ -76,8 +80,9 @@
     r.seedRev = Number.isFinite(r.seedRev) ? r.seedRev >>> 0 : (mix(r.seed, 0x6B4F91E3) * 4294967296) >>> 0;
     r.nRev = int(r.nRev === undefined ? 0 : r.nRev, 0, 1e9);
     const a = isObj(r.attr) ? r.attr : attr0();
-    for (const k of ["free", "hunt", "dragon", "realm", "earned"]) a[k] = int(a[k], 0, Number.MAX_SAFE_INTEGER);
+    for (const k of ["free", "hp", "atk", "luck", "hunt", "dragon", "realm", "earned"]) a[k] = int(a[k], 0, Number.MAX_SAFE_INTEGER);
     r.attr = a;
+    if (r.rv === 4) fixEntrance(r, H);
     const src = isObj(r.items) ? r.items : {}, got = {};
     let kept = false;
     for (const id of ITEM_IDS) { got[id] = !kept && src[id] === 1 ? 1 : 0; if (got[id]) kept = true; }
@@ -102,6 +107,24 @@
             ((choice || empty) && o.stage === "offer" && o.chosen !== null)) r.itemOffer = null;
       }
     } else r.itemOffer = null;
+  }
+
+  function fixEntrance(r, H) {
+    r.seedE = Number.isFinite(r.seedE) ? r.seedE >>> 0 : (mix(r.seed, 0x4E545259) * 4294967296) >>> 0;
+    r.nE = int(r.nE, 0, 1e9); r.segmentSteps = int(r.segmentSteps, 0, 20); r.setting = int(r.setting || 1, 1, 6); r.countryCount = int(r.countryCount, 0, 1e6);
+    r.totalSuccess = int(r.totalSuccess, 0, 1e9); r.warnedUnspent = r.warnedUnspent === true;
+    const ids = (H.countries || []).map(x => x.id);
+    r.visited = Array.isArray(r.visited) ? [...new Set(r.visited.filter(x => ids.includes(x)))].slice(0, ids.length) : [];
+    r.answers = isObj(r.answers) ? r.answers : {};
+    for (const id of Object.keys(r.answers)) {
+      if (!ids.includes(id) || !Array.isArray(r.answers[id])) delete r.answers[id];
+      else r.answers[id] = r.answers[id].filter(x => isObj(x) && int(x.q, 0, 99) === x.q && int(x.pick, 0, 2) === x.pick && int(x.answer, 0, 2) === x.answer && typeof x.ok === "boolean").slice(0, 99);
+    }
+    r.lastCountry = ids.includes(r.lastCountry) ? r.lastCountry : null;
+    r.entry = r.entry === "direct" || r.entry === "country" ? r.entry : null;
+    const supplies = ((H.entrance || {}).items || []).map(x => x.id), src = isObj(r.routeItems) ? r.routeItems : {};
+    r.routeItems = Object.fromEntries(supplies.map(id => [id, int(src[id], 0, 1e6)]));
+    if (r.event !== null && r.event !== undefined && !isObj(r.event)) r.event = null;
   }
 
   function tierRoll(win, u, H) {
@@ -182,12 +205,25 @@
     if (r.phase !== "ember") r.ember = null;
     if (r.phase === "hunt" && r.kills > cnt) return false;
     if (r.phase === "dragon" && r.kills > cnt + 1) return false;
-    if (r.phase === "dev" || r.phase === "country") {
-      if (!isObj(r.country) || typeof r.country.ok !== "boolean" || !pick(r.country.pick === undefined ? null : r.country.pick)) return false;
-      if (r.country.pick === undefined) r.country.pick = null;
+    if (r.rv === 4) {
+      if (r.phase === "dev" && !(isObj(r.dev) && r.dev.kind === "direct" && typeof r.dev.ok === "boolean" && ["offer", "warn", "enter", "fail"].includes(r.dev.stage))) return false;
+      if (r.phase === "country") {
+        const c = (H.countries || []).find(x => x.id === (r.country || {}).id), stages = ["intro", "arrive", "task", "result", "farewell", "chest", "goblin", "cave", "warn", "enter", "fail"];
+        if (!c || !stages.includes(r.country.stage)) return false;
+        r.country.q = int(r.country.q, 0, c.tasks.length - 1); r.country.successes = int(r.country.successes, 0, c.tasks.length);
+        r.country.pick = pick(r.country.pick === undefined ? null : r.country.pick) ? r.country.pick : null;
+        r.country.answer = pick(r.country.answer === undefined ? null : r.country.answer) ? r.country.answer : null;
+        r.country.ok = typeof r.country.ok === "boolean" ? r.country.ok : null;
+        if (r.country.stage === "result" && (r.country.pick === null || r.country.answer === null || r.country.ok === null)) return false;
+      }
+    } else {
+      if (r.phase === "dev" || r.phase === "country") {
+        if (!isObj(r.country) || typeof r.country.ok !== "boolean" || !pick(r.country.pick === undefined ? null : r.country.pick)) return false;
+        if (r.country.pick === undefined) r.country.pick = null;
+      }
+      if (r.phase === "dev") { if (!isObj(r.dev) || (r.dev.kind !== "cave" && r.dev.kind !== "map")) return false; }
+      if (r.phase === "country" && r.dev !== null && !(isObj(r.dev) && (r.dev.kind === "cave" || r.dev.kind === "map"))) return false;
     }
-    if (r.phase === "dev") { if (!isObj(r.dev) || (r.dev.kind !== "cave" && r.dev.kind !== "map")) return false; }
-    if (r.phase === "country" && r.dev !== null && !(isObj(r.dev) && (r.dev.kind === "cave" || r.dev.kind === "map"))) return false;
     const hasMon = r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm";
     if (hasMon) {
       if (r.mon !== null) {
@@ -258,8 +294,10 @@
   /* 下一個要付的體力（0＝現在不需要付）。停住＝體力 < need。 */
   function need(sv, H) {
     const r = peek(sv, H); if (!r) return 0;
-    if (r.awaiting) return 0;
+    if (r.awaiting || (r.rv === 4 && r.event)) return 0;
     const S = H.stamina;
+    if (r.rv === 4 && r.phase === "dev") return 0;   // 新流程直洞：進不進洞都不另扣體力
+    if (r.rv === 4 && r.phase === "country") return r.country && r.country.stage === "intro" ? S.countryCost : 0;
     if (r.phase === "walk") return S.perStep;
     if (r.phase === "dev") return S.countryCost;
     if ((r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !r.mon && !r.anim) return S.perStep;
@@ -277,11 +315,60 @@
   }
 
   /* ---- 旅途：走一步 ---- */
+  function entranceCfg(H) { return H.entrance || {}; }
+  function countryDef(H, id) { return (H.countries || []).find(x => x.id === id) || null; }
+  function countryRate(H, id, setting, successes) { const c = countryDef(H, id), E = entranceCfg(H); return !c || successes <= 0 ? 0 : Math.min(1, successes * c.per + E.settingAdd[int(setting, 1, 6) - 1]); }
+  function addPoint(r, n) { n = int(n, 0, 2); r.attr.free += n; r.attr.earned += n; return { kind: "point", n }; }
+  function addRouteItem(r, H) {
+    const rows = entranceCfg(H).items || [], total = rows.reduce((n, x) => n + x.weight, 0), x = drawE(r) * total;
+    let sum = 0, got = rows[rows.length - 1]; for (const row of rows) { sum += row.weight; if (x < sum) { got = row; break; } }
+    if (!got) return { kind: "empty" }; r.routeItems[got.id] = int((r.routeItems[got.id] || 0) + 1, 0, 1e6); return { kind: "item", id: got.id };
+  }
+  function goblinGift(r, H) {
+    const E = entranceCfg(H), G = E.reward.goblin;
+    if (drawE(r) < G.item) return addRouteItem(r, H);
+    return addPoint(r, drawE(r) < G.onePoint ? 1 : 2);
+  }
+  function chestGift(r, H, rich) {
+    const C = rich ? entranceCfg(H).reward.countryChest : entranceCfg(H).reward.routeChest, u = drawE(r);
+    if (u < C.item) return addRouteItem(r, H);
+    if (u < C.item + C.point) return addPoint(r, 1);
+    return { kind: "empty" };
+  }
+  function routeNext(r, H) {
+    const E = entranceCfg(H), reached = r.segmentSteps >= E.route.maxSteps || drawE(r) < E.route.progress;
+    if (!reached) return null;
+    r.segmentSteps = 0;
+    if (drawE(r) < E.route.directCave) return { kind: "direct", ok: drawE(r) < E.route.directSuccess };
+    const countries = H.countries || [], c = countries[Math.min(countries.length - 1, Math.floor(drawE(r) * countries.length))];
+    return { kind: "country", id: c.id };
+  }
+  function applyRouteNext(r, next) {
+    if (!next) return;
+    if (next.kind === "direct") { r.phase = "dev"; r.dev = { kind: "direct", ok: next.ok, stage: "offer" }; r.country = null; }
+    else { r.phase = "country"; r.dev = null; r.country = { id: next.id, stage: "intro", q: 0, pick: null, answer: null, ok: null, successes: 0, chest: null, gift: null, enterOk: null, guaranteed: false }; }
+  }
+  function beginHunt(r) {
+    r.attr.free = 0; r.phase = "hunt"; r.kills = 0; r.mon = null; r.anim = null; r.after = null; r.event = null; r.dev = null; r.country = null;
+    return { ok: true, ev: "hunt" };
+  }
+  function newStep(sv, H, setting) {
+    const r = peek(sv, H), M = sv.huntMeta, E = entranceCfg(H);
+    if (r.event) return { ok: false, reason: "event" };
+    if (M.stamina < H.stamina.perStep) return { ok: false, reason: "hungry", need: H.stamina.perStep - M.stamina };
+    M.stamina -= H.stamina.perStep; r.setting = setting; r.segmentSteps++;
+    const rewards = [], goblin = drawE(r) < E.route.goblinPerStep, chest = drawE(r) < E.route.chestPerStep;
+    if (goblin) rewards.push(goblinGift(r, H)); if (chest) rewards.push(chestGift(r, H, false));
+    const next = routeNext(r, H);
+    if (goblin || chest) { r.event = { kind: "route", goblin, chest, rewards, next }; return { ok: true, ev: "event" }; }
+    applyRouteNext(r, next); return { ok: true, ev: next ? next.kind : "walk" };
+  }
   function step(sv, H, ctx) {
     const r = peek(sv, H), M = sv.huntMeta;
     if (!r || r.phase !== "walk") return { ok: false, reason: "state" };
     const setting = ctx && ctx.setting;
     if (!(setting >= 1 && setting <= H.settings.length)) return { ok: false, reason: "nosetting" };   // 日期未知：不能走新的一步
+    if (r.rv === 4) return newStep(sv, H, setting);
     if (M.stamina < H.stamina.perStep) return { ok: false, reason: "hungry", need: H.stamina.perStep - M.stamina };
     M.stamina -= H.stamina.perStep;
     r.since++;
@@ -299,7 +386,14 @@
   /* ---- 發展 → 國度（進入時扣 2） ---- */
   function enterCountry(sv, H) {
     const r = peek(sv, H), M = sv.huntMeta;
-    if (!r || r.phase !== "dev") return { ok: false, reason: "state" };
+    if (!r) return { ok: false, reason: "state" };
+    if (r.rv === 4) {
+      if (r.phase !== "country" || !r.country || r.country.stage !== "intro") return { ok: false, reason: "state" };
+      if (M.stamina < H.stamina.countryCost) return { ok: false, reason: "hungry", need: H.stamina.countryCost - M.stamina };
+      M.stamina -= H.stamina.countryCost; r.countryCount++; if (!r.visited.includes(r.country.id)) r.visited.push(r.country.id);
+      r.country.stage = "arrive"; sv.huntMeta.visits = int(sv.huntMeta.visits + 1, 0, 1e9); return { ok: true };
+    }
+    if (r.phase !== "dev") return { ok: false, reason: "state" };
     if (r.itemOffer) return { ok: false, reason: "item" };
     if (M.stamina < H.stamina.countryCost) return { ok: false, reason: "hungry", need: H.stamina.countryCost - M.stamina };
     M.stamina -= H.stamina.countryCost;
@@ -311,6 +405,14 @@
     const r = peek(sv, H);
     if (!r || r.phase !== "country" || r.country.pick !== null) return { ok: false, reason: "state" };
     if (!(Number.isInteger(idx) && idx >= 0 && idx <= 2)) return { ok: false, reason: "arg" };
+    if (r.rv === 4) {
+      if (r.country.stage !== "task") return { ok: false, reason: "state" };
+      const ok = drawE(r) < 1 / 3, answer = ok ? idx : [0, 1, 2].filter(x => x !== idx)[Math.floor(drawE(r) * 2)];
+      r.country.pick = idx; r.country.answer = answer; r.country.ok = ok; r.country.stage = "result";
+      const rec = { q: r.country.q, pick: idx, answer, ok }; (r.answers[r.country.id] || (r.answers[r.country.id] = [])).push(rec);
+      if (ok) { r.country.successes++; r.totalSuccess++; rec.reward = drawE(r) < entranceCfg(H).reward.success.point ? addPoint(r, 1) : addRouteItem(r, H); }
+      return { ok: true, success: ok, reward: rec.reward || null };
+    }
     r.country.pick = idx;
     sv.huntMeta.visits = int(sv.huntMeta.visits + 1, 0, 1e9);
     return { ok: true, success: r.country.ok };
@@ -318,7 +420,9 @@
   /* 國度結果看完 → 成功進狩獵（自動付第一隻怪的體力）；失敗空手凱旋 */
   function afterCountry(sv, H) {
     const r = peek(sv, H);
-    if (!r || r.phase !== "country" || r.country.pick === null) return { ok: false, reason: "state" };
+    if (!r || r.phase !== "country") return { ok: false, reason: "state" };
+    if (r.rv === 4) return advanceEntrance(sv, H, "next");
+    if (r.country.pick === null) return { ok: false, reason: "state" };
     if (!r.country.ok) { settle(sv, H, "empty"); return { ok: true, ev: "done" }; }
     r.phase = "hunt"; r.kills = 0; r.mon = null; r.dev = null; r.country = null;
     return spawn(sv, H);
@@ -383,10 +487,15 @@
   /* ---- 第三階段：能力與旅途道具。舊行程 rv=2 沿用第二階段門檻，確保存檔重放結果不變。 ---- */
   function itemDef(H, id) { return (H.items || []).find(x => x.id === id) || null; }
   function chance(r, H, kind) {
-    if (!r || r.rv !== 3) {
+    if (!r || r.rv < 3) {
       if (kind === "hunt") return 0.92;
       if (kind === "dragon") return 0.80;
       return kind === "heaven" ? 0.854 : 0.92;
+    }
+    if (r.rv === 4) {
+      const base = kind === "hunt" ? H.lower.win : kind === "dragon" ? H.dragon.win : H.realm[kind].cont;
+      const s = r.attr || {}, bonus = (s.atk || 0) * .014 + (s.luck || 0) * .012 + (s.hp || 0) * .006;
+      return Math.min(kind === "dragon" ? .94 : .975, base + bonus);
     }
     const key = kind === "heaven" || kind === "hell" ? "realm" : kind;
     const base = key === "hunt" ? H.lower.win : key === "dragon" ? H.dragon.win : H.realm[kind].cont;
@@ -395,7 +504,7 @@
     return Math.min(cfg.cap - Number.EPSILON, cfg.cap - (cfg.cap - start) * Math.pow(1 - cfg.decay, n));
   }
   function goldOf(r, H, kind) {
-    if (r && r.rv !== 3) return kind === "hunt" ? 11 : kind === "dragon" ? 90 : kind === "heaven" ? 34 : 68;
+    if (r && r.rv < 3) return kind === "hunt" ? 11 : kind === "dragon" ? 90 : kind === "heaven" ? 34 : 68;
     return kind === "hunt" ? H.lower.gold : kind === "dragon" ? H.dragon.gold : H.realm[kind].gold;
   }
   function drawItem(r, H) {
@@ -448,19 +557,21 @@
     r.attr.earned = int(r.attr.earned + n, 0, Number.MAX_SAFE_INTEGER);
     return n;
   }
-  function attrSafe(r) { return !!r && !r.anim && !r.mon && (["walk", "dev", "country", "ember"].includes(r.phase) || !!r.awaiting); }
+  function attrSafe(r) { return !!r && !r.anim && !r.mon && (r.rv === 4 ? !!(r.event && r.event.goblin) || (r.phase === "country" && r.country && r.country.stage === "goblin") : (["walk", "dev", "country", "ember"].includes(r.phase) || !!r.awaiting)); }
   function attrActive(r, key) {
+    if (r.rv === 4) return ATTRS.includes(key) && r.phase !== "done";
     if (key === "hunt") return r.phase === "walk" || r.phase === "dev" || r.phase === "country" || r.phase === "hunt";
     if (key === "dragon") return r.phase === "walk" || r.phase === "dev" || r.phase === "country" || r.phase === "hunt" || r.phase === "dragon";
     return r.phase !== "done";
   }
   function allocate(sv, H, draft) {
     const r = peek(sv, H);
-    if (!r || r.rv !== 3 || !attrSafe(r) || !isObj(draft)) return { ok: false, reason: "state" };
+    if (!r || r.rv < 3 || !attrSafe(r) || !isObj(draft)) return { ok: false, reason: "state" };
+    const keys = r.rv === 4 ? ATTRS : LEGACY_ATTRS;
     const d = {}; let total = 0;
-    for (const k of ATTRS) { d[k] = int(draft[k], 0, Number.MAX_SAFE_INTEGER); if (d[k] && !attrActive(r, k)) return { ok: false, reason: "inactive" }; total += d[k]; }
+    for (const k of keys) { d[k] = int(draft[k], 0, Number.MAX_SAFE_INTEGER); if (d[k] && !attrActive(r, k)) return { ok: false, reason: "inactive" }; total += d[k]; }
     if (!Number.isSafeInteger(total) || total <= 0 || total > r.attr.free) return { ok: false, reason: "points" };
-    for (const k of ATTRS) r.attr[k] = int(r.attr[k] + d[k], 0, Number.MAX_SAFE_INTEGER);
+    for (const k of keys) r.attr[k] = int(r.attr[k] + d[k], 0, Number.MAX_SAFE_INTEGER);
     r.attr.free -= total;
     return { ok: true, spent: total };
   }
@@ -618,6 +729,52 @@
     return spawn(sv, H);
   }
 
+  function advanceEntrance(sv, H, action) {
+    const r = peek(sv, H); if (!r || r.rv !== 4) return { ok: false, reason: "state" };
+    if (r.event) { if (action !== "next") return { ok: false, reason: "state" }; const next = r.event.next; r.event = null; applyRouteNext(r, next); return { ok: true, ev: next ? next.kind : "walk" }; }
+    if (r.phase === "dev") {
+      if (r.dev.stage === "offer") {
+        if (action === "stay") { r.phase = "walk"; r.dev = null; return { ok: true, ev: "walk" }; }
+        if (action !== "enter") return { ok: false, reason: "state" };
+        if (!r.dev.ok) { r.dev.stage = "fail"; return { ok: true, ev: "fail" }; }
+        r.entry = "direct"; r.lastCountry = null;
+        if (r.attr.free > 0 && !r.warnedUnspent) { r.warnedUnspent = true; r.dev.stage = "warn"; return { ok: true, ev: "warn" }; }
+        r.dev.stage = "enter"; return { ok: true, ev: "enter" };
+      }
+      if (r.dev.stage === "fail" && action === "next") { r.phase = "walk"; r.dev = null; return { ok: true, ev: "walk" }; }
+      if (r.dev.stage === "warn" && action === "back") { r.phase = "walk"; r.dev = null; return { ok: true, ev: "walk" }; }
+      if ((r.dev.stage === "warn" || r.dev.stage === "enter") && action === "enter") return beginHunt(r);
+      return { ok: false, reason: "state" };
+    }
+    if (r.phase !== "country" || !r.country) return { ok: false, reason: "state" };
+    const c = r.country, def = countryDef(H, c.id), E = entranceCfg(H);
+    if (c.stage === "arrive" && action === "next") { c.stage = "task"; return { ok: true, ev: "task" }; }
+    if (c.stage === "result" && action === "next") {
+      c.q++; c.pick = c.answer = c.ok = null; c.stage = c.q < def.tasks.length ? "task" : "farewell"; return { ok: true, ev: c.stage };
+    }
+    if (c.stage === "farewell" && action === "next") {
+      c.chest = drawE(r) < E.reward.countryChest.rate ? chestGift(r, H, true) : null;
+      if (c.chest) { c.stage = "chest"; return { ok: true, ev: "chest" }; }
+      c.gift = goblinGift(r, H); c.stage = "goblin"; return { ok: true, ev: "goblin" };   // 沒有寶箱就直接遇到哥布林
+    }
+    if (c.stage === "chest" && action === "next") { c.gift = goblinGift(r, H); c.stage = "goblin"; return { ok: true, ev: "goblin" }; }
+    if (c.stage === "goblin" && action === "next") {
+      if (c.enterOk === true) { c.stage = "enter"; return { ok: true, ev: "enter" }; }
+      const rate = countryRate(H, c.id, r.setting, c.successes);
+      c.guaranteed = r.countryCount >= 5; c.enterOk = c.guaranteed || drawE(r) < rate; c.stage = "cave"; return { ok: true, ev: "cave" };
+    }
+    if (c.stage === "cave" && action === "next") {
+      if (!c.enterOk) { c.stage = "fail"; return { ok: true, ev: "fail" }; }
+      r.entry = "country"; r.lastCountry = c.id;
+      if (r.attr.free > 0 && !r.warnedUnspent) { r.warnedUnspent = true; c.stage = "warn"; return { ok: true, ev: "warn" }; }
+      c.stage = "enter"; return { ok: true, ev: "enter" };
+    }
+    if (c.stage === "fail" && action === "next") { r.phase = "walk"; r.country = null; return { ok: true, ev: "walk" }; }
+    if (c.stage === "warn" && action === "back") { c.stage = "goblin"; return { ok: true, ev: "goblin" }; }
+    if ((c.stage === "warn" || c.stage === "enter") && action === "enter") return beginHunt(r);
+    return { ok: false, reason: "state" };
+  }
+
   /* ---- 凱旋：本輪金幣一次入帳（原子：coins 增加、金幣歸零、進 done 同一次完成）---- */
   function settle(sv, H, why) {
     const r = peek(sv, H);
@@ -723,7 +880,7 @@
     return r;
   }
 
-  const api = { PHASES, ATTRS, ITEM_IDS, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry,
+  const api = { PHASES, ATTRS, LEGACY_ATTRS, ITEM_IDS, mix, newMeta, newRun, fix, validRun, run, peek, stamina, need, halted, busy, gift, step, enterCountry, pickCountry, afterCountry, advanceEntrance, countryRate,
     chance, goldOf, itemDef, makeItemOffer, pickItem, dismissItem, attrSafe, attrActive, allocate, continueRun,
     spawn, strike, releaseCharge, pendingDefeat, continueDefeat, ignite, finishAnim, makeScript, scOk, hpAt, settle, again, leave, inProgress, feedExact, feedable, feedPreview, canFeed, feed, devSet,
     FINISHER_POOLS };
