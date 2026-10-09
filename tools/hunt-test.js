@@ -616,5 +616,42 @@ console.log("=== 18. 新流程第 1 階段：七國、直洞、保底、能力�
   console.log("  新入口統計｜"+rows.map((x,i)=>`${i+1}:${(x.direct*100).toFixed(2)}%/${x.countries.toFixed(2)}/${(x.guarantee*100).toFixed(2)}%`).join("｜"));
 }
 
+console.log("=== 19. 新流程第 2 階段：AT 找怪、戰前道具、血量、巨龍階梯（真實狀態機對照 hunt7） ===");
+{
+  const cyc = (sv) => { const r = R(sv); const ks = ["hp", "atk", "luck"]; while (r.attr.free > 0) { const k = ks[(r.attr.hp + r.attr.atk + r.attr.luck) % 3]; MH.allocate(sv, H, { [k]: 1 }); } };
+  const toAT = (sv, setting) => { let g = 0; while (R(sv).phase !== "hunt" && g++ < 5000) { const r = R(sv);
+      if (r.event) { if (r.event.goblin) cyc(sv); MH.advanceEntrance(sv, H, "next"); continue; }
+      if (r.phase === "walk") { MH.step(sv, H, { setting }); continue; }
+      if (r.phase === "dev") { MH.advanceEntrance(sv, H, r.dev.stage === "fail" ? "next" : "enter"); continue; }
+      const c = r.country; if (c.stage === "intro") MH.enterCountry(sv, H); else if (c.stage === "task") MH.pickCountry(sv, H, 0);
+      else if (c.stage === "goblin") { cyc(sv); MH.advanceEntrance(sv, H, "next"); } else if (c.stage === "warn" || c.stage === "enter") MH.advanceEntrance(sv, H, "enter"); else MH.advanceEntrance(sv, H, "next"); } };
+  const prep = (sv) => { const r = R(sv), m = r.mon, ratio = () => r.hp / r.maxHp, has = id => (r.routeItems[id] || 0) > 0;
+    if (ratio() < .58 && has("salve")) MH.useRouteItem(sv, H, "salve");
+    if (ratio() < .32 && has("dew")) MH.useRouteItem(sv, H, "dew");
+    if ((m.type === "brutal" || m.type === "dragon") && has("net")) MH.useRouteItem(sv, H, "net");
+    else if (m.type === "tank" && has("whet")) MH.useRouteItem(sv, H, "whet");
+    else if (has("charm") && ratio() < .72) MH.useRouteItem(sv, H, "charm"); };
+  const playAT = (sv) => { let g = 0, dragon = false; while (g++ < 20000) { const r = R(sv);
+      if (r.phase === "dragon") dragon = true;
+      if (r.phase === "realm" || r.phase === "done") return { dragon, realm: r.phase === "realm", kills: r.kills, gold: r.gold };
+      if (r.story) { MH.atStory(sv, H); continue; }
+      if (!r.mon) { const z = MH.atStep(sv, H); if (!z.ok) throw new Error("atStep " + z.reason); continue; }
+      if (r.mon.prep) { prep(sv); MH.fight(sv, H); continue; }
+      const z = MH.strike(sv, H, 0); if (!z.ok) throw new Error("strike " + z.reason); MH.finishAnim(sv, H, R(sv).anim.rid); }
+    throw new Error("AT guard"); };
+  { const sv = fresh4(5000), r = R(sv); toAT(sv, 3); ok(r.story && r.story.kind === "open" && r.maxHp === 100 + r.attr.hp * 7 + (r.companion ? 8 : 0) && r.hp === r.maxHp, "進 AT：先演受傷小精靈，最大血量＝100＋血量點×7（＋同伴 8）");
+    ok(r.companion === (r.totalSuccess >= 5), `累積成功 ${r.totalSuccess} 題 → 同伴 ${r.companion}`);
+    MH.atStory(sv, H); let steps = 0; while (!R(sv).mon) { MH.atStep(sv, H); steps++; } ok(R(sv).mon.prep && typeof R(sv).mon.win === "undefined" && steps <= 26, `第 ${steps} 步遇怪；遇怪時還沒抽勝負`);
+    const snap = J(sv); MH.fix(snap, H); ok(R(snap).mon.prep === true && R(snap).mon.type === R(sv).mon.type, "戰前準備中重整：怪物種類保留、仍未抽勝負");
+    r.routeItems.charm = 1; r.routeItems.net = 1; const p0 = MH.winChance(r, H); MH.useRouteItem(sv, H, "charm"); const p1 = MH.winChance(r, H);
+    ok(Math.abs(p1 - Math.min(.975, p0 + .075)) < 1e-9, "星運符：本場勝率 +7.5 點（不超過上限）"); ok(MH.useRouteItem(sv, H, "net").reason === "once" && r.routeItems.net === 1, "加成道具一場只能用一個，沒用掉不扣");
+    MH.fight(sv, H); ok(R(sv).mon.prep === false && typeof R(sv).mon.win === "boolean" && MH.useRouteItem(sv, H, "net").reason === "state", "按開始戰鬥後勝負抽定，不能再用道具"); }
+  ok(MH.hpPenalty(1) === 0 && Math.abs(MH.hpPenalty(.5) - .06) < 1e-12 && Math.abs(MH.hpPenalty(.25) - .18) < 1e-12 && Math.abs(MH.hpPenalty(0) - .38) < 1e-12, "血量懲罰曲線 0／6／18／38 點");
+  const N = 20000; let dr = 0, rl = 0, comp = 0;
+  for (let i = 0; i < N; i++) { const sv = fresh4(1e6, 0), r = R(sv); r.seed = (i * 2654435761) >>> 0; r.seedE = (i * 40503 + 17) >>> 0; r.seedP = (i * 69069 + 3) >>> 0; r.seedRev = (i * 1103515245 + 12345) >>> 0;
+    toAT(sv, 3); comp += r.companion; const o = playAT(sv); dr += o.dragon; rl += o.realm; }
+  ok(Math.abs(dr / N - .7817) < .015 && Math.abs(rl / N - .6634) < .015, `設定三 ${N.toLocaleString()} 趟真實狀態機：見到巨龍 ${(dr / N * 100).toFixed(2)}%（hunt7 設定三 78.17%）、進狹間 ${(rl / N * 100).toFixed(2)}%（66.34%）、同伴 ${(comp / N * 100).toFixed(2)}%`);
+}
+
 console.log(`\n${fail ? "FAIL" : "PASS"}：${pass} 通過，${fail} 失敗`);
 process.exit(fail ? 1 : 0);
