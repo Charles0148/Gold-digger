@@ -579,6 +579,32 @@ console.log("=== 17. 終結技／蓄力／假復活／暫待結算 ===");
 console.log("=== 18. 新流程第 1 階段：七國、直洞、保底、能力點、重整 ===");
 {
   ok(H.countries.length === 7 && H.countries.map(x => x.tasks.length).join() === "5,3,4,2,6,3,1", "七國與題數 5／3／4／2／6／3／1");
+  ok(H.countries.every(c => c.intro.length >= 6 && c.arrive.length >= 6 && c.bye.length >= 6), "七國路上介紹、抵達與道別都加厚為至少 6 句");
+  ok(H.countries.every(c => [...c.intro, ...c.arrive, ...c.bye].every(z => !/^[^「」]{1,6}：/.test(Array.isArray(z) ? z[1] : z)) && c.bye.slice(-1).every(z => typeof z === "string")), "七國台詞不在句子裡自帶名牌（說話者寫在 [說話者, 台詞]）");
+  ok(H.countries.every(c => c.react && c.react.ok.length >= 3 && c.react.fail.length >= 3), "七國成功／落空後都有國王追加回應");
+  ok(H.texts.journey.flat.length >= 8 && H.texts.journey.country.length >= 4 && H.texts.journey.points.length >= 3 && H.texts.journey.items.length >= 3, "平地依一般、去過國度、能力點與行囊提供情境台詞池");
+  ok(H.texts.at.find.length >= 8 && H.texts.at.afterBattle.length >= 4 && H.texts.at.companionWalk.length >= 4 && H.texts.at.countryEcho.length >= 4, "AT 依找怪、剛戰鬥、同伴與國度記憶提供情境台詞池");
+  { const uiSrc = fs.readFileSync(path.join(ROOT, "js/hunt-ui.js"), "utf8");
+    ok(/function roundHp\(r, t\)[\s\S]*MH\.hpAt\(r\.mon, t\)[\s\S]*r\.maxHp/.test(uiSrc) && /huntHud\(r, roundHp\(r, t \+ 1\)\)/.test(uiSrc) && /const liveHp = hpPreview/.test(uiSrc), "戰鬥每回合把劇本血量換回本趟血量，旅人卡與場景小血條同步");
+    ok(/const journeyHp = r\.rv === 4[\s\S]*ui\.page === "ability"[\s\S]*ui\.attrDraft\.hp[\s\S]*r\.attr && r\.attr\.hp[\s\S]*H\(\)\.at\.hpPerPoint/.test(uiSrc), "能力頁血量草稿即時預覽於旅人卡，確認後沿用本趟已投入血量");
+    ok(/function routeWalkLine[\s\S]*r\.lastCountry[\s\S]*function atWalkLine[\s\S]*r\.kills > 0[\s\S]*r\.companion/.test(uiSrc), "行走台詞會讀去過國度、剛打完戰鬥與同伴狀態");
+    const cssSrc = fs.readFileSync(path.join(ROOT, "css/style.css"), "utf8");
+    const countryArt = {
+      varian:["varian-bg-prototype.png","varian-zion-prototype-v2.png"], medali:["medali-bg.png","medali-sipei.png"],
+      kansia:["kansia-bg.png","kansia-luna.png"], lucihime:["lucihime-bg.png","lucihime-snorri.png"],
+      kaska:["kaska-bg.png","kaska-durin.png"], buxton:["buxton-bg.png","buxton-monte.png"], futuro:["futuro-bg.png","futuro-dingbu.png"]
+    };
+    ok(Object.entries(countryArt).every(([id, files]) => uiSrc.includes(`${id}:`) && files.every(name => uiSrc.includes(name))), "七國都對應正式背景與統治者立繪");
+    ok(/function countryScene[\s\S]*COUNTRY_ART\[c\.id\][\s\S]*stage === "intro" \? "country" : stage === "arrive" \? "ruler"[\s\S]*ui\.countryFlash !== flashKey[\s\S]*\$\{c\.name\}[\s\S]*alt="\$\{c\.ruler\}"/.test(uiSrc), "七國圖片只在國度與統治者初見段落出現，標籤與替代文字取正式國名／統治者名");
+    const artChecks = Object.values(countryArt).flatMap(files => files.map(name => {
+      const data = fs.readFileSync(path.join(ROOT, "assets/hunt-country", name));
+      return { name, data, width:data.readUInt32BE(16), height:data.readUInt32BE(20) };
+    }));
+    ok(artChecks.every(x => x.data.length <= 500 * 1024), "七國背景與立繪每張皆壓在 500KB 以內");
+    ok(artChecks.filter(x => x.name.includes("-bg") || x.name.startsWith("varian-bg")).every(x => x.width >= 768 && x.height >= 295) && artChecks.filter(x => !(x.name.includes("-bg") || x.name.startsWith("varian-bg"))).every(x => x.width >= 450 && x.height >= 430 && (x.data[25] === 4 || x.data[25] === 6 || x.data.includes(Buffer.from("tRNS")))), "七國背景保留手機近兩倍寬，統治者立繪保留手機顯示尺寸與透明通道");
+    const indexSrc = fs.readFileSync(path.join(ROOT, "index.html"), "utf8");
+    ok(/function enterCountryScene[\s\S]*opacity: 0 \}, \{ opacity: 1 \}\][\s\S]*duration: 600/.test(uiSrc) && /function leaveCountryScene[\s\S]*classList\.add\("leaving"\)[\s\S]*opacity: 0 \}\][\s\S]*duration: 300[\s\S]*later\(300/.test(uiSrc) && /style="animation:none;opacity:/.test(uiSrc) && /stage === "intro"\) leaveCountryScene\(doEnter\)[\s\S]*stage === "arrive"\) leaveCountryScene\(doAfterCountry\)/.test(uiSrc) && /prefers-reduced-motion: reduce[\s\S]*#scr-mine\.hunt-b \.hunt-country-flash \{ display: none/.test(cssSrc), "國度圖片淡入並停住，玩家繼續後才淡出；舊樣式快取不會讓它自動消失，減少動態效果直接略過圖片");
+    ok(/<div id="sceneStage" class="scene-stage">[\s\S]*<div id="sceneBig" class="scene-big">/.test(indexSrc) && /big\.innerHTML = bigHtml[\s\S]*paintText\(lines/.test(uiSrc) && /return `\$\{A\.colored\(c\.name/.test(uiSrc), "美術只寫入既有 sceneBig／sceneStage，退場後恢復原本國名與正式敘述框"); }
   ok(MH.countryRate(H,"varian",1,0) === 0 && MH.countryRate(H,"varian",1,1) === .20 && MH.countryRate(H,"varian",6,1) === .25 && MH.countryRate(H,"varian",6,5) === 1, "瓦瑞安 0 題＝0%，設定固定加值與 100% 上限");
   ok(Math.abs(MH.countryRate(H,"medali",6,3)-.50)<1e-12 && Math.abs(MH.countryRate(H,"futuro",6,1)-.55)<1e-12, "美妲莉／芙特羅設定六邊界 50%／55%");
 

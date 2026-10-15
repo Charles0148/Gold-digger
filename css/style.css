@@ -1108,6 +1108,20 @@ body.editing .edit-selected { outline: 2px solid #ff4fd8 !important; outline-off
 #scr-mine.hunt-b #mineBar { padding: 4px 10px; min-height: 29px; font-size: 13px; }
 #scr-mine.hunt-b #sceneStage { padding: 5px 8px; }
 #scr-mine.hunt-b #sceneBig { font-size: 2em; }
+#scr-mine.hunt-b .hunt-country-flash { position: absolute; inset: 0; display: block; overflow: hidden; background: #111; isolation: isolate; pointer-events: none; opacity: 1; }
+#scr-mine.hunt-b .hunt-country-bg { position: absolute; inset: -4%; width: 108%; height: 108%; max-width: none; object-fit: cover; object-position: 50% 52%; image-rendering: pixelated; z-index: 0; }
+#scr-mine.hunt-b .hunt-country-vignette { position: absolute; inset: 0; z-index: 1; background: linear-gradient(180deg, rgba(8,14,30,.08) 35%, rgba(8,10,18,.72) 100%); }
+#scr-mine.hunt-b .hunt-country-name { position: absolute; left: 12px; bottom: 8px; z-index: 3; padding: 3px 8px; color: #fff2b8; background: rgba(12,18,28,.78); border: 2px solid #e2ba55; box-shadow: 2px 2px 0 #000; font-size: 17px; line-height: 1.2; text-shadow: 2px 2px 0 #000; }
+#scr-mine.hunt-b .hunt-country-ruler { position: absolute; z-index: 2; right: -2%; bottom: -12%; width: auto; height: 112%; max-width: 72%; object-fit: contain; object-position: right bottom; image-rendering: pixelated; filter: drop-shadow(-4px 3px 0 rgba(0,0,0,.75)); }
+#scr-mine.hunt-b .hunt-country-flash.entering { animation: huntCountryIn .8s steps(8,end) both; }
+#scr-mine.hunt-b .hunt-country-flash.entering .hunt-country-bg { animation: huntCountryReveal .8s steps(8,end) both; }
+#scr-mine.hunt-b .hunt-country-flash.entering .hunt-country-ruler { animation: huntCountryRuler .6s .18s steps(6,end) both; }
+#scr-mine.hunt-b .hunt-country-flash.leaving { animation: huntCountryOut .36s steps(4,end) both; }
+@keyframes huntCountryIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes huntCountryOut { from { opacity: 1; } to { opacity: 0; visibility: hidden; } }
+@keyframes huntCountryReveal { from { transform: scale(1.04) translateX(2%); filter: brightness(.72); } to { transform: scale(1) translateX(0); filter: brightness(1); } }
+@keyframes huntCountryRuler { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: translateX(0); } }
+@media (prefers-reduced-motion: reduce) { #scr-mine.hunt-b .hunt-country-flash { display: none !important; } }
 #scr-mine.hunt-b #sceneSub { color: var(--gold-lt); font-size: 14px; margin-top: 2px; }
 #scr-mine.hunt-b #sceneSub:empty { display: none; }
 #scr-mine.hunt-b .hunt-hp { display: none !important; }

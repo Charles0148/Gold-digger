@@ -9,7 +9,7 @@
   "use strict";
   const MH = root.MineHunt, FX = root.HuntFx;
   let A = null;   // game.js 提供的接點
-  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", pg: { key: "", i: 0 }, pgMore: false, attrDraft: { hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null, page: "", cardFold: null, cardPhase: "" };
+  const ui = { timers: [], stage: null, introKey: "", scaleKey: "", turnKey: "", preKey: "", stalled: 0, devSeen: false, resSeen: false, doneSeen: false, introBusy: false, feedSel: new Set(), flash: null, feedOpen: false, lastPhase: "", pg: { key: "", i: 0 }, pgMore: false, attrDraft: { hp: 0, atk: 0, luck: 0, hunt: 0, dragon: 0, realm: 0 }, attrNote: "", item: null, earnKey: "", earn: 0, tip: null, page: "", cardFold: null, cardPhase: "", countryFlash: "", countryLeaving: false };
   const FXPREF_KEY = "mine_fx_pref_v1";
   const $ = id => document.getElementById(id);
   const H = () => A.H();
@@ -92,6 +92,13 @@
     [...e.hp.children].forEach((c, i) => c.classList.toggle("on", i < n));
     e.hp.classList.toggle("low", hp <= 40);
   }
+  /* rv4 的回合劇本以 100 格血量演出；換回本趟 maxHp，讓旅人卡和場景小血條看見同一個當下。
+     這只是畫面預覽，正式扣血與勝後回復仍由 mine-hunt.js 的 applyWin 一次結算。 */
+  function roundHp(r, t) {
+    if (!(r && r.rv === 4 && r.mon && r.mon.sc)) return null;
+    const shown = MH.hpAt(r.mon, t);
+    return Math.max(0, Math.min(r.maxHp, shown / H().battle.hpMax * r.maxHp));
+  }
   function showBattle(r) {   // 戰鬥中（有怪、或擊殺／倒下／來回演出）才顯示血條與角色；旅途、判定、餘燼不顯示。怪物沒有血條
     const e = battleEls(), fight = (r.phase === "hunt" || r.phase === "dragon" || r.phase === "realm") && !!r.mon;
     e.hp.classList.toggle("on", fight); e.hero.classList.toggle("on", fight); e.hero.classList.toggle("reduced", reduced());
@@ -132,7 +139,10 @@
         hero.animate([{ opacity: 1 }, { opacity: .25 }, { opacity: 1 }, { opacity: .25 }, { opacity: 1 }], { duration: mMs * .9, delay: mMs * .1, easing: "steps(1)" });
         if (!red) hero.animate([{ transform: "translateX(0)" }, { transform: "translateX(-6px)" }, { transform: "translateX(0)" }], { duration: mMs * .6, delay: mMs * .1, easing: "steps(3)" });
         floatNum("-" + x[3], "", hero, 4, -6);
-        later(mMs * .45, () => setHp(MH.hpAt(mon, t + 1)));   // 血條缺格（逐格變暗灰）
+        later(mMs * .45, () => {
+          setHp(MH.hpAt(mon, t + 1));   // 場景血條缺格（逐格變暗灰）
+          huntHud(r, roundHp(r, t + 1));   // 旅人卡同一拍更新；不寫入存檔
+        });
       } else {
         if (!red) hero.animate([{ transform: "translateX(0)" }, { transform: "translateX(-9px)" }, { transform: "translateX(0)" }], { duration: mMs * .8, easing: "steps(4)" });
         floatNum(T().battle.dodge, "sub", hero, 4, -6);
@@ -174,6 +184,63 @@
     } else { box.classList.add("hidden"); box.innerHTML = ""; }
   }
   const countryOf = (h, id) => (h.countries || []).find(x => x.id === id);
+  const stableLine = (arr, n) => arr && arr.length ? arr[((n % arr.length) + arr.length) % arr.length] : "";
+  function routeWalkLine(r, h) {
+    const x = h.texts.journey || {}, n = (r.nE | 0) + (r.since | 0);
+    if (r.attr && r.attr.free > 0 && x.points) return stableLine(x.points, n);
+    if (Object.values(r.routeItems || {}).some(v => v > 0) && x.items) return stableLine(x.items, n);
+    if (r.lastCountry && x.country) {
+      const c = countryOf(h, r.lastCountry);
+      return fill(stableLine(x.country, n), { country: c ? c.name : "剛才的國度" });
+    }
+    return stableLine(x.flat || h.texts.walk, n);
+  }
+  function atWalkLine(r, h) {
+    const x = h.texts.at, n = (r.nE | 0) + (r.atStep | 0) + (r.kills | 0);
+    if (r.kills > 0 && r.atStep <= 2) return stableLine(x.afterBattle, n);
+    if (r.companion && n % 3 === 0) return stableLine(x.companionWalk, n);
+    if (r.lastCountry && n % 4 === 1) {
+      const c = countryOf(h, r.lastCountry);
+      return fill(stableLine(x.countryEcho, n), { country: c ? c.name : "地上的國度" });
+    }
+    return stableLine(x.find, n);
+  }
+  const COUNTRY_ART = Object.freeze({
+    varian:   { bg:"varian-bg-prototype.png", ruler:"varian-zion-prototype-v2.png" },
+    medali:   { bg:"medali-bg.png", ruler:"medali-sipei.png" },
+    kansia:   { bg:"kansia-bg.png", ruler:"kansia-luna.png" },
+    lucihime: { bg:"lucihime-bg.png", ruler:"lucihime-snorri.png" },
+    kaska:    { bg:"kaska-bg.png", ruler:"kaska-durin.png" },
+    buxton:   { bg:"buxton-bg.png", ruler:"buxton-monte.png" },
+    futuro:   { bg:"futuro-bg.png", ruler:"futuro-dingbu.png" }
+  });
+  /* 七國美術：文字永遠是主體；背景／統治者淡入並停住，玩家讀完、按繼續才淡出。 */
+  function countryScene(c, stage) {
+    const art = c && COUNTRY_ART[c.id];
+    if (!art) return A.colored(c ? c.name : "國度", "#ffe0a0");
+    const flashKind = stage === "intro" ? "country" : stage === "arrive" ? "ruler" : "";
+    const flashKey = ui.pg.key + ":" + flashKind;
+    const entering = flashKind && ui.countryFlash !== flashKey;
+    if (entering) ui.countryFlash = flashKey;
+    const show = flashKind && !reduced();
+    return `${A.colored(c.name, "#ffe0a0")}${show ? `<span class="hunt-country-flash ${flashKind}${entering ? " entering" : ""}" style="animation:none;opacity:${entering ? 0 : 1}">
+        <img class="hunt-country-bg" src="assets/hunt-country/${art.bg}" alt="">
+        <span class="hunt-country-vignette"></span><span class="hunt-country-name">${c.name}</span>
+        ${flashKind === "ruler" ? `<img class="hunt-country-ruler" src="assets/hunt-country/${art.ruler}" alt="${c.ruler}">` : ""}
+      </span>` : ""}`;
+  }
+  function enterCountryScene(root) {   // 場景淡入（擁有者 2026-10-15：不要卡片感，只讓玩家看到這座城市）
+    const el = root.querySelector(".hunt-country-flash.entering"); if (!el) return;
+    el.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 600, easing: "ease-out", fill: "forwards" });
+  }
+  function leaveCountryScene(then) {
+    if (ui.countryLeaving) return;
+    const el = document.querySelector("#sceneBig .hunt-country-flash");
+    if (!el || reduced()) { ui.countryFlash = ""; then(); return; }
+    ui.countryLeaving = true; el.classList.remove("entering"); el.classList.add("leaving"); el.style.animation = "none";
+    el.animate([{ opacity: 1 }, { opacity: 0 }], { duration: 300, easing: "ease-out", fill: "forwards" });   // 淡出（擁有者 2026-10-15：不要滑出）
+    later(300, () => { ui.countryLeaving = false; ui.countryFlash = ""; then(); });
+  }
   const routeItemName = (h, id) => (((h.entrance || {}).items || []).find(x => x.id === id) || {}).name || "旅途道具";
   /* 入口台詞的說話者（空字串＝旁白），對應 config.hunt.texts.entrance 各段的每一句 */
   const WHO = { direct:["小精靈","","小精靈","小精靈"], caveFail:["","小精靈","小精靈","小精靈"], guarantee:["","小精靈","","小精靈"],
@@ -196,18 +263,10 @@
     return sayAll(x.dragon.map(([w, z]) => (w === "{who}" ? who : [w, z])), r, h);
   }
   const ITEM_ORDER = ["salve", "dew", "charm", "net", "whet"];
-  function speakerFor(r, phase) {
-    if (r.rv !== 4) return phase;
-    if (r.event) return r.event.goblin ? "哥布林" : "旅途";
-    if (r.phase === "dev") return "小精靈";
-    if (r.phase === "country" && r.country) {
-      const c = countryOf(H(), r.country.id), st = r.country.stage;
-      if (st === "intro" || st === "fail") return "小精靈";
-      if (st === "goblin" || st === "warn") return "哥布林";
-      return c ? c.ruler : phase;
-    }
-    if (r.story && r.story.kind === "king") return r.realm && r.realm.type === "hell" ? "地獄之王" : "天堂之王";
-    return phase;
+  /* 名牌跟著目前這一頁：取第一句的說話者；第一句是旁白就顯示地點 */
+  function pageSpeaker(lines) {
+    const m = String(lines[0] || "").replace(/<[^>]*>/g, "").match(/^([^，。！？…：\s]{1,6})：/);
+    return m ? m[1] : "";
   }
   /* 完走回憶：沒能進洞的國度只播答對的片段；最後讓玩家進洞的國王出來道謝；直接進洞的版本另寫 */
   function recapLines(r, h) {
@@ -338,11 +397,11 @@
       page("dev" + r.dev.stage + r.nE);
     } else if (r.rv === 4 && r.phase === "country") {
       const c = countryOf(h, r.country.id), q = c.tasks[r.country.q], x = t.entrance; bigHtml = A.colored(c.name, "#ffe0a0"); tap = "";
-      const say = (who, a) => a.map(z => A.colored(who + "：", "#7fe3ff") + z);
+      const say = (who, a) => a.map(z => { const [w, line] = Array.isArray(z) ? z : [who, z]; return w ? A.colored(w + "：", "#7fe3ff") + line : line; });   // 單句可寫 [說話者, 台詞]；說話者空字串＝旁白
       if (r.country.stage === "intro") { lines = say("小精靈", c.intro); tap = "▼ 點擊進入國度"; }
       else if (r.country.stage === "arrive") { lines = say(c.ruler, c.arrive); tap = "▼ 點擊繼續"; }
       else if (r.country.stage === "task") { lines = [q[0]]; choices = q[1].map((z,i)=>({c:"cpick:"+i,label:z})); }
-      else if (r.country.stage === "result") { const rec=(r.answers[c.id]||[]).slice(-1)[0]; lines=[r.country.ok?q[2][r.country.pick]:failLine(q,r.country.pick,r.country.answer)]; if(rec&&rec.reward) lines.push(A.colored(rewardLine(rec.reward,h),"#7fe3ff")); tap="▼ 點擊繼續"; }
+      else if (r.country.stage === "result") { const rec=(r.answers[c.id]||[]).slice(-1)[0], mood=r.country.ok?"ok":"fail", react=c.react&&c.react[mood]; lines=[r.country.ok?q[2][r.country.pick]:failLine(q,r.country.pick,r.country.answer)]; if(react&&react.length) lines.push(A.colored(c.ruler+"：","#7fe3ff")+react[(r.country.q+r.country.pick)%react.length]); if(rec&&rec.reward) lines.push(A.colored(rewardLine(rec.reward,h),"#7fe3ff")); tap="▼ 點擊繼續"; }
       else if (r.country.stage === "farewell") { lines=say(c.ruler, c.bye.slice(0,-1)).concat(say("小精靈", c.bye.slice(-1))); tap="▼ 點擊離開國度"; }
       else if (r.country.stage === "chest") { lines = r.country.chest ? who(x, r.country.chest.kind === "empty" ? "chestEmpty" : r.country.chest.kind === "point" ? "chestPoint" : "chestItem").concat([rewardLine(r.country.chest,h)]).filter(Boolean) : []; tap="▼ 點擊繼續"; }
       else if (r.country.stage === "goblin") { lines=who(x, "countryGoblin").concat([A.colored(rewardLine(r.country.gift,h), "#7fe3ff")]); choices=[{c:"panel",label:"分配能力點",gold:true},{c:"entrance:next",label:"暫時保留／繼續"}]; }
@@ -351,6 +410,7 @@
       else if (r.country.stage === "warn") { lines=who(x, "unspent"); choices=[{c:"entrance:back",label:"回去分配"},{c:"entrance:enter",label:"就這樣進去",gold:true}]; }
       else { lines=[x.directOk]; choices=[{c:"entrance:enter",label:"繼續深入",gold:true}]; }
       page("c" + r.country.id + r.country.stage + r.country.q + r.nE);
+      bigHtml = countryScene(c, r.country.stage);
     } else if (r.itemOffer) {   // 3C：旅途道具（直接取得／兩個相同的木箱）。畫面、時間軸、文字全在下方「旅途道具」一節；這裡只取目前這一格
       itemSync(r);
       const p = itemParts(r); lines = p.lines; choices = p.choices; tap = ""; bigHtml = ""; subTxt = "";
@@ -359,7 +419,7 @@
       choices = [{ c: "panel", label: "查看本趟能力", gold: true }, { c: "continue", label: "繼續前進" }];
     } else if (r.phase === "walk") {
       bigHtml = A.colored((r.n + r.since) % 2 ? "· ·" : "·  ·", sub());
-      lines = [ui.flash && ui.flash.rid === r.rid ? A.colored(ui.flash.text, "#ffe0a0") : "", t.walk[(r.n + r.since) % t.walk.length]].filter(Boolean);
+      lines = [ui.flash && ui.flash.rid === r.rid ? A.colored(ui.flash.text, "#ffe0a0") : "", routeWalkLine(r, h)].filter(Boolean);
       tap = "▼ 點擊前進";
       if (halted) hungry();
     } else if (r.phase === "dev") {
@@ -387,7 +447,7 @@
           const e = r.atEvent;
           if (e && e.mushroom !== undefined) lines.push(...x.mushroom.map((z, i) => (i === 0 ? A.colored("小精靈：", "#7fe3ff") + z : z)));
           if (e && e.chest) lines.push(...who(t.entrance, e.chest.kind === "empty" ? "chestEmpty" : e.chest.kind === "point" ? "chestPoint" : "chestItem"), ...[rewardLine(e.chest, h)].filter(Boolean));
-          if (!lines.length) lines.push(dragon ? x.dragonSeek : x.find[r.atStep % x.find.length]);
+          if (!lines.length) lines.push(dragon ? x.dragonSeek : atWalkLine(r, h));
           if (r.hp / r.maxHp < .5) lines.push(A.colored(x.lowHp[r.atStep % x.lowHp.length], "#ffcc33"));
           tap = "▼ 點擊前進"; page("w" + r.nE);
         }
@@ -460,8 +520,8 @@
     if (ui.stage) { choices = []; tap = " "; }   // 全螢幕演出中：底下的畫面不給選項
     showBattle(r);
     $("scene").classList.toggle("realm-heaven", tint === "heaven"); $("scene").classList.toggle("realm-hell", tint === "hell");
-    big.innerHTML = bigHtml; subEl.textContent = subTxt;
-    paintText(lines, tap, choices, speakerFor(r, PH[r.phase] || ""), PH[r.phase] || "旅途");
+    big.innerHTML = bigHtml; enterCountryScene(big); subEl.textContent = subTxt;
+    paintText(lines, tap, choices, pageSpeaker(lines), PH[r.phase] || "旅途");
     huntHud(r);
     renderHuntPage(r);
     A.renderHud();
@@ -638,7 +698,7 @@
       : [{ opacity: 1, transform: "translateY(-40px)", offset: 0 }, { opacity: 1, transform: "translateY(0)", offset: 200 / ms }, { opacity: 1, offset: 1 - 300 / ms }, { opacity: 0 }];
     el.animate(a, { duration: ms, easing: "steps(5)", fill: "both" }).onfinish = () => el.remove();
   }
-  function huntHud(r) {
+  function huntHud(r, hpPreview) {
     const earned = r.attr ? r.attr.earned | 0 : 0;
     if (ui.earnKey !== String(r.seed)) { ui.earnKey = String(r.seed); ui.earn = earned; }   // 第一次看到這一趟（含重新整理）只記基準，不重播提示
     else if (earned > ui.earn) { tipBar(earned - ui.earn); ui.earn = earned; }
@@ -650,7 +710,12 @@
     count.textContent = "×" + num(bagN); count.classList.toggle("hidden", bagN < 1);
     const fight = (r.phase === "hunt" && r.mon && !r.mon.prep) || r.phase === "dragon" || r.phase === "realm";
     if (ui.cardPhase !== r.phase) { ui.cardPhase = r.phase; ui.cardFold = null; }
-    const compact = ui.cardFold === null ? fight : ui.cardFold, hp = Math.max(0, Math.ceil(r.hp === undefined ? 100 : r.hp)), maxHp = Math.max(1, Math.ceil(r.maxHp || 100));
+    const compact = ui.cardFold === null ? fight : ui.cardFold;
+    /* 進 AT 前還沒有正式受傷流程，但血量點已有效；能力頁按下＋時把草稿也算進旅人卡，確認後則由 r.attr.hp 持續顯示。進 AT 後一律回到正式 r.hp／r.maxHp，避免同伴加成或戰鬥傷勢被覆蓋。 */
+    const journeyHp = r.rv === 4 && ["walk", "dev", "country"].includes(r.phase), draftHp = ui.page === "ability" ? (ui.attrDraft.hp | 0) : 0;
+    const maxHp = Math.max(1, Math.ceil(journeyHp ? 100 + ((r.attr && r.attr.hp || 0) + draftHp) * H().at.hpPerPoint : (r.maxHp || 100)));
+    const liveHp = hpPreview === undefined || hpPreview === null ? (journeyHp ? maxHp : roundHp(r, r.mon && r.mon.t)) : hpPreview;
+    const hp = Math.max(0, Math.ceil(liveHp === null ? (r.hp === undefined ? maxHp : r.hp) : liveHp));
     const hpN = Math.max(0, Math.min(10, Math.ceil(hp / maxHp * 10))), hpCells = '<i class="on"></i>'.repeat(hpN) + '<i></i>'.repeat(10 - hpN);
     const ref = Math.max(1, H().stamina.barRef || 100), pct = Math.min(100, st / ref * 100), staminaColor = st > 30 ? "#55ff55" : st > 8 ? "#ffcc33" : "#ff5555";
     const card = $("huntCard");
@@ -747,13 +812,13 @@
   function tap() {
     const sv = SV(), r = RUN();
     if (ui.page) return;
-    if (r.anim || FX.playing() || ui.stage) return;
+    if (r.anim || FX.playing() || ui.stage || ui.countryLeaving) return;
     if (ui.pgMore) { ui.pg.i++; render(); return; }
     if (r.rv === 4 && r.event) { doEntrance("next"); return; }
     if (r.itemOffer || r.awaiting) return;
     if (r.phase === "walk") { if (A.dayBlocked()) return; if (MH.halted(sv, H())) { A.toast(T().hungry[0], 1600); return; } doStep(); }
     else if (r.phase === "dev") { if (r.rv !== 4) { if (MH.halted(sv, H())) { A.toast(T().goInHungry, 1600); return; } doEnter(); } }
-    else if (r.phase === "country") { if (r.rv === 4) { if (r.country.stage === "intro") doEnter(); else if (["arrive","result","farewell","chest","cave","fail"].includes(r.country.stage)) doAfterCountry(); } else if (r.country.pick !== null) doAfterCountry(); }
+    else if (r.phase === "country") { if (r.rv === 4) { if (r.country.stage === "intro") leaveCountryScene(doEnter); else if (r.country.stage === "arrive") leaveCountryScene(doAfterCountry); else if (["result","farewell","chest","cave","fail"].includes(r.country.stage)) doAfterCountry(); } else if (r.country.pick !== null) doAfterCountry(); }
     else if (atView(r)) {
       if (r.story) storyNext();
       else if (!r.mon) { if (MH.halted(sv, H())) { A.toast(T().hungry[0], 1600); return; } act(() => MH.atStep(SV(), H())); }
@@ -799,8 +864,9 @@
       return { wait: 400 };
     }
     const st = r.country.stage;
-    if (st === "intro") return wait(() => { const res = doEnter(); if (!res.ok && res.reason === "hungry") A.stopAuto(); });
-    if (["arrive", "result", "farewell", "chest", "cave", "fail"].includes(st)) return wait(doAfterCountry);
+    if (st === "intro") return wait(() => leaveCountryScene(() => { const res = doEnter(); if (!res.ok && res.reason === "hungry") A.stopAuto(); }));
+    if (st === "arrive") return wait(() => leaveCountryScene(doAfterCountry));
+    if (["result", "farewell", "chest", "cave", "fail"].includes(st)) return wait(doAfterCountry);
     if (st === "enter") return wait(() => doEntrance("enter"));
     return { wait: 400 };   // task／goblin／warn：等玩家
   }
