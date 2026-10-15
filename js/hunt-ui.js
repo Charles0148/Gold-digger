@@ -186,14 +186,14 @@
   const countryOf = (h, id) => (h.countries || []).find(x => x.id === id);
   const stableLine = (arr, n) => arr && arr.length ? arr[((n % arr.length) + arr.length) % arr.length] : "";
   function routeWalkLine(r, h) {
-    const x = h.texts.journey || {}, n = (r.nE | 0) + (r.since | 0);
-    if (r.attr && r.attr.free > 0 && x.points) return stableLine(x.points, n);
-    if (Object.values(r.routeItems || {}).some(v => v > 0) && x.items) return stableLine(x.items, n);
-    if (r.lastCountry && x.country) {
+    const x = h.texts.journey || {}, n = (r.nE | 0) + (r.since | 0), turn = n % 4, k = Math.floor(n / 4);   // 情境句與一般句輪流出現，避免同一小池一直重複
+    if (turn === 0 && r.attr && r.attr.free > 0 && x.points) return stableLine(x.points, k);
+    if (turn === 1 && Object.values(r.routeItems || {}).some(v => v > 0) && x.items) return stableLine(x.items, k);
+    if (turn === 2 && r.lastCountry && x.country) {
       const c = countryOf(h, r.lastCountry);
-      return fill(stableLine(x.country, n), { country: c ? c.name : "剛才的國度" });
+      return fill(stableLine(x.country, k), { country: c ? c.name : "剛才的國度" });
     }
-    return stableLine(x.flat || h.texts.walk, n);
+    return stableLine(x.flat || h.texts.walk, n + k);
   }
   function atWalkLine(r, h) {
     const x = h.texts.at, n = (r.nE | 0) + (r.atStep | 0) + (r.kills | 0);
